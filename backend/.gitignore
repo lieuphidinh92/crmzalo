@@ -1,0 +1,7 @@
+# Backend-specific (root .gitignore covers most; this is for clarity)
+node_modules/
+dist/
+.env
+*.log
+var/
+prisma/migrations/

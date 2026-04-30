@@ -1,0 +1,203 @@
+/* Mobile-first PWA primitives.
+ * Loaded after main.css. Defines safe-area variables, touch-target
+ * minimums and tweaks Vuetify components for thumb-friendly use.
+ */
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  --bottom-nav-height: 64px;
+  --mobile-header-height: 56px;
+}
+
+/* === Global resets =================================================== */
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+}
+
+/* Use 100dvh on mobile so the address bar collapse doesn't clip content */
+html, body, #app {
+  min-height: 100dvh;
+}
+
+/* PWA standalone fills the screen */
+@media (display-mode: standalone) {
+  html, body {
+    background: var(--brand-navy-900);
+  }
+}
+
+/* === Touch targets =================================================== */
+
+@media (max-width: 767.98px) {
+  button,
+  a,
+  [role='button'],
+  .v-btn,
+  .v-list-item,
+  .v-tab {
+    min-height: 44px;
+  }
+
+  /* Comfortable tap density on lists */
+  .v-list-item--density-compact {
+    min-height: 48px !important;
+  }
+
+  /* Smooth scroll */
+  .scroll-container,
+  .v-main,
+  .v-list,
+  .v-data-table .v-table__wrapper {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Bigger inputs to avoid iOS auto-zoom (font-size < 16px triggers zoom) */
+  .v-field input,
+  .v-field textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* === Mobile chrome (header + bottom nav) ============================ */
+
+.nds-mobile-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--mobile-header-height) + var(--safe-top));
+  padding-top: var(--safe-top);
+  padding-left: max(var(--safe-left), 16px);
+  padding-right: max(var(--safe-right), 16px);
+  background: var(--brand-navy-900);
+  border-bottom: 1px solid var(--brand-navy-600);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 1010;
+}
+
+.nds-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--bottom-nav-height) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: var(--brand-navy-800);
+  border-top: 1px solid var(--brand-navy-600);
+  display: flex;
+  align-items: stretch;
+  z-index: 1010;
+}
+
+.nds-bottom-nav__item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: 'Inter', 'Plus Jakarta Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 4px 8px;
+  position: relative;
+  transition: color 0.15s var(--liquid-ease);
+}
+
+.nds-bottom-nav__item.is-active {
+  color: var(--brand-amber-500);
+  font-weight: 600;
+}
+
+.nds-bottom-nav__dot {
+  position: absolute;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--brand-amber-500);
+}
+
+/* === Layout shell adjustments on mobile ============================== */
+
+@media (max-width: 767.98px) {
+  /* Hide topbar app-bar (we render our own MobileHeader) */
+  .v-app-bar.nds-desktop-only {
+    display: none !important;
+  }
+
+  /* Pad main content for fixed header + bottom nav */
+  .v-main.nds-mobile-shell {
+    padding-top: calc(var(--mobile-header-height) + var(--safe-top)) !important;
+    padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom)) !important;
+  }
+
+  .v-main.nds-mobile-shell .v-container {
+    padding: 12px !important;
+  }
+
+  /* Drawer becomes overlay on mobile (Vuetify already does this — extra safety) */
+  .v-navigation-drawer {
+    z-index: 1020 !important;
+  }
+}
+
+/* === Stat-card grid responsive ======================================= */
+
+.nds-stat-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(6, 1fr);
+}
+
+@media (max-width: 1199.98px) {
+  .nds-stat-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 767.98px) {
+  .nds-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+}
+
+/* === Chat view single-pane on mobile =================================
+ * The panels are toggled by ChatView via v-if; the CSS below just
+ * makes whichever panel IS rendered fill the available space and
+ * hides the resize handles which don't make sense on touch.
+ */
+
+@media (max-width: 767.98px) {
+  .chat-container {
+    height: calc(100dvh - var(--mobile-header-height) - var(--safe-top) - var(--bottom-nav-height) - var(--safe-bottom)) !important;
+    margin: 0 !important;
+  }
+
+  .chat-container .chat-panel-left {
+    width: 100% !important;
+    max-width: none !important;
+    flex: 1;
+  }
+
+  .chat-container .resize-handle {
+    display: none !important;
+  }
+}

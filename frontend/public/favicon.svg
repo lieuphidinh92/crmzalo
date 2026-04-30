@@ -1,0 +1,17 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ngheduocsi.vn logo">
+  <defs>
+    <linearGradient id="ndsBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E3458"/>
+      <stop offset="100%" stop-color="#0A1628"/>
+    </linearGradient>
+    <radialGradient id="ndsGlow" cx="75%" cy="20%" r="50%">
+      <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="200" height="200" rx="44" fill="url(#ndsBg)"/>
+  <rect x="0" y="0" width="200" height="200" rx="44" fill="url(#ndsGlow)"/>
+  <text x="100" y="138" text-anchor="middle" font-family="Inter, 'Plus Jakarta Sans', system-ui, sans-serif" font-size="92" font-weight="800" fill="#FFFFFF" letter-spacing="-4">nds</text>
+  <circle cx="158" cy="62" r="11" fill="none" stroke="#F59E0B" stroke-width="2.5"/>
+  <circle cx="158" cy="62" r="6" fill="#F59E0B"/>
+</svg>
