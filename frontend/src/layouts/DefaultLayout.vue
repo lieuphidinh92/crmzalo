@@ -43,17 +43,64 @@
       permanent
       @click="rail = false"
     >
-      <v-list density="compact" nav class="mt-2">
+      <v-list
+        :opened="openedGroups"
+        density="compact"
+        nav
+        class="mt-2"
+        @update:opened="handleOpenedUpdate"
+      >
+        <!-- Standalone Dashboard item -->
         <v-list-item
-          v-for="item in menuItems"
-          :key="item.path"
-          :to="item.path"
-          :prepend-icon="item.icon"
-          :title="item.title"
-          :value="item.path"
+          :to="dashboardItem.path"
+          :prepend-icon="dashboardItem.icon"
+          :title="dashboardItem.title"
+          :value="dashboardItem.path"
           rounded="xl"
           class="mb-1 mx-2"
         />
+
+        <!-- Collapsible groups -->
+        <v-list-group
+          v-for="group in visibleGroups"
+          :key="group.key"
+          :value="group.key"
+        >
+          <template #activator="{ props: activatorProps, isOpen }">
+            <v-list-item
+              v-bind="activatorProps"
+              :prepend-icon="group.icon"
+              rounded="xl"
+              class="mx-2 nds-group-header"
+            >
+              <v-list-item-title class="nds-group-title">
+                {{ group.title }}
+              </v-list-item-title>
+              <template #append>
+                <v-icon
+                  size="small"
+                  :class="['nds-chevron', { 'nds-chevron--open': isOpen }]"
+                  icon="mdi-chevron-down"
+                />
+              </template>
+            </v-list-item>
+          </template>
+
+          <v-list-item
+            v-for="item in visibleItemsOf(group)"
+            :key="item.path"
+            :to="item.path"
+            :prepend-icon="item.icon"
+            :value="item.path"
+            rounded="xl"
+            class="mb-1 mx-2"
+          >
+            <v-list-item-title>
+              {{ item.title }}
+              <span v-if="item.badge" class="ml-1">{{ item.badge }}</span>
+            </v-list-item-title>
+          </v-list-item>
+        </v-list-group>
       </v-list>
 
       <template #append>
@@ -85,7 +132,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useTheme, useDisplay } from 'vuetify';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
@@ -96,56 +143,205 @@ import MobileHeader from '@/components/MobileHeader.vue';
 import BottomNav from '@/components/BottomNav.vue';
 import OfflineSnackbar from '@/components/OfflineSnackbar.vue';
 
+interface MenuItem {
+  title: string;
+  icon: string;
+  path: string;
+  adminOnly?: boolean;
+  badge?: string;
+}
+
+interface MenuGroup {
+  key: string;
+  title: string;
+  icon: string;
+  adminOnly?: boolean;
+  items: MenuItem[];
+}
+
 const theme = useTheme();
 const display = useDisplay();
 const authStore = useAuthStore();
 const router = useRouter();
 const route = useRoute();
 
-// Vuetify breakpoints: xs/sm = mobile (<960). We use <768 to match
-// brief; useDisplay().mobile is responsive automatically.
 const mobile = computed(() => display.smAndDown.value);
 
 const drawer = ref(true);
 const rail = ref(false);
 const isDark = ref(localStorage.getItem('theme') !== 'light');
 
-onMounted(() => {
-  theme.global.name.value = isDark.value ? 'dark' : 'light';
-});
+const dashboardItem: MenuItem = {
+  title: 'Dashboard',
+  icon: 'mdi-view-dashboard-outline',
+  path: '/',
+};
 
-const allMenuItems = [
-  { title: 'Dashboard', icon: 'mdi-view-dashboard-outline', path: '/' },
-  { title: 'Tin nhắn', icon: 'mdi-message-text-outline', path: '/chat' },
-  { title: 'Khách hàng', icon: 'mdi-account-group-outline', path: '/contacts' },
-  { title: 'Tài khoản Zalo', icon: 'mdi-cellphone-link', path: '/zalo-accounts' },
-  { title: 'Việc cần làm', icon: 'mdi-checkbox-marked-circle-outline', path: '/tasks' },
-  { title: 'Đơn hàng', icon: 'mdi-cart-outline', path: '/orders' },
-  { title: 'Báo cáo', icon: 'mdi-chart-arc', path: '/reports' },
-  { title: 'Báo cáo Resale', icon: 'mdi-trending-up', path: '/reports/resale' },
-  { title: 'Pipeline cơ hội', icon: 'mdi-pipe', path: '/reports/pipeline' },
-  { title: 'Dashboard CEO', icon: 'mdi-view-dashboard-variant', path: '/dashboard/ceo', adminOnly: true },
-  { title: 'Nhân viên', icon: 'mdi-account-cog-outline', path: '/settings' },
-  { title: 'Công việc AI', icon: 'mdi-robot-outline', path: '/jobs' },
-  { title: 'Cấu hình', icon: 'mdi-cog-outline', path: '/ai-settings' },
-  { title: 'Trả lời nhanh', icon: 'mdi-message-flash-outline', path: '/quick-replies', adminOnly: true },
-  { title: 'Thêm', icon: 'mdi-dots-horizontal', path: '/more' },
+const allGroups: MenuGroup[] = [
+  {
+    key: 'communication',
+    title: 'GIAO TIẾP',
+    icon: 'mdi-message-processing-outline',
+    items: [
+      { title: 'Tin nhắn', icon: 'mdi-message-text-outline', path: '/chat' },
+      { title: 'Trả lời nhanh', icon: 'mdi-message-flash-outline', path: '/quick-replies', adminOnly: true },
+      { title: 'Tài khoản Zalo', icon: 'mdi-cellphone-link', path: '/zalo-accounts' },
+    ],
+  },
+  {
+    key: 'customers',
+    title: 'KHÁCH HÀNG',
+    icon: 'mdi-account-group-outline',
+    items: [
+      { title: 'Danh sách KH', icon: 'mdi-account-multiple-outline', path: '/contacts' },
+      { title: 'Pipeline cơ hội', icon: 'mdi-pipe', path: '/reports/pipeline' },
+      { title: 'Đơn hàng', icon: 'mdi-cart-outline', path: '/orders' },
+    ],
+  },
+  {
+    key: 'tasks',
+    title: 'CÔNG VIỆC',
+    icon: 'mdi-clipboard-check-outline',
+    items: [
+      { title: 'Việc cần làm', icon: 'mdi-checkbox-marked-circle-outline', path: '/tasks' },
+    ],
+  },
+  {
+    key: 'reports',
+    title: 'BÁO CÁO',
+    icon: 'mdi-chart-bar',
+    items: [
+      { title: 'Báo cáo tổng hợp', icon: 'mdi-chart-arc', path: '/reports' },
+      { title: 'Báo cáo Resale', icon: 'mdi-trending-up', path: '/reports/resale' },
+      { title: 'Dashboard CEO', icon: 'mdi-view-dashboard-variant', path: '/dashboard/ceo', adminOnly: true, badge: '👑' },
+    ],
+  },
+  {
+    key: 'system',
+    title: 'HỆ THỐNG',
+    icon: 'mdi-cog-outline',
+    adminOnly: true,
+    items: [
+      { title: 'Nhân viên', icon: 'mdi-account-cog-outline', path: '/settings' },
+      { title: 'Công việc AI', icon: 'mdi-robot-outline', path: '/jobs' },
+      { title: 'Cấu hình', icon: 'mdi-tune-variant', path: '/ai-settings' },
+      { title: 'Thêm', icon: 'mdi-dots-horizontal', path: '/more' },
+    ],
+  },
 ];
 
-const menuItems = computed(() => {
+const isAdmin = computed(() => {
   const role = authStore.user?.role ?? '';
-  const isAdmin = role === 'owner' || role === 'admin';
-  return allMenuItems.filter((item) => !item.adminOnly || isAdmin);
+  return role === 'owner' || role === 'admin';
 });
 
+const visibleGroups = computed(() =>
+  allGroups.filter((g) => !g.adminOnly || isAdmin.value),
+);
+
+function visibleItemsOf(group: MenuGroup): MenuItem[] {
+  return group.items.filter((item) => !item.adminOnly || isAdmin.value);
+}
+
+const DEFAULT_OPEN = ['communication', 'customers'];
+
+function getStorageKey(): string {
+  const uid = authStore.user?.id ?? 'anon';
+  return `sidebar_groups_state_${uid}`;
+}
+
+function loadOpenState(): string[] {
+  try {
+    const raw = localStorage.getItem(getStorageKey());
+    if (!raw) return [...DEFAULT_OPEN];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) {
+      return parsed;
+    }
+  } catch {
+    // fall through to defaults on bad JSON
+  }
+  return [...DEFAULT_OPEN];
+}
+
+// Hydrate at setup time so Vuetify's <v-list> sees the correct initial
+// :opened on first render (avoids a stray reset emit that would
+// overwrite our defaults with []).
+const openedGroups = ref<string[]>(loadOpenState());
+
+
+function findGroupForPath(path: string): string | null {
+  for (const g of allGroups) {
+    for (const item of g.items) {
+      if (item.path === '/') {
+        if (path === '/') return g.key;
+        continue;
+      }
+      if (path === item.path || path.startsWith(`${item.path}/`)) {
+        return g.key;
+      }
+    }
+  }
+  return null;
+}
+
+function ensureRouteGroupOpen(path: string): void {
+  const key = findGroupForPath(path);
+  if (key && !openedGroups.value.includes(key)) {
+    openedGroups.value = [...openedGroups.value, key];
+    persistOpenState();
+  }
+}
+
+// Vuetify's <v-list> emits one stray `update:opened` with [] right after
+// mount as child <v-list-group> instances register with useNested. We
+// drop that single emit (it's the only [] we'll see before any user
+// click) so it doesn't clobber our hydrated defaults.
+const mountTime = ref(0);
+
+function handleOpenedUpdate(val: unknown): void {
+  if (!Array.isArray(val)) return;
+  const next = val.filter((x): x is string => typeof x === 'string');
+  const sinceMount = Date.now() - mountTime.value;
+  if (next.length === 0 && openedGroups.value.length > 0 && sinceMount < 500) {
+    return;
+  }
+  openedGroups.value = next;
+  persistOpenState();
+}
+
+function persistOpenState(): void {
+  try {
+    localStorage.setItem(getStorageKey(), JSON.stringify(openedGroups.value));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+onMounted(() => {
+  theme.global.name.value = isDark.value ? 'dark' : 'light';
+  mountTime.value = Date.now();
+  ensureRouteGroupOpen(route.path);
+});
+
+watch(
+  () => route.path,
+  (newPath) => {
+    ensureRouteGroupOpen(newPath);
+  },
+);
+
 const currentRouteTitle = computed(() => {
-  // Search the full list (incl. admin-only) so route title resolves
-  // even when a non-admin somehow lands on an admin page.
-  const match = allMenuItems.find((item) => {
-    if (item.path === '/') return route.path === '/';
-    return route.path === item.path || route.path.startsWith(`${item.path}/`);
-  });
-  return match?.title ?? '';
+  if (route.path === '/') return dashboardItem.title;
+  for (const g of allGroups) {
+    for (const item of g.items) {
+      if (item.path === '/') continue;
+      if (route.path === item.path || route.path.startsWith(`${item.path}/`)) {
+        return item.title;
+      }
+    }
+  }
+  return '';
 });
 
 function toggleTheme() {
@@ -159,3 +355,27 @@ function logout() {
   router.push('/login');
 }
 </script>
+
+<style scoped>
+.nds-group-title {
+  font-size: 0.7rem !important;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--text-muted, #7a8aa0);
+  text-transform: uppercase;
+}
+
+.nds-group-header :deep(.v-list-item__prepend > .v-icon) {
+  color: var(--text-muted, #7a8aa0);
+  opacity: 0.85;
+}
+
+.nds-chevron {
+  transition: transform 0.3s ease-in-out;
+  color: var(--text-muted, #7a8aa0);
+}
+
+.nds-chevron--open {
+  transform: rotate(180deg);
+}
+</style>
