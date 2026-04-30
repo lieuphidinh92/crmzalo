@@ -52,7 +52,7 @@ const groups: { label: string; items: MoreItem[] }[] = [
   {
     label: 'Vận hành',
     items: [
-      { title: 'Lịch hẹn', icon: 'mdi-calendar-clock-outline', path: '/appointments' },
+      { title: 'Việc cần làm', icon: 'mdi-checkbox-marked-circle-outline', path: '/tasks' },
     ],
   },
   {

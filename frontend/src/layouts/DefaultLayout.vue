@@ -119,7 +119,7 @@ const allMenuItems = [
   { title: 'Tin nhắn', icon: 'mdi-message-text-outline', path: '/chat' },
   { title: 'Khách hàng', icon: 'mdi-account-group-outline', path: '/contacts' },
   { title: 'Tài khoản Zalo', icon: 'mdi-cellphone-link', path: '/zalo-accounts' },
-  { title: 'Lịch hẹn', icon: 'mdi-calendar-clock-outline', path: '/appointments' },
+  { title: 'Việc cần làm', icon: 'mdi-checkbox-marked-circle-outline', path: '/tasks' },
   { title: 'Đơn hàng', icon: 'mdi-cart-outline', path: '/orders' },
   { title: 'Báo cáo', icon: 'mdi-chart-arc', path: '/reports' },
   { title: 'Báo cáo Resale', icon: 'mdi-trending-up', path: '/reports/resale' },

@@ -40,8 +40,12 @@ const routes = [
   },
   {
     path: '/appointments',
-    name: 'Appointments',
-    component: () => import('@/views/AppointmentsView.vue'),
+    redirect: '/tasks',
+  },
+  {
+    path: '/tasks',
+    name: 'Tasks',
+    component: () => import('@/views/TasksView.vue'),
     meta: { requiresAuth: true },
   },
   {

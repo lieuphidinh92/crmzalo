@@ -25,6 +25,10 @@ model Organization {
   settings      AppSetting[]
   orders        Order[]
   quickReplyTemplates QuickReplyTemplate[]
+  tasks               Task[]
+  recurringTaskRules  RecurringTaskRule[]
+  autoTaskRules       AutoTaskRule[]
+  learningModules     LearningModule[]
 
   @@map("organizations")
 }
@@ -64,6 +68,8 @@ model User {
   repliedMessages  Message[]           @relation("RepliedMessages")
   activityLogs     ActivityLog[]
   createdOrders    Order[]             @relation("CreatedOrders")
+  assignedTasks    Task[]              @relation("AssignedTasks")
+  learningProgress LearningProgress[]
 
   @@map("users")
 }
@@ -156,6 +162,7 @@ model Contact {
   appointments  Appointment[]
   orders        Order[]
   stageHistory  StageHistory[]
+  tasks         Task[]
 
   @@index([orgId, customerType])
   @@index([orgId, stage])
@@ -443,4 +450,135 @@ model QuickReplyTemplate {
 
   @@unique([orgId, key])
   @@map("quick_reply_templates")
+}
+
+// ── Task management ─────────────────────────────────────────────────
+// Categories are a closed set of 10 canonical buckets shared across all
+// orgs. Org-customisation lives in RecurringTaskRule + AutoTaskRule.
+model TaskCategory {
+  id          String  @id @default(uuid())
+  key         String  @unique // NEW_LEAD, DAILY_POST, BIRTHDAY, ...
+  name        String
+  icon        String  // emoji
+  color       String  // colour token (red / blue / pink / ...)
+  description String?
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  tasks          Task[]
+  recurringRules RecurringTaskRule[]
+  autoRules      AutoTaskRule[]
+
+  @@map("task_categories")
+}
+
+// One actionable item assigned to a sale. Sources:
+//   manual    — user-created
+//   recurring — generated nightly from RecurringTaskRule
+//   auto      — generated every 15min from AutoTaskRule (event-driven)
+model Task {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  categoryId      String    @map("category_id")
+  assignedToId    String    @map("assigned_to")
+  contactId       String?   @map("contact_id")
+  title           String
+  description     String?
+  dueDate         DateTime  @map("due_date") @db.Date
+  dueTime         String?   @map("due_time") // 'HH:MM' local time
+  priority        Int       @default(2) // 1=high 2=med 3=low
+  status          String    @default("pending") // pending | in_progress | done | skipped
+  source          String    @default("manual") // auto | recurring | manual
+  recurringRuleId String?   @map("recurring_rule_id")
+  parentTaskId    String?   @map("parent_task_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
+  completionNote  String?   @map("completion_note")
+  metadata        Json      @default("{}")
+
+  org           Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  category      TaskCategory       @relation(fields: [categoryId], references: [id])
+  assignedTo    User               @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  contact       Contact?           @relation(fields: [contactId], references: [id])
+  recurringRule RecurringTaskRule? @relation(fields: [recurringRuleId], references: [id])
+  parentTask    Task?              @relation("Subtasks", fields: [parentTaskId], references: [id])
+  subtasks      Task[]             @relation("Subtasks")
+
+  @@index([orgId, assignedToId, dueDate])
+  @@index([orgId, status, dueDate])
+  @@index([orgId, categoryId])
+  @@map("tasks")
+}
+
+model RecurringTaskRule {
+  id              String  @id @default(uuid())
+  orgId           String  @map("org_id")
+  categoryId      String  @map("category_id")
+  name            String
+  description     String?
+  cronExpression  String  @map("cron_expression") // 'M H DOM MON DOW'
+  appliesToRole   String  @default("all") @map("applies_to_role") // sale | csk | leader | all
+  defaultQuantity Int     @default(1) @map("default_quantity")
+  active          Boolean @default(true)
+  createdBy       String? @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  category TaskCategory @relation(fields: [categoryId], references: [id])
+  tasks    Task[]
+
+  @@map("recurring_task_rules")
+}
+
+model AutoTaskRule {
+  id               String  @id @default(uuid())
+  orgId            String  @map("org_id")
+  categoryId       String  @map("category_id")
+  triggerType      String  @map("trigger_type") // new_lead | birthday | inactive_chat | inactive_order | upsell_eligible
+  triggerCondition Json    @default("{}") @map("trigger_condition")
+  dueInHours       Int     @default(24) @map("due_in_hours")
+  messageTemplate  String  @map("message_template")
+  active           Boolean @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  category TaskCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("auto_task_rules")
+}
+
+model LearningModule {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  name            String
+  description     String?
+  type            String   @default("optional") // required | optional
+  sortOrder       Int      @default(0) @map("sort_order")
+  contentUrl      String?  @map("content_url")
+  durationMinutes Int      @default(0) @map("duration_minutes")
+  forRoles        Json     @default("[]") @map("for_roles") // ['member','admin']
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  org      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  progress LearningProgress[]
+
+  @@map("learning_modules")
+}
+
+model LearningProgress {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  moduleId    String    @map("module_id")
+  status      String    @default("not_started") // not_started | in_progress | completed
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  score       Int?
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module LearningModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, moduleId])
+  @@map("learning_progress")
 }

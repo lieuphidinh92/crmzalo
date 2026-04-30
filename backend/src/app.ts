@@ -35,6 +35,8 @@ import { salePerformanceRoutes } from './modules/dashboard/sale-performance-rout
 import { saleScoreConfigRoutes } from './modules/settings/sale-score-config-routes.js';
 import { personalDashboardRoutes } from './modules/dashboard/personal-dashboard-routes.js';
 import { adminDashboardRoutes } from './modules/dashboard/admin-dashboard-routes.js';
+import { taskRoutes } from './modules/tasks/task-routes.js';
+import { startTaskCronJobs } from './modules/tasks/task-cron.js';
 import { userRoutes } from './modules/auth/user-routes.js';
 import { teamRoutes } from './modules/auth/team-routes.js';
 import { orgRoutes } from './modules/auth/org-routes.js';
@@ -125,6 +127,7 @@ async function bootstrap() {
   await app.register(saleScoreConfigRoutes);
   await app.register(personalDashboardRoutes);
   await app.register(adminDashboardRoutes);
+  await app.register(taskRoutes);
   await app.register(userRoutes);
   await app.register(teamRoutes);
   await app.register(orgRoutes);
@@ -181,6 +184,7 @@ async function bootstrap() {
     startJobScheduler().catch(err => logger.error('Job scheduler start failed:', err));
     startDailyStatsAggregation();
     startZaloHealthCheck();
+    startTaskCronJobs();
   } catch (err) {
     logger.error('Failed to start server:', err);
     process.exit(1);

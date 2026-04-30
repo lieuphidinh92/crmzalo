@@ -15,12 +15,31 @@
       {{ error }}
     </v-alert>
 
-    <!-- KHU 1: Today tasks -->
-    <TodayTasks
-      :appointments="todayAppointments"
+    <!-- KHU 1a: Top 5 tasks today + weekly cadence -->
+    <v-row dense class="mb-2">
+      <v-col cols="12" md="6">
+        <TodayTasksList
+          :tasks="(topTasks as any)"
+          :total-today="todayStats.total"
+          :done-count="todayStats.done"
+          :loading="tasksLoading"
+          :marking-id="markingId"
+          @done="onMarkTaskDone"
+          @open-tasks="$router.push('/tasks')"
+        />
+      </v-col>
+      <v-col cols="12" md="6">
+        <WeeklyCadence
+          :rows="(cadenceRows as any)"
+          :loading="cadenceLoading"
+        />
+      </v-col>
+    </v-row>
+
+    <!-- KHU 1b: Reminders (đại lý đến hạn liên hệ — kept from old block) -->
+    <RemindersList
       :reminders="dueReminders"
       class="mb-4"
-      @open-contact="openContactProfile"
       @open-zalo="openZaloChat"
       @mark-contacted="markContacted"
     />
@@ -54,7 +73,7 @@
       @open-inbox="openInbox"
       @add-contact="addContact"
       @quick-note="quickNoteOpen = true"
-      @add-appointment="addAppointment"
+      @add-appointment="addTask"
     />
 
     <QuickNoteDialog
@@ -71,15 +90,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import TodayTasks from './personal/TodayTasks.vue';
+import TodayTasksList from './personal/TodayTasksList.vue';
+import WeeklyCadence from './personal/WeeklyCadence.vue';
+import RemindersList from './personal/RemindersList.vue';
 import MyAtRiskAgents from './personal/MyAtRiskAgents.vue';
 import MyKpiRow from './personal/MyKpiRow.vue';
 import MyMiniPipeline from './personal/MyMiniPipeline.vue';
 import QuickActions from './personal/QuickActions.vue';
 import QuickNoteDialog from './personal/QuickNoteDialog.vue';
 import { usePersonalDashboard } from '@/composables/use-personal-dashboard';
+import { useCadenceProgress } from '@/composables/use-cadence-progress';
 import { useContacts } from '@/composables/use-contacts';
 import { useAuthStore } from '@/stores/auth';
+import { api } from '@/api/index';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -98,7 +121,6 @@ const todayDisplay = computed(() =>
 const {
   loading,
   error,
-  todayAppointments,
   dueReminders,
   myAtRisk,
   kpi,
@@ -107,7 +129,48 @@ const {
   fetchAll,
 } = usePersonalDashboard();
 
+const { rows: cadenceRows, loading: cadenceLoading, fetchProgress } = useCadenceProgress();
 const { fetchContactConversations } = useContacts();
+
+// Top 5 tasks for today + stats
+const topTasks = ref<any[]>([]);
+const todayStats = ref({ total: 0, done: 0 });
+const tasksLoading = ref(false);
+const markingId = ref<string | null>(null);
+
+async function fetchTopTasks() {
+  tasksLoading.value = true;
+  try {
+    const [todayRes, listRes] = await Promise.all([
+      api.get('/tasks/today').then((r) => r.data),
+      api.get('/tasks', { params: { period: 'today' } }).then((r) => r.data),
+    ]);
+    topTasks.value = todayRes.tasks ?? [];
+    todayStats.value = {
+      total: listRes.stats?.todayTotal ?? 0,
+      done: listRes.stats?.todayDone ?? 0,
+    };
+  } finally {
+    tasksLoading.value = false;
+  }
+}
+
+async function onMarkTaskDone(taskId: string) {
+  markingId.value = taskId;
+  try {
+    await api.put(`/tasks/${taskId}/done`, { completionNote: null });
+    await fetchTopTasks();
+    toast.value = { show: true, text: '✅ Hoàn thành!', color: 'success' };
+  } catch (err: any) {
+    toast.value = {
+      show: true,
+      text: err?.response?.data?.error ?? 'Lỗi',
+      color: 'error',
+    };
+  } finally {
+    markingId.value = null;
+  }
+}
 
 const quickNoteOpen = ref(false);
 const toast = ref({ show: false, text: '', color: 'success' as string });
@@ -143,7 +206,6 @@ async function openZaloChat(contactId: string) {
 async function markContacted(contactId: string) {
   // Best-effort: clear nextContactDate so it disappears from the list.
   try {
-    const { api } = await import('@/api/index');
     await api.put(`/contacts/${contactId}`, { nextContactDate: null });
     toast.value = {
       show: true,
@@ -174,8 +236,8 @@ function addContact() {
   router.push({ path: '/contacts', query: { create: '1' } });
 }
 
-function addAppointment() {
-  router.push('/appointments');
+function addTask() {
+  router.push('/tasks');
 }
 
 async function onQuickNoteSaved(_contactId: string) {
@@ -186,7 +248,9 @@ async function onQuickNoteSaved(_contactId: string) {
   };
 }
 
-onMounted(fetchAll);
+onMounted(async () => {
+  await Promise.all([fetchAll(), fetchProgress(), fetchTopTasks()]);
+});
 </script>
 
 <style scoped>
