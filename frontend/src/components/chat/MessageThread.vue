@@ -21,11 +21,34 @@
           <div class="text-caption text-grey">{{ conversation.zaloAccount?.displayName || 'Zalo' }}</div>
         </div>
         <v-btn
+          v-if="conversation.threadType === 'group'"
+          size="small"
+          variant="tonal"
+          color="amber"
+          prepend-icon="mdi-history"
+          :loading="syncing"
+          class="mr-2"
+          @click="syncHistory"
+        >
+          Tải lịch sử
+        </v-btn>
+        <v-btn
           :icon="showContactPanel ? 'mdi-account-details' : 'mdi-account-details-outline'"
           size="small" variant="text"
           :color="showContactPanel ? 'primary' : undefined"
           @click="$emit('toggle-contact-panel')"
         />
+      </div>
+
+      <!-- Banner: user-1-1 history limitation -->
+      <div
+        v-if="conversation.threadType === 'user'"
+        class="history-banner pa-2 px-3 d-flex align-center"
+      >
+        <v-icon size="14" class="mr-2" color="warning">mdi-information-outline</v-icon>
+        <span class="text-caption">
+          Zalo không cho phép tải lịch sử chat 1-1. CRM chỉ lưu tin nhắn từ thời điểm kết nối Zalo trở đi.
+        </span>
       </div>
 
       <!-- Messages -->
@@ -127,13 +150,51 @@ const props = defineProps<{
   showContactPanel?: boolean;
 }>();
 
-const emit = defineEmits<{ send: [content: string]; 'toggle-contact-panel': [] }>();
+const emit = defineEmits<{
+  send: [content: string];
+  'toggle-contact-panel': [];
+  'history-synced': [];
+}>();
 
 const inputText = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
 const previewImageUrl = ref('');
 const showImagePreview = computed({ get: () => !!previewImageUrl.value, set: (v) => { if (!v) previewImageUrl.value = ''; } });
 const syncSnack = ref({ show: false, text: '', color: 'success' });
+const syncing = ref(false);
+
+async function syncHistory() {
+  if (!props.conversation?.id) return;
+  syncing.value = true;
+  try {
+    const res = await api.post(`/conversations/${props.conversation.id}/sync-history`, { count: 100 });
+    const { synced, skipped, fetched } = res.data;
+    if (fetched === 0) {
+      syncSnack.value = { show: true, text: 'Zalo không trả về lịch sử nào', color: 'info' };
+    } else if (synced === 0) {
+      syncSnack.value = {
+        show: true,
+        text: `Đã đồng bộ rồi — ${skipped} tin trùng, không có tin mới`,
+        color: 'info',
+      };
+    } else {
+      syncSnack.value = {
+        show: true,
+        text: `Đã thêm ${synced} tin mới (bỏ qua ${skipped} tin trùng)`,
+        color: 'success',
+      };
+      emit('history-synced');
+    }
+  } catch (err: any) {
+    syncSnack.value = {
+      show: true,
+      text: err?.response?.data?.error || 'Tải lịch sử thất bại',
+      color: 'error',
+    };
+  } finally {
+    syncing.value = false;
+  }
+}
 
 function handleSend() { if (!inputText.value.trim()) return; emit('send', inputText.value); inputText.value = ''; }
 function formatMessageTime(d: string) { return new Date(d).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }); }
@@ -236,4 +297,9 @@ watch(() => props.messages.length, async () => { await nextTick(); if (messagesC
 .file-card { display: flex; align-items: center; padding: 8px 12px; border-radius: 8px; background: rgba(0, 242, 255, 0.05); border: 1px solid rgba(0, 242, 255, 0.1); }
 .chat-image { max-width: 100%; max-height: 300px; border-radius: 12px; cursor: pointer; transition: transform 0.2s; }
 .chat-image:hover { transform: scale(1.02); }
+.history-banner {
+  background: rgba(255, 183, 77, 0.08);
+  border-bottom: 1px solid rgba(255, 183, 77, 0.2);
+  color: var(--text-secondary, #b8c5d6);
+}
 </style>

@@ -50,6 +50,7 @@
         :sending="sendingMsg"
         @send="sendMessage"
         @toggle-contact-panel="showContactPanel = !showContactPanel"
+        @history-synced="onHistorySynced"
         :show-contact-panel="showContactPanel"
         style="flex: 1; min-width: 0;"
       />
@@ -93,6 +94,13 @@ const {
 function onFilterAccount(id: string | null) {
   accountFilter.value = id;
   fetchConversations();
+}
+
+async function onHistorySynced() {
+  // Re-select to re-fetch messages with the freshly synced rows.
+  if (selectedConvId.value) {
+    await selectConversation(selectedConvId.value);
+  }
 }
 
 function closeThread() {
