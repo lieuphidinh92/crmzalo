@@ -116,26 +116,32 @@ Một task chỉ được gọi là XONG khi:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ### Stack hiện tại:
-  - Frontend: Vue 3 + Vite (localhost:5173)
-  - Backend: Node.js + Express + Prisma
-  - Database: PostgreSQL (port 5432, local Homebrew)
+  - Frontend: Vue 3 + Vuetify + Vite (localhost:5173)
+  - Backend: Node.js + Fastify + Prisma 7 (ESM)
+  - Database: PostgreSQL 16 (port 5432, local Homebrew)
   - DB name: zalocrm
-  - Real-time: [Socket.io](http://Socket.io) (khi có)
+  - Real-time: Socket.IO (chat đã wire, task notifications chờ Phase 2)
 
 ### Cấu trúc thư mục:
-  /frontend   → Vue 3 app
-  /backend    → Express API
+  /frontend   → Vue 3 + Vuetify app
+  /backend    → Fastify API (modules dưới src/modules/<tên>/)
   /docs       → SESSION_HANDOFF, LESSONS_LEARNED
-  [CLAUDE.md](http://CLAUDE.md)   → File này
+  /CLAUDE.md  → File này
 
 ### Nguyên tắc code:
 
 #### Backend:
-  - Mọi route đều cần auth middleware
-  - Phân quyền: owner > admin > sale_leader > sale > cskh
-  - Format response chuẩn: { success, data, message, error }
+  - Mọi route đều cần `app.addHook('preHandler', authMiddleware)`
+  - Phân quyền: 3 cấp `owner | admin | member` (KHÔNG có
+    `sale_leader` / `sale` / `cskh`). Gate admin-only:
+    `{ preHandler: requireRole('owner', 'admin') }`. Member-scoped
+    list: filter `assignedToId = request.user.id`.
+  - Format response: trả thẳng object/array (vd `{ tasks: [...] }`,
+    `{ rules: [...] }`). Error: HTTP status code + `{ error: "msg" }`.
+    KHÔNG dùng envelope `{ success, data, message, error }`.
   - Tất cả số tiền lưu dạng integer (đồng VND, không dùng float)
   - Timezone: Asia/Ho_Chi_Minh cho mọi cron job
+  - Prisma 7 ESM quirk: `import pkg from '@prisma/client'; const { PrismaClient } = pkg;` (named import KHÔNG work)
 
 #### Frontend:
   - Dark theme: giữ nguyên, không tự ý đổi màu
@@ -145,17 +151,26 @@ Một task chỉ được gọi là XONG khi:
   - Mobile responsive: kiểm tra trước khi báo xong
 
 #### Database:
-  - Mọi thay đổi schema phải qua Prisma migration
-  - KHÔNG xoá column cũ, đổi tên thành _legacy
-  - Seed data phải idempotent (chạy nhiều lần không bị lỗi)
-  - Mọi bảng cần có: created_at, updated_at
+  - Repo dùng `prisma db push` (schema-first, KHÔNG có thư mục
+    `prisma/migrations/`). Đổi schema: sửa `schema.prisma` → chạy
+    `npx prisma db push --url "$DATABASE_URL"` → `npx prisma generate`
+  - Khi xoá column/model: nếu là cleanup hợp lệ user yêu cầu thì
+    DROP thẳng (Phase 1 đã drop Patient/ContactDisease/Icd10Code).
+    Chỉ giữ legacy alias khi schema còn ràng buộc với data prod.
+  - Seed data phải idempotent (chạy nhiều lần không bị lỗi). Pattern:
+    seed-on-first-use trong preHandler hook (xem `task-seeds.ts`,
+    `learning-seeds.ts`)
+  - `created_at` là chuẩn cho mọi bảng. `updated_at` chỉ thêm khi
+    record thực sự cần track edit time (ví dụ: rules, settings).
+    Append-only logs (StageHistory, ActivityLog, LearningProgress
+    snapshots) chỉ cần created_at.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## 📦 MODULES ĐÃ BUILD (Đừng đụng vào nếu không cần)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ### ✅ Hoàn thành:
-  - Auth + phân quyền (owner/admin/sale_leader/sale/cskh)
+  - Auth + phân quyền (3 cấp: owner / admin / member)
   - Khách hàng B2B sỉ (contacts) — đã remove trường phòng khám cũ
   - Tài khoản Zalo + Tin nhắn Zalo
   - Trả lời nhanh (Quick Replies - 5 template)
@@ -165,10 +180,10 @@ Một task chỉ được gọi là XONG khi:
   - Dashboard cá nhân hoá theo role (Sale vs Admin)
   - Việc cần làm / Task Management (Phase 1)
   - Sidebar collapsible theo 5 nhóm
+  - /tasks/learning — module học tập (Phase 2)
+  - /settings/cadence — admin config 4 tab rules (Phase 2)
 
-### 🔄 Đang build (Phase 2):
-  - /tasks/learning — module học tập
-  - /settings/cadence — admin config rules
+### 🔄 Đang build:
   - Compliance Score refactor (5 sub-metrics)
   - WebSocket realtime + audio + confetti
 
