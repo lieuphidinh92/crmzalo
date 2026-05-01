@@ -53,6 +53,8 @@ import { searchRoutes } from './modules/search/search-routes.js';
 import { orderRoutes } from './modules/orders/order-routes.js';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
 import { quickReplyRoutes } from './modules/quick-replies/quick-reply-routes.js';
+import { learningRoutes } from './modules/learning/learning-routes.js';
+import { cadenceRoutes } from './modules/cadence/cadence-routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -139,6 +141,8 @@ async function bootstrap() {
   await app.register(searchRoutes);
   await app.register(orderRoutes);
   await app.register(quickReplyRoutes);
+  await app.register(learningRoutes);
+  await app.register(cadenceRoutes);
 
   // Liveness/readiness probe — also checks DB connectivity
   app.get('/health', async () => {

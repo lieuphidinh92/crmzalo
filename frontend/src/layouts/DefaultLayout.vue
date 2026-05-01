@@ -204,6 +204,7 @@ const allGroups: MenuGroup[] = [
     icon: 'mdi-clipboard-check-outline',
     items: [
       { title: 'Việc cần làm', icon: 'mdi-checkbox-marked-circle-outline', path: '/tasks' },
+      { title: 'Học tập', icon: 'mdi-school-outline', path: '/tasks/learning' },
     ],
   },
   {
@@ -225,6 +226,7 @@ const allGroups: MenuGroup[] = [
       { title: 'Nhân viên', icon: 'mdi-account-cog-outline', path: '/settings' },
       { title: 'Công việc AI', icon: 'mdi-robot-outline', path: '/jobs' },
       { title: 'Cấu hình', icon: 'mdi-tune-variant', path: '/ai-settings' },
+      { title: 'Cấu hình Cadence', icon: 'mdi-calendar-clock', path: '/settings/cadence' },
       { title: 'Thêm', icon: 'mdi-dots-horizontal', path: '/more' },
     ],
   },

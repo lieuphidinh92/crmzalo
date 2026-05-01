@@ -49,6 +49,18 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/tasks/learning',
+    name: 'Learning',
+    component: () => import('@/views/LearningView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/settings/cadence',
+    name: 'CadenceSettings',
+    component: () => import('@/views/CadenceSettingsView.vue'),
+    meta: { requiresAuth: true, adminOnly: true },
+  },
+  {
     path: '/orders',
     name: 'Orders',
     component: () => import('@/views/OrdersView.vue'),
