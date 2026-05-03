@@ -55,6 +55,7 @@ import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
 import { quickReplyRoutes } from './modules/quick-replies/quick-reply-routes.js';
 import { learningRoutes } from './modules/learning/learning-routes.js';
 import { cadenceRoutes } from './modules/cadence/cadence-routes.js';
+import { pancakeWebhookRoutes } from './modules/webhooks/pancake-routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -143,6 +144,7 @@ async function bootstrap() {
   await app.register(quickReplyRoutes);
   await app.register(learningRoutes);
   await app.register(cadenceRoutes);
+  await app.register(pancakeWebhookRoutes);
 
   // Liveness/readiness probe — also checks DB connectivity
   app.get('/health', async () => {
@@ -154,9 +156,30 @@ async function bootstrap() {
     }
   });
 
-  // API version banner
+  // API version banner + public-facing API discovery for external integrations
   app.get('/api/v1/status', async () => {
-    return { version: '1.0.0', name: 'Zalo Sales CRM' };
+    return {
+      version: '1.0.0',
+      name: 'Zalo Sales CRM',
+      publicUrl: config.publicUrl,
+      integrations: {
+        pancake: {
+          endpoint: `${config.publicUrl}/api/webhooks/pancake`,
+          method: 'POST',
+          contentType: 'application/json',
+          authHeader: 'X-Api-Key',
+          envVar: 'PANCAKE_API_KEY',
+          payloadShape: {
+            conversation_id: 'string (optional, for idempotency)',
+            customer_name: 'string (optional)',
+            customer_phone: 'string (required, normalized)',
+            facebook_id: 'string (optional)',
+            page_id: 'string (optional)',
+            first_message: 'string (optional, snippet)',
+          },
+        },
+      },
+    };
   });
 
   // SPA fallback — serve index.html for non-API routes in production

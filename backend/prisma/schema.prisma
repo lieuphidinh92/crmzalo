@@ -119,6 +119,8 @@ model Contact {
   zaloUid           String?   @map("zalo_uid")
   phone             String?
   fullName          String?   @map("full_name")
+  facebookId        String?   @map("facebook_id")
+  pancakeConversationId String? @map("pancake_conversation_id")
   avatarUrl         String?   @map("avatar_url")
   source            String?   // FB, TT, GT, CN, zalo, gioi_thieu, khac
   sourceDate        DateTime? @map("source_date")
@@ -167,7 +169,23 @@ model Contact {
   @@index([orgId, customerType])
   @@index([orgId, stage])
   @@index([orgId, province])
+  @@index([orgId, phone])
   @@map("contacts")
+}
+
+// Inbound webhook payloads (Pancake, future integrations).
+// One row per webhook delivery — used for debugging / replay.
+model WebhookLog {
+  id           String   @id @default(uuid())
+  orgId        String?  @map("org_id")
+  source       String   // pancake | future-source
+  payload      Json     @default("{}")
+  status       String   // received | success | failed | duplicate | unauthorized
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([source, createdAt])
+  @@map("webhook_logs")
 }
 
 // Audit trail for B2B sales-stage transitions. One row per stage change
