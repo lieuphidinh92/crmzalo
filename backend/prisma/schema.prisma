@@ -121,6 +121,7 @@ model Contact {
   fullName          String?   @map("full_name")
   facebookId        String?   @map("facebook_id")
   pancakeConversationId String? @map("pancake_conversation_id")
+  misaCustomerCode  String?   @map("misa_customer_code")
   avatarUrl         String?   @map("avatar_url")
   source            String?   // FB, TT, GT, CN, zalo, gioi_thieu, khac
   sourceDate        DateTime? @map("source_date")
@@ -170,6 +171,7 @@ model Contact {
   @@index([orgId, stage])
   @@index([orgId, province])
   @@index([orgId, phone])
+  @@index([orgId, misaCustomerCode])
   @@map("contacts")
 }
 
@@ -444,10 +446,38 @@ model Order {
   contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
   createdBy    User          @relation("CreatedOrders", fields: [createdByUserId], references: [id])
   conversation Conversation? @relation(fields: [conversationId], references: [id])
+  items        OrderItem[]
 
+  @@unique([orgId, orderCode])
   @@index([orgId, orderDate])
   @@index([orgId, contactId])
   @@map("orders")
+}
+
+// Line items per order — populated from MISA "Sổ chi tiết bán hàng" or
+// future order entry forms. Master Order keeps total/status; OrderItem
+// powers product-level analytics (top SKU, brand mix, repurchase per SKU).
+// `costValue` is sensitive (giá vốn) — only owner role may read it via API.
+model OrderItem {
+  id            String  @id @default(uuid())
+  orderId       String  @map("order_id")
+  sku           String                                       // MH_01, BIO_07
+  productName   String  @map("product_name")
+  unit          String?                                      // Hộp / Lọ / Bộ
+  quantity      Float
+  unitPrice     Float   @map("unit_price")
+  discountValue Float   @default(0) @map("discount_value")
+  lineTotal     Float   @map("line_total")
+  costValue     Float?  @map("cost_value")                   // owner-only
+  returnQty     Float   @default(0) @map("return_qty")
+  returnValue   Float   @default(0) @map("return_value")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([sku])
+  @@map("order_items")
 }
 
 // Quick-reply templates — single shared set per organization.

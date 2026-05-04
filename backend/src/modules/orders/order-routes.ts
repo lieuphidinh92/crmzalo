@@ -84,6 +84,34 @@ export async function orderRoutes(app: FastifyInstance) {
     return order;
   });
 
+  // GET /api/v1/orders/:id — detail with line items.
+  // `costValue` (giá vốn) is stripped from items unless caller is owner.
+  app.get('/api/v1/orders/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user!;
+    const { id } = request.params as { id: string };
+
+    const order = await prisma.order.findFirst({
+      where: { id, orgId: user.orgId },
+      include: {
+        contact: {
+          select: {
+            id: true, fullName: true, phone: true, customerType: true,
+            storeName: true, province: true, misaCustomerCode: true,
+          },
+        },
+        createdBy: { select: { id: true, fullName: true, email: true } },
+        items: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!order) return reply.status(404).send({ error: 'Order not found' });
+
+    // Owner sees giá vốn; everyone else gets it stripped.
+    if (user.role !== 'owner') {
+      order.items = order.items.map((it: typeof order.items[number]) => ({ ...it, costValue: null }));
+    }
+    return order;
+  });
+
   // Update order (totalAmount, status, notes)
   app.put('/api/v1/orders/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
