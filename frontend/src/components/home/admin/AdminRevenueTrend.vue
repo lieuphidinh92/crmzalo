@@ -20,12 +20,8 @@
 
     <v-progress-linear v-if="trendLoading" indeterminate color="primary" class="mb-2" />
 
-    <Line
-      v-if="chartData"
-      :data="chartData"
-      :options="chartOptions"
-      style="height: 300px;"
-    />
+    <div v-if="chartData" style="position: relative; height: 300px;">
+      <Line :data="chartData" :options="chartOptions" /></div>
     <div v-else class="text-center pa-8 text-medium-emphasis">
       <v-icon size="48" color="grey-darken-1">mdi-chart-line-variant</v-icon>
       <div class="mt-2">Chưa có order nào trong 12 tháng gần đây</div>

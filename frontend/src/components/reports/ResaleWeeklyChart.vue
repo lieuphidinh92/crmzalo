@@ -4,7 +4,7 @@
       <v-icon icon="mdi-chart-line" color="primary" class="mr-2" />
       <div class="text-h6">Doanh số resale theo tuần</div>
     </div>
-    <Line v-if="chartData" :data="chartData" :options="chartOptions" style="height: 280px;" />
+    <div v-if="chartData" style="position: relative; height: 280px;"><Line :data="chartData" :options="chartOptions" /></div>
     <div v-else class="text-center pa-8 text-medium-emphasis">
       <v-icon size="48" color="grey-darken-1">mdi-chart-line-variant</v-icon>
       <div class="mt-2">Chưa có dữ liệu</div>

@@ -15,12 +15,9 @@
       </v-chip>
     </div>
 
-    <Bar
-      v-if="chartData"
-      :data="chartData"
-      :options="chartOptions"
-      style="height: 320px;"
-    />
+    <div v-if="chartData" class="chart-box">
+      <Bar :data="chartData" :options="chartOptions" />
+    </div>
     <div v-else class="text-center pa-8 text-medium-emphasis">
       <v-icon size="48" color="grey-darken-1">mdi-chart-line-variant</v-icon>
       <div class="mt-2">Chưa có dữ liệu YTD</div>
@@ -225,3 +222,15 @@ function healthColor(h: string): string {
   return 'grey';
 }
 </script>
+
+<style scoped>
+/* Chart.js with responsive:true + maintainAspectRatio:false reads its
+   parent element for sizing. The parent MUST have explicit dimensions +
+   position:relative — otherwise the canvas grows unbounded and the
+   browser hangs trying to allocate millions of pixels. */
+.chart-box {
+  position: relative;
+  height: 320px;
+  width: 100%;
+}
+</style>

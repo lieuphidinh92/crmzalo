@@ -1,10 +1,7 @@
 <template>
-  <Radar
-    v-if="chartData"
-    :data="chartData"
-    :options="chartOptions"
-    style="height: 280px;"
-  />
+  <div v-if="chartData" class="chart-box">
+    <Radar :data="chartData" :options="chartOptions" />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -80,3 +77,11 @@ const chartOptions = {
   },
 };
 </script>
+
+<style scoped>
+.chart-box {
+  position: relative;
+  height: 280px;
+  width: 100%;
+}
+</style>

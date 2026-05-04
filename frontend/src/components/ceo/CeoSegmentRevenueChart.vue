@@ -5,12 +5,9 @@
       <div class="text-h6">DS theo loại đại lý — 12 tháng</div>
     </div>
 
-    <Bar
-      v-if="chartData"
-      :data="chartData"
-      :options="chartOptions"
-      style="height: 320px;"
-    />
+    <div v-if="chartData" class="chart-box">
+      <Bar :data="chartData" :options="chartOptions" />
+    </div>
     <div v-else class="text-center pa-8 text-medium-emphasis">
       <v-icon size="48" color="grey-darken-1">mdi-chart-bar</v-icon>
       <div class="mt-2">Chưa có order nào trong 12 tháng gần đây</div>
@@ -105,3 +102,11 @@ function formatMonth(ym: string): string {
   return `${m}/${y.slice(2)}`;
 }
 </script>
+
+<style scoped>
+.chart-box {
+  position: relative;
+  height: 320px;
+  width: 100%;
+}
+</style>

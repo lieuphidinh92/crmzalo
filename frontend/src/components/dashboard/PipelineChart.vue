@@ -2,7 +2,7 @@
   <v-card>
     <v-card-title class="text-body-1">Pipeline B2B</v-card-title>
     <v-card-text>
-      <Doughnut v-if="chartData" :data="chartData" :options="chartOptions" style="height: 250px;" />
+      <div v-if="chartData" style="position: relative; height: 250px;"><Doughnut :data="chartData" :options="chartOptions" /></div>
       <div v-else class="text-center pa-8 text-grey">Không có dữ liệu</div>
     </v-card-text>
   </v-card>
