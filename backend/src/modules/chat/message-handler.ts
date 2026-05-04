@@ -101,62 +101,34 @@ export async function handleIncomingMessage(
   }
 }
 
-// Upsert contact — handles both user and group conversations
+// Find — but DO NOT create — a contact for an incoming Zalo message.
+// Per business rule, contacts may only be created from:
+//   1. Manual entry (POST /api/v1/contacts)
+//   2. Order sync (MISA import script)
+//   3. Pancake webhook (lead from Facebook)
+//
+// Zalo conversations may exist without a linked contact; the chat UI
+// shows the senderName from the message and the user can manually link
+// the conversation to a contact later.
+//
+// Group conversations NEVER produce a contact — a Zalo group is a
+// channel, not a B2B customer.
 async function upsertContact(msg: IncomingMessage, orgId: string): Promise<string | null> {
-  // Group messages: create/update a "contact" record representing the group
-  if (msg.threadType === 'group') {
-    const groupUid = msg.threadId;
-    let groupContact = await prisma.contact.findFirst({
-      where: { zaloUid: groupUid, orgId },
-      select: { id: true, fullName: true },
-    });
+  // Groups: never link to any contact
+  if (msg.threadType === 'group') return null;
 
-    if (!groupContact) {
-      groupContact = await prisma.contact.create({
-        data: {
-          id: randomUUID(),
-          orgId,
-          zaloUid: groupUid,
-          fullName: msg.groupName || 'Nhóm',
-          metadata: { isGroup: true },
-        },
-        select: { id: true, fullName: true },
-      });
-    } else if (msg.groupName && groupContact.fullName !== msg.groupName) {
-      await prisma.contact.update({
-        where: { id: groupContact.id },
-        data: { fullName: msg.groupName },
-      });
-    }
-    return groupContact.id;
-  }
-
-  // User messages: self messages don't create a contact
+  // Self messages: no need to look up
   if (msg.isSelf) return null;
 
-  let contact = await prisma.contact.findFirst({
+  // 1-1 user message: look up existing contact by Zalo UID. If staff
+  // already linked this UID to a contact (manually or via Pancake), use
+  // it; otherwise leave conversation contact-less.
+  const contact = await prisma.contact.findFirst({
     where: { zaloUid: msg.senderUid, orgId },
-    select: { id: true, fullName: true },
+    select: { id: true },
   });
 
-  if (!contact) {
-    contact = await prisma.contact.create({
-      data: {
-        id: randomUUID(),
-        orgId,
-        zaloUid: msg.senderUid,
-        fullName: msg.senderName || 'Unknown',
-      },
-      select: { id: true, fullName: true },
-    });
-  } else if (msg.senderName && contact.fullName !== msg.senderName) {
-    await prisma.contact.update({
-      where: { id: contact.id },
-      data: { fullName: msg.senderName },
-    });
-  }
-
-  return contact.id;
+  return contact?.id ?? null;
 }
 
 // Find or create conversation — externalThreadId = threadId for both user and group
