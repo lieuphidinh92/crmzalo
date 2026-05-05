@@ -393,6 +393,68 @@ export async function getTopSalesForPeriod(
   return getTopSales(orgId, limit);
 }
 
+/* ── 4b. Critical alerts (VIP churn + underperforming sales) ─────── */
+
+interface CriticalAlertsResponse {
+  vipAtRisk: Array<{
+    contactId: string;
+    fullName: string;
+    province: string | null;
+    phone: string | null;
+    zaloUid: string | null;
+    lifetimeRevenue: number;
+    daysInactive: number;
+  }>;
+  underperformingSales: Array<{
+    saleId: string;
+    saleName: string;
+    score: number;
+    monthRevenue: number;
+  }>;
+}
+
+const UNDERPERFORM_SCORE_THRESHOLD = 50;
+
+export async function getCriticalAlerts(
+  orgId: string,
+  filters: OverviewFilters,
+): Promise<CriticalAlertsResponse> {
+  // VIPs about to churn — reuse top-customers at_risk logic, top 5
+  const at = await getTopCustomers(orgId, filters, 'at_risk', 5);
+  const vipAtRisk = at
+    .filter((r) => r.atRisk)
+    .map((r) => ({
+      contactId: r.contactId,
+      fullName: r.fullName,
+      province: r.province,
+      phone: r.phone,
+      zaloUid: (r as { zaloUid?: string | null }).zaloUid ?? null,
+      lifetimeRevenue: (r as { lifetimeRevenue?: number }).lifetimeRevenue ?? 0,
+      daysInactive: (r as { daysInactive?: number }).daysInactive ?? 0,
+    }));
+
+  // Underperforming sales — score < threshold for current calendar month.
+  // Existing getTopSales already returns sorted desc; we tail-filter.
+  const { getTopSales } = await import(
+    '../dashboard/admin-dashboard-service.js'
+  );
+  const allSales = await getTopSales(orgId, 50);
+  const underperformingSales = allSales
+    .filter(
+      (s: { score: number; monthRevenue: number }) =>
+        s.score < UNDERPERFORM_SCORE_THRESHOLD && s.monthRevenue >= 0,
+    )
+    .slice(0, 5)
+    .map((s: { saleId: string; saleName: string; score: number; monthRevenue: number }) => ({
+      saleId: s.saleId,
+      saleName: s.saleName,
+      score: s.score,
+      monthRevenue: s.monthRevenue,
+    }));
+
+  return { vipAtRisk, underperformingSales };
+}
+
 /* ── 4. Top customers ─────────────────────────────────────────────── */
 
 export type CustomerRankType = 'revenue' | 'resale' | 'profit' | 'at_risk';

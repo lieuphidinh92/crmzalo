@@ -78,8 +78,14 @@
       :data="kpi"
       :spark="sparklines"
       :loading="loadingKpi"
-      class="mb-4"
+      class="mb-3"
     />
+
+    <!-- Section 7: Critical alerts (auto-hide if both lists empty) -->
+    <OverviewCriticalAlerts :data="criticalAlerts" class="mb-3" />
+
+    <!-- Section 9: Quick links horizontal scroll -->
+    <OverviewQuickLinks class="mb-3" />
 
     <!-- Sections 2-4: Top products / Top sales / Top customers -->
     <v-row dense>
@@ -116,6 +122,8 @@ import OverviewKpiCards from '@/components/reports/overview/OverviewKpiCards.vue
 import OverviewTopProducts from '@/components/reports/overview/OverviewTopProducts.vue';
 import OverviewTopSales from '@/components/reports/overview/OverviewTopSales.vue';
 import OverviewTopCustomers from '@/components/reports/overview/OverviewTopCustomers.vue';
+import OverviewCriticalAlerts from '@/components/reports/overview/OverviewCriticalAlerts.vue';
+import OverviewQuickLinks from '@/components/reports/overview/OverviewQuickLinks.vue';
 import {
   formatDateVN,
   presetLabel,
@@ -142,6 +150,7 @@ const {
   filters,
   kpi,
   sparklines,
+  criticalAlerts,
   topProducts,
   topSales,
   topCustomers,

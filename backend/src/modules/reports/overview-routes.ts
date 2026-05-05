@@ -19,6 +19,7 @@ import {
   withCache,
 } from './resale-service.js';
 import {
+  getCriticalAlerts,
   getKpi,
   getSparklines,
   getTopCustomers,
@@ -145,6 +146,21 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
           limit,
         ),
       }));
+    },
+  );
+
+  app.get(
+    '/api/v1/reports/overview/critical-alerts',
+    async (request: FastifyRequest) => {
+      const filters = parseFilters(request.query as Q, request.user!);
+      const key = filterCacheKey(
+        'overview-critical-alerts',
+        request.user!.orgId,
+        filters,
+      );
+      return withCache(key, () =>
+        getCriticalAlerts(request.user!.orgId, filters),
+      );
     },
   );
 

@@ -66,6 +66,24 @@ export interface TopProductRow {
   costCoveragePercent: number;
 }
 
+export interface CriticalAlertsResponse {
+  vipAtRisk: Array<{
+    contactId: string;
+    fullName: string;
+    province: string | null;
+    phone: string | null;
+    zaloUid: string | null;
+    lifetimeRevenue: number;
+    daysInactive: number;
+  }>;
+  underperformingSales: Array<{
+    saleId: string;
+    saleName: string;
+    score: number;
+    monthRevenue: number;
+  }>;
+}
+
 export interface SparklineResponse {
   buckets: string[];
   totalRevenue: number[];
@@ -232,6 +250,7 @@ export function useOverviewReport() {
 
   const kpi = ref<KpiResponse | null>(null);
   const sparklines = ref<SparklineResponse | null>(null);
+  const criticalAlerts = ref<CriticalAlertsResponse | null>(null);
   const topProducts = ref<TopProductRow[]>([]);
   const topSales = ref<TopSaleRow[]>([]);
   const topCustomers = ref<TopCustomerRow[]>([]);
@@ -309,6 +328,18 @@ export function useOverviewReport() {
     }
   }
 
+  async function fetchCriticalAlerts() {
+    try {
+      const { data } = await api.get<CriticalAlertsResponse>(
+        `/reports/overview/critical-alerts?${queryString.value}`,
+      );
+      criticalAlerts.value = data;
+    } catch (e: unknown) {
+      // Critical alerts are advisory — don't surface a snackbar for it.
+      console.warn('[overview] critical-alerts fetch failed:', e);
+    }
+  }
+
   async function fetchTopSales() {
     loadingSales.value = true;
     try {
@@ -348,6 +379,7 @@ export function useOverviewReport() {
       fetchTopProducts(),
       fetchTopSales(),
       fetchTopCustomers(),
+      fetchCriticalAlerts(),
     ]);
   }
 
@@ -364,6 +396,7 @@ export function useOverviewReport() {
     filters,
     kpi,
     sparklines,
+    criticalAlerts,
     topProducts,
     topSales,
     topCustomers,
