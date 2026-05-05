@@ -90,43 +90,21 @@
     <!-- Section 1: KPI cards -->
     <OverviewKpiCards :data="kpi" :loading="loadingKpi" class="mb-4" />
 
-    <!-- Section 2: Top products -->
+    <!-- Sections 2-4: Top products / Top sales / Top customers -->
     <v-row dense>
       <v-col cols="12" md="6" lg="4">
         <OverviewTopProducts :products="topProducts" :loading="loadingProducts" />
       </v-col>
-
-      <!-- Section 3 + 4 placeholders for Session 2 -->
       <v-col cols="12" md="6" lg="4">
-        <v-card class="placeholder-card pa-3 h-100" variant="flat">
-          <div class="d-flex align-center mb-2">
-            <v-icon icon="mdi-trophy-outline" color="primary" class="mr-2" />
-            <span class="text-h6">Top NV Sale tháng</span>
-          </div>
-          <div class="text-caption text-medium-emphasis mb-3">
-            Đang xây dựng — sẽ ra ở Session 2
-          </div>
-          <div class="placeholder-empty">
-            <v-icon size="40" color="grey-darken-1">mdi-account-group-outline</v-icon>
-            <div class="mt-2 text-caption">Coming soon</div>
-          </div>
-        </v-card>
+        <OverviewTopSales :sales="topSales" :loading="loadingSales" />
       </v-col>
-
       <v-col cols="12" md="12" lg="4">
-        <v-card class="placeholder-card pa-3 h-100" variant="flat">
-          <div class="d-flex align-center mb-2">
-            <v-icon icon="mdi-account-star-outline" color="primary" class="mr-2" />
-            <span class="text-h6">Top khách hàng</span>
-          </div>
-          <div class="text-caption text-medium-emphasis mb-3">
-            Đang xây dựng — sẽ ra ở Session 2
-          </div>
-          <div class="placeholder-empty">
-            <v-icon size="40" color="grey-darken-1">mdi-account-multiple-outline</v-icon>
-            <div class="mt-2 text-caption">Coming soon</div>
-          </div>
-        </v-card>
+        <OverviewTopCustomers
+          :customers="topCustomers"
+          :loading="loadingCustomers"
+          :active-type="topCustomerType"
+          @change-type="onChangeCustomerType"
+        />
       </v-col>
     </v-row>
 
@@ -140,12 +118,16 @@
 import { computed, ref } from 'vue';
 import OverviewKpiCards from '@/components/reports/overview/OverviewKpiCards.vue';
 import OverviewTopProducts from '@/components/reports/overview/OverviewTopProducts.vue';
+import OverviewTopSales from '@/components/reports/overview/OverviewTopSales.vue';
+import OverviewTopCustomers from '@/components/reports/overview/OverviewTopCustomers.vue';
 import {
   formatDateVN,
   presetLabel,
   useOverviewReport,
   type RangePreset,
 } from '@/composables/use-overview-report';
+
+type CustomerType = 'revenue' | 'resale' | 'profit' | 'at_risk';
 
 const PRESETS: RangePreset[] = [
   'today',
@@ -159,14 +141,24 @@ const {
   filters,
   kpi,
   topProducts,
+  topSales,
+  topCustomers,
+  topCustomerType,
   loadingKpi,
   loadingProducts,
+  loadingSales,
+  loadingCustomers,
   anyLoading,
   error,
   setPreset,
   setCustomRange,
+  fetchTopCustomers,
   refreshAll,
 } = useOverviewReport();
+
+function onChangeCustomerType(type: CustomerType) {
+  void fetchTopCustomers(type);
+}
 
 const showCustom = ref(filters.preset === 'custom');
 const customFrom = ref(filters.from);

@@ -66,6 +66,17 @@ export interface TopProductRow {
   costCoveragePercent: number;
 }
 
+export interface TopSaleRow {
+  rank: number;
+  saleId: string;
+  saleName: string;
+  score: number;
+  monthRevenue: number;
+  resaleRevenue?: number;
+  newAgentRevenue?: number;
+  totalRevenue?: number;
+}
+
 export interface TopCustomerRow {
   rank: number;
   contactId: string;
@@ -207,11 +218,13 @@ export function useOverviewReport() {
 
   const kpi = ref<KpiResponse | null>(null);
   const topProducts = ref<TopProductRow[]>([]);
+  const topSales = ref<TopSaleRow[]>([]);
   const topCustomers = ref<TopCustomerRow[]>([]);
   const topCustomerType = ref<'revenue' | 'resale' | 'profit' | 'at_risk'>('revenue');
 
   const loadingKpi = ref(false);
   const loadingProducts = ref(false);
+  const loadingSales = ref(false);
   const loadingCustomers = ref(false);
 
   const error = ref<string | null>(null);
@@ -277,6 +290,20 @@ export function useOverviewReport() {
     }
   }
 
+  async function fetchTopSales() {
+    loadingSales.value = true;
+    try {
+      const { data } = await api.get<{ sales: TopSaleRow[] }>(
+        `/reports/overview/top-sales?${queryString.value}&limit=5`,
+      );
+      topSales.value = data.sales;
+    } catch (e: unknown) {
+      error.value = (e as Error)?.message ?? 'Lỗi tải top sale';
+    } finally {
+      loadingSales.value = false;
+    }
+  }
+
   async function fetchTopCustomers(type = topCustomerType.value) {
     loadingCustomers.value = true;
     topCustomerType.value = type;
@@ -297,7 +324,12 @@ export function useOverviewReport() {
 
   async function refreshAll() {
     error.value = null;
-    await Promise.all([fetchKpi(), fetchTopProducts(), fetchTopCustomers()]);
+    await Promise.all([
+      fetchKpi(),
+      fetchTopProducts(),
+      fetchTopSales(),
+      fetchTopCustomers(),
+    ]);
   }
 
   // Auto-refetch on filter change (debounce-less; cache on backend dedup).
@@ -313,13 +345,19 @@ export function useOverviewReport() {
     filters,
     kpi,
     topProducts,
+    topSales,
     topCustomers,
     topCustomerType,
     loadingKpi,
     loadingProducts,
+    loadingSales,
     loadingCustomers,
     anyLoading: computed(
-      () => loadingKpi.value || loadingProducts.value || loadingCustomers.value,
+      () =>
+        loadingKpi.value ||
+        loadingProducts.value ||
+        loadingSales.value ||
+        loadingCustomers.value,
     ),
     error,
     setPreset,
