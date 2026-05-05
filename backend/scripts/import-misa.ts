@@ -246,6 +246,14 @@ async function main() {
     const misaCode = first.misaCustomerCode;
     const phone = first.phoneMobile || first.phoneFix || null;
     const phone9 = phoneNorm(phone);
+    // Use the EARLIEST order date as the customer's "first contact" — this
+    // is what resale/retention metrics filter on (contact.createdAt < month).
+    // Without this, every imported MISA contact would carry today's date and
+    // get classified as a brand-new lead, breaking the CEO score panel.
+    const earliestOrderDate = rows
+      .map((r) => r.orderDate)
+      .filter((d): d is Date => !!d)
+      .sort((a, b) => a.getTime() - b.getTime())[0] ?? first.orderDate;
 
     let contactId: string | undefined;
     let matchedBy = '';
@@ -279,8 +287,11 @@ async function main() {
             phone: phone || null,
             misaCustomerCode: misaCode,
             source: 'misa_import',
-            sourceDate: first.orderDate,
-            firstContactDate: first.orderDate,
+            sourceDate: earliestOrderDate,
+            firstContactDate: earliestOrderDate,
+            // Override the @default(now()) so resale-revenue metrics
+            // recognize this as a returning customer from prior periods.
+            createdAt: earliestOrderDate,
             province: first.province,
             stage: 'dai_ly_chinh_thuc',
             assignedUserId: resolveSale(first.saleNvName),
