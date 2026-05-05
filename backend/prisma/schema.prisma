@@ -29,6 +29,9 @@ model Organization {
   recurringTaskRules  RecurringTaskRule[]
   autoTaskRules       AutoTaskRule[]
   learningModules     LearningModule[]
+  suppliers           Supplier[]
+  brands              Brand[]
+  products            Product[]
 
   @@map("organizations")
 }
@@ -613,6 +616,103 @@ model LearningModule {
   progress LearningProgress[]
 
   @@map("learning_modules")
+}
+
+// ── Sản phẩm / Brand / NCC (Module Bán hàng — Session 1) ────────────
+// One supplier (NCC) → many brands → many products. Each product carries a
+// flexible list of price tiers (CTV, đại lý cấp 1/2, lẻ niêm yết, + tier
+// admin tự thêm). Cost price (`costPrice`) is owner/admin-only — backend
+// strips it from list responses for `member` role.
+model Supplier {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  name        String
+  country     String?
+  contactInfo String?  @map("contact_info")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  brands Brand[]
+
+  @@index([orgId, active])
+  @@map("suppliers")
+}
+
+model Brand {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  name        String
+  supplierId  String?  @map("supplier_id")
+  description String?
+  logoUrl     String?  @map("logo_url")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  supplier Supplier?    @relation(fields: [supplierId], references: [id])
+  products Product[]
+
+  @@index([orgId, active])
+  @@map("brands")
+}
+
+model Product {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  sku                String
+  name               String
+  brandId            String?  @map("brand_id")
+  packageSize        String?  @map("package_size")
+  mainImageUrl       String?  @map("main_image_url")
+  galleryUrls        Json     @default("[]") @map("gallery_urls")
+  status             String   @default("active") // active | discontinued | coming_soon
+  // TPCN info
+  mainUse            String?  @map("main_use")
+  targetAudience     String?  @map("target_audience")
+  usageMethod        String?  @map("usage_method")
+  shelfLifeMonths    Int?     @map("shelf_life_months")
+  registrationNumber String?  @map("registration_number")
+  // Stock — totalStock will be auto-derived from batches in Session 3 (Inventory)
+  totalStock         Int      @default(0) @map("total_stock")
+  warningStock       Int      @default(30) @map("warning_stock")
+  unit               String   @default("hộp") // hộp | lọ | chai | gói
+  // Cost — sensitive, owner/admin only
+  costPrice          Decimal? @map("cost_price") @db.Decimal(15, 2)
+  // Marketing docs — list of { id, type, name, driveUrl, createdAt }
+  marketingDocs      Json     @default("[]") @map("marketing_docs")
+  createdById        String?  @map("created_by")
+  updatedById        String?  @map("updated_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  brand  Brand?         @relation(fields: [brandId], references: [id])
+  prices ProductPrice[]
+
+  @@unique([orgId, sku])
+  @@index([orgId, status])
+  @@index([orgId, brandId])
+  @@map("products")
+}
+
+model ProductPrice {
+  id           String   @id @default(uuid())
+  productId    String   @map("product_id")
+  tierName     String   @map("tier_name")
+  price        Decimal  @db.Decimal(15, 2)
+  displayOrder Int      @default(0) @map("display_order")
+  isDefault    Boolean  @default(false) @map("is_default")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, active, displayOrder])
+  @@map("product_prices")
 }
 
 model LearningProgress {

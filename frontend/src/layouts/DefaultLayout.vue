@@ -195,7 +195,16 @@ const allGroups: MenuGroup[] = [
     items: [
       { title: 'Danh sách KH', icon: 'mdi-account-multiple-outline', path: '/contacts' },
       { title: 'Pipeline cơ hội', icon: 'mdi-pipe', path: '/reports/pipeline' },
+    ],
+  },
+  {
+    key: 'sales',
+    title: 'BÁN HÀNG',
+    icon: 'mdi-shopping-outline',
+    items: [
+      { title: 'Sản phẩm', icon: 'mdi-package-variant-closed', path: '/products' },
       { title: 'Đơn hàng', icon: 'mdi-cart-outline', path: '/orders' },
+      { title: 'Quản lý kho', icon: 'mdi-warehouse', path: '/inventory' },
     ],
   },
   {
@@ -225,6 +234,7 @@ const allGroups: MenuGroup[] = [
     adminOnly: true,
     items: [
       { title: 'Nhân viên', icon: 'mdi-account-cog-outline', path: '/settings' },
+      { title: 'Brand & NCC', icon: 'mdi-tag-multiple-outline', path: '/settings/brands' },
       { title: 'Công việc AI', icon: 'mdi-robot-outline', path: '/jobs' },
       { title: 'Cấu hình', icon: 'mdi-tune-variant', path: '/ai-settings' },
       { title: 'Cấu hình Cadence', icon: 'mdi-calendar-clock', path: '/settings/cadence' },
@@ -246,7 +256,7 @@ function visibleItemsOf(group: MenuGroup): MenuItem[] {
   return group.items.filter((item) => !item.adminOnly || isAdmin.value);
 }
 
-const DEFAULT_OPEN = ['communication', 'customers'];
+const DEFAULT_OPEN = ['communication', 'customers', 'sales'];
 
 function getStorageKey(): string {
   const uid = authStore.user?.id ?? 'anon';
