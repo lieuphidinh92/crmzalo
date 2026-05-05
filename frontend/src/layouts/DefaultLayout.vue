@@ -212,6 +212,7 @@ const allGroups: MenuGroup[] = [
     title: 'BÁO CÁO',
     icon: 'mdi-chart-bar',
     items: [
+      { title: 'Báo cáo tổng quan', icon: 'mdi-view-dashboard-outline', path: '/reports/overview' },
       { title: 'Báo cáo tổng hợp', icon: 'mdi-chart-arc', path: '/reports' },
       { title: 'Báo cáo Resale', icon: 'mdi-trending-up', path: '/reports/resale' },
       { title: 'Dashboard CEO', icon: 'mdi-view-dashboard-variant', path: '/dashboard/ceo', adminOnly: true, badge: '👑' },

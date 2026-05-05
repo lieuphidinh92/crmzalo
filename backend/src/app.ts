@@ -56,6 +56,7 @@ import { quickReplyRoutes } from './modules/quick-replies/quick-reply-routes.js'
 import { learningRoutes } from './modules/learning/learning-routes.js';
 import { cadenceRoutes } from './modules/cadence/cadence-routes.js';
 import { pancakeWebhookRoutes } from './modules/webhooks/pancake-routes.js';
+import { overviewReportRoutes } from './modules/reports/overview-routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -145,6 +146,7 @@ async function bootstrap() {
   await app.register(learningRoutes);
   await app.register(cadenceRoutes);
   await app.register(pancakeWebhookRoutes);
+  await app.register(overviewReportRoutes);
 
   // Liveness/readiness probe — also checks DB connectivity
   app.get('/health', async () => {
