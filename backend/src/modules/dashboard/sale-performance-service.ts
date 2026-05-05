@@ -80,6 +80,33 @@ export async function calculateResaleRevenue(
   return Number(result._sum.totalAmount ?? 0);
 }
 
+/** Counterpart to calculateResaleRevenue: revenue from contacts that
+ * BECAME customers within [from, to). Used for the "Top 5 Sale" panel
+ * total = resaleRevenue + newAgentRevenue. Not part of the score
+ * (newAgents is scored by count, not revenue). */
+export async function calculateNewAgentRevenue(
+  orgId: string,
+  saleId: string,
+  from: Date,
+  to: Date,
+): Promise<number> {
+  const result = await prisma.order.aggregate({
+    where: {
+      orgId,
+      contact: {
+        assignedUserId: saleId,
+        createdAt: { gte: from, lt: to },
+      },
+      OR: [
+        { orderDate: { gte: from, lt: to } },
+        { orderDate: null, createdAt: { gte: from, lt: to } },
+      ],
+    },
+    _sum: { totalAmount: true },
+  });
+  return Number(result._sum.totalAmount ?? 0);
+}
+
 /* ── 2. activeRate ─────────────────────────────────────────────────── */
 
 export async function calculateActiveRate(

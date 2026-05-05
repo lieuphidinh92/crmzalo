@@ -79,7 +79,23 @@
             <tr>
               <th>#</th>
               <th>Sale</th>
-              <th class="text-right">DS tháng</th>
+              <th class="text-right">
+                DS resale
+                <v-tooltip location="top" text="Doanh số từ đại lý cũ quay lại trong tháng">
+                  <template #activator="{ props: tipProps }">
+                    <v-icon v-bind="tipProps" size="12" class="text-medium-emphasis ms-1">mdi-information-outline</v-icon>
+                  </template>
+                </v-tooltip>
+              </th>
+              <th class="text-right">
+                DS sale mới
+                <v-tooltip location="top" text="Doanh số từ KH mới chốt trong tháng">
+                  <template #activator="{ props: tipProps }">
+                    <v-icon v-bind="tipProps" size="12" class="text-medium-emphasis ms-1">mdi-information-outline</v-icon>
+                  </template>
+                </v-tooltip>
+              </th>
+              <th class="text-right">DS tổng</th>
               <th class="text-center">Score</th>
             </tr>
           </thead>
@@ -94,7 +110,9 @@
                 <span v-else class="text-medium-emphasis">{{ s.rank }}</span>
               </td>
               <td class="font-weight-medium">{{ s.saleName }}</td>
-              <td class="text-right">{{ formatVNDShort(s.monthRevenue) }}</td>
+              <td class="text-right">{{ formatVNDShort(s.resaleRevenue ?? s.monthRevenue) }}</td>
+              <td class="text-right">{{ formatVNDShort(s.newAgentRevenue ?? 0) }}</td>
+              <td class="text-right font-weight-medium">{{ formatVNDShort(s.totalRevenue ?? s.monthRevenue) }}</td>
               <td class="text-center">
                 <v-chip
                   size="x-small"

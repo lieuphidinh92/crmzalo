@@ -449,13 +449,36 @@ export async function getRecentNewAgents(
 /* ── 5. Top 5 sales (by score this month) ────────────────────────── */
 
 export async function getTopSales(orgId: string, limit = 5) {
-  const { getSalePerformanceOverview } = await import('./sale-performance-service.js');
+  const { getSalePerformanceOverview, calculateNewAgentRevenue } = await import(
+    './sale-performance-service.js'
+  );
   const perf = await getSalePerformanceOverview(orgId);
-  return perf.rows.slice(0, limit).map((r, i) => ({
-    rank: i + 1,
-    saleId: r.saleId,
-    saleName: r.saleName,
-    score: r.overallScore,
-    monthRevenue: r.metrics.resaleRevenue,
-  }));
+
+  // Compute new-agent revenue for current month for every sale in parallel —
+  // this is what the "Top 5 Sale" panel needs as the 3-column breakdown
+  // (resale / new / total) but it isn't part of the weighted score.
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  const sliced = perf.rows.slice(0, limit);
+  const newAgentRevenues = await Promise.all(
+    sliced.map((r) => calculateNewAgentRevenue(orgId, r.saleId, monthStart, monthEnd)),
+  );
+
+  return sliced.map((r, i) => {
+    const resaleRevenue = r.metrics.resaleRevenue;
+    const newAgentRevenue = newAgentRevenues[i];
+    return {
+      rank: i + 1,
+      saleId: r.saleId,
+      saleName: r.saleName,
+      score: r.overallScore,
+      // Kept for backward-compat with any caller still reading monthRevenue.
+      monthRevenue: resaleRevenue,
+      resaleRevenue,
+      newAgentRevenue,
+      totalRevenue: resaleRevenue + newAgentRevenue,
+    };
+  });
 }

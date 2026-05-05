@@ -62,7 +62,14 @@ export interface TopSale {
   saleId: string;
   saleName: string;
   score: number;
+  /** Resale revenue (đại lý cũ quay lại) — kept as `monthRevenue` for
+   * backward compatibility; new code should prefer `resaleRevenue`. */
   monthRevenue: number;
+  resaleRevenue: number;
+  /** Revenue from contacts created within the current month. */
+  newAgentRevenue: number;
+  /** resaleRevenue + newAgentRevenue. */
+  totalRevenue: number;
 }
 
 export function useAdminDashboard() {
