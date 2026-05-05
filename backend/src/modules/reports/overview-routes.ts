@@ -20,6 +20,7 @@ import {
 } from './resale-service.js';
 import {
   getKpi,
+  getSparklines,
   getTopCustomers,
   getTopProducts,
   getTopSalesForPeriod,
@@ -91,6 +92,19 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
       const filters = parseFilters(request.query as Q, request.user!);
       const key = filterCacheKey('overview-kpi', request.user!.orgId, filters);
       return withCache(key, () => getKpi(request.user!.orgId, filters));
+    },
+  );
+
+  app.get(
+    '/api/v1/reports/overview/sparklines',
+    async (request: FastifyRequest) => {
+      const filters = parseFilters(request.query as Q, request.user!);
+      const key = filterCacheKey(
+        'overview-sparklines',
+        request.user!.orgId,
+        filters,
+      );
+      return withCache(key, () => getSparklines(request.user!.orgId, filters));
     },
   );
 

@@ -117,10 +117,11 @@ function brandColor(b: string): string {
   font-size: 0.85rem;
   font-family: ui-monospace, monospace;
 }
-.rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1e293b; }
-.rank-2 { background: linear-gradient(135deg, #cbd5e1, #94a3b8); color: #1e293b; }
-.rank-3 { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
-.rank-rest { background: rgba(148, 163, 184, 0.15); color: rgb(var(--v-theme-on-surface)); }
+/* Per spec: subtle pastel rank badges (amber-100 / slate-200 / orange-200 / slate-700) */
+.rank-1 { background: rgba(254, 243, 199, 0.95); color: #78350F; }   /* amber-100 / amber-900 */
+.rank-2 { background: rgba(226, 232, 240, 0.92); color: #334155; }   /* slate-200 / slate-700 */
+.rank-3 { background: rgba(254, 215, 170, 0.92); color: #7C2D12; }   /* orange-200 / orange-900 */
+.rank-rest { background: rgba(51, 65, 85, 0.55); color: #94A3B8; }    /* slate-700 / slate-400 */
 
 .info-cell {
   min-width: 0;

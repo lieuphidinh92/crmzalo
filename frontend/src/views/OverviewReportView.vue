@@ -1,37 +1,23 @@
 <template>
   <div class="overview-report">
-    <!-- Page header + range label -->
-    <div class="page-header">
-      <div class="d-flex align-center flex-wrap gap-2">
-        <h1 class="text-h5 mb-0">
-          <v-icon class="mr-2" color="primary" size="22">mdi-view-dashboard-outline</v-icon>
-          Báo cáo tổng quan
-        </h1>
-        <v-chip
-          v-if="filters.from && filters.to"
-          size="small"
-          variant="tonal"
-          color="primary"
-          class="ml-1"
-        >
-          <v-icon size="14" start>mdi-calendar-range</v-icon>
+    <!-- Slim header: title (text-xl, font-medium) + date subtitle (text-xs) -->
+    <header class="page-header">
+      <div class="header-text">
+        <h1 class="page-title">Báo cáo tổng quan</h1>
+        <div class="page-sub">
           {{ formatDateVN(filters.from) }} — {{ formatDateVN(filters.to) }}
-        </v-chip>
-        <v-spacer />
-        <v-btn
-          size="small"
-          variant="tonal"
-          prepend-icon="mdi-refresh"
-          :loading="anyLoading"
-          @click="refreshAll"
-        >
-          Làm mới
-        </v-btn>
+        </div>
       </div>
-      <div class="text-caption text-medium-emphasis mt-1">
-        Sức khoẻ kinh doanh + sản phẩm + sale + khách hàng — chọn khoảng thời gian linh hoạt
-      </div>
-    </div>
+      <button
+        type="button"
+        class="refresh-btn"
+        :disabled="anyLoading"
+        :title="anyLoading ? 'Đang tải' : 'Làm mới'"
+        @click="refreshAll"
+      >
+        <v-icon size="16" :class="anyLoading && 'rotating'">mdi-refresh</v-icon>
+      </button>
+    </header>
 
     <!-- Filter pills (horizontal scroll on mobile) -->
     <div class="filter-bar">
@@ -87,8 +73,13 @@
       </v-expand-transition>
     </div>
 
-    <!-- Section 1: KPI cards -->
-    <OverviewKpiCards :data="kpi" :loading="loadingKpi" class="mb-4" />
+    <!-- Section 1: KPI cards (4×2 mobile / 4×1 ≥640px) -->
+    <OverviewKpiCards
+      :data="kpi"
+      :spark="sparklines"
+      :loading="loadingKpi"
+      class="mb-4"
+    />
 
     <!-- Sections 2-4: Top products / Top sales / Top customers -->
     <v-row dense>
@@ -96,7 +87,12 @@
         <OverviewTopProducts :products="topProducts" :loading="loadingProducts" />
       </v-col>
       <v-col cols="12" md="6" lg="4">
-        <OverviewTopSales :sales="topSales" :loading="loadingSales" />
+        <OverviewTopSales
+          :sales="topSales"
+          :loading="loadingSales"
+          :hide-ranking="isMember"
+          :current-user-id="currentUserId"
+        />
       </v-col>
       <v-col cols="12" md="12" lg="4">
         <OverviewTopCustomers
@@ -126,8 +122,13 @@ import {
   useOverviewReport,
   type RangePreset,
 } from '@/composables/use-overview-report';
+import { useAuthStore } from '@/stores/auth';
 
 type CustomerType = 'revenue' | 'resale' | 'profit' | 'at_risk';
+
+const authStore = useAuthStore();
+const isMember = computed(() => authStore.user?.role === 'member');
+const currentUserId = computed(() => authStore.user?.id ?? null);
 
 const PRESETS: RangePreset[] = [
   'today',
@@ -140,6 +141,7 @@ const PRESETS: RangePreset[] = [
 const {
   filters,
   kpi,
+  sparklines,
   topProducts,
   topSales,
   topCustomers,
@@ -189,8 +191,51 @@ function applyCustom() {
   margin: 0 auto;
 }
 
+/* ── Slim header (title + date subtitle on left, refresh icon right) ── */
 .page-header {
-  margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+.header-text { min-width: 0; }
+.page-title {
+  font-size: 1.25rem;       /* text-xl */
+  font-weight: 500;          /* not bold */
+  color: #F8FAFC;
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.page-sub {
+  font-size: 0.72rem;
+  color: #64748B;            /* slate-500 */
+  margin-top: 2px;
+  font-family: ui-monospace, monospace;
+}
+.refresh-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  color: #94A3B8;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.refresh-btn:hover:not(:disabled) {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #F97316;
+}
+.refresh-btn:disabled { cursor: wait; opacity: 0.6; }
+.rotating { animation: spin 0.9s linear infinite; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Filter pills bar */

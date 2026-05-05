@@ -66,6 +66,14 @@ export interface TopProductRow {
   costCoveragePercent: number;
 }
 
+export interface SparklineResponse {
+  buckets: string[];
+  totalRevenue: number[];
+  resaleRevenue: number[];
+  activeAgents: number[];
+  profit: number[];
+}
+
 export interface TopSaleRow {
   rank: number;
   saleId: string;
@@ -156,16 +164,22 @@ export function formatDateVN(s: string): string {
 
 /* ── Format helpers (single source of truth for this page) ────────── */
 
-/** Format VND in compact form: 1.2 tỷ / 600.1tr / 250k / 0. */
+/** Format VND in compact form per spec:
+ *   <1tr  → "0.5tr"  (always show in tr unit, 1 decimal)
+ *   <1tỷ  → "600.1tr"
+ *   ≥1tỷ  → "10.4 tỷ"
+ *   0     → "0"
+ * Negatives kept with leading '-'.
+ */
 export function formatVNDShort(n: number | null | undefined): string {
   const v = Number(n ?? 0);
   if (v === 0) return '0';
   const sign = v < 0 ? '-' : '';
   const abs = Math.abs(v);
   if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(1)} tỷ`;
-  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}tr`;
-  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(0)}k`;
-  return `${sign}${abs}`;
+  // Anything below 1 tỷ is rendered in millions ("tr"), including <1tr cases:
+  // 500_000 → "0.5tr". Keeps font-mono columns aligned across all rows.
+  return `${sign}${(abs / 1_000_000).toFixed(1)}tr`;
 }
 
 export function formatVNDFull(n: number | null | undefined): string {
@@ -217,6 +231,7 @@ export function useOverviewReport() {
   const filters = reactive<OverviewFilters>(loadInitialFilters());
 
   const kpi = ref<KpiResponse | null>(null);
+  const sparklines = ref<SparklineResponse | null>(null);
   const topProducts = ref<TopProductRow[]>([]);
   const topSales = ref<TopSaleRow[]>([]);
   const topCustomers = ref<TopCustomerRow[]>([]);
@@ -265,10 +280,14 @@ export function useOverviewReport() {
   async function fetchKpi() {
     loadingKpi.value = true;
     try {
-      const { data } = await api.get<KpiResponse>(
-        `/reports/overview/kpi?${queryString.value}`,
-      );
-      kpi.value = data;
+      const [kpiRes, sparkRes] = await Promise.all([
+        api.get<KpiResponse>(`/reports/overview/kpi?${queryString.value}`),
+        api.get<SparklineResponse>(
+          `/reports/overview/sparklines?${queryString.value}`,
+        ),
+      ]);
+      kpi.value = kpiRes.data;
+      sparklines.value = sparkRes.data;
     } catch (e: unknown) {
       error.value = (e as Error)?.message ?? 'Lỗi tải KPI';
     } finally {
@@ -344,6 +363,7 @@ export function useOverviewReport() {
   return {
     filters,
     kpi,
+    sparklines,
     topProducts,
     topSales,
     topCustomers,

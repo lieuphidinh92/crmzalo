@@ -1,48 +1,56 @@
 <template>
-  <v-row class="kpi-grid" dense>
-    <v-col v-for="card in cards" :key="card.key" cols="6" md="3">
-      <v-card
-        class="kpi-card pa-3 h-100"
-        :class="`kpi-card--${card.tone}`"
-        variant="flat"
-      >
-        <div class="d-flex align-center mb-2">
-          <v-icon :color="card.tone" size="18" class="mr-1">{{ card.icon }}</v-icon>
-          <span class="text-caption text-medium-emphasis">{{ card.label }}</span>
-        </div>
-        <div v-if="loading" class="kpi-skeleton" />
-        <template v-else>
-          <div class="kpi-number">{{ card.formattedValue }}</div>
-          <div class="kpi-meta d-flex align-center mt-1">
-            <v-chip
-              v-if="card.trendChip"
-              :color="card.trendColor"
-              size="x-small"
-              variant="tonal"
-              class="font-weight-bold"
-            >
-              <v-icon size="14" start>{{ card.trendIcon }}</v-icon>
-              {{ card.trendChip }}
-            </v-chip>
-            <span class="text-caption text-medium-emphasis ml-2">{{ card.subtitle }}</span>
+  <div class="kpi-grid">
+    <div v-for="card in cards" :key="card.key" class="kpi-card" :class="`tone-${card.tone}`">
+      <!-- Row 1: label + trend -->
+      <div class="kpi-head">
+        <span class="kpi-label">{{ card.label }}</span>
+        <span
+          v-if="card.trend.text"
+          class="trend-pill"
+          :class="`trend-${card.trend.color}`"
+        >
+          <span class="trend-arrow">{{ card.trend.arrow }}</span>
+          {{ card.trend.text }}
+        </span>
+      </div>
+
+      <!-- Row 2: big number -->
+      <div v-if="loading" class="kpi-skeleton" />
+      <div v-else class="kpi-value">{{ card.displayValue }}</div>
+
+      <!-- Row 3: sparkline OR progress bar OR subtitle -->
+      <template v-if="!loading">
+        <div v-if="card.progress !== undefined" class="kpi-progress">
+          <div class="progress-track">
+            <div
+              class="progress-fill"
+              :class="`progress-${card.progressColor}`"
+              :style="{ width: `${Math.min(100, Math.max(0, card.progress))}%` }"
+            />
           </div>
-        </template>
-      </v-card>
-    </v-col>
-  </v-row>
+          <div class="kpi-sub">{{ card.subtitle }}</div>
+        </div>
+        <div v-else class="kpi-spark">
+          <OverviewSparkline :values="card.sparkData" :color="card.sparkColor" />
+          <div class="kpi-sub">{{ card.subtitle }}</div>
+        </div>
+      </template>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import OverviewSparkline from './OverviewSparkline.vue';
 import {
   formatVNDShort,
-  trendColor,
-  trendIcon,
   type KpiResponse,
+  type SparklineResponse,
 } from '@/composables/use-overview-report';
 
 interface Props {
   data: KpiResponse | null;
+  spark: SparklineResponse | null;
   loading: boolean;
 }
 const props = defineProps<Props>();
@@ -50,121 +58,212 @@ const props = defineProps<Props>();
 interface CardSpec {
   key: string;
   label: string;
-  icon: string;
-  tone: 'primary' | 'success' | 'warning' | 'info';
-  formattedValue: string;
-  trendChip: string | null;
-  trendColor: 'success' | 'error' | 'grey';
-  trendIcon: string;
+  tone: 'primary' | 'success' | 'info' | 'warning';
+  displayValue: string;
+  trend: { text: string | null; arrow: string; color: 'up' | 'down' | 'flat' };
   subtitle: string;
+  sparkData: number[];
+  sparkColor: string;
+  progress?: number;
+  progressColor?: 'good' | 'warn' | 'bad';
 }
 
-function trendText(pct: number | null): string | null {
-  if (pct === null) return null;
-  const v = Math.abs(pct);
-  return `${pct > 0 ? '+' : pct < 0 ? '-' : ''}${v.toFixed(0)}%`;
+function trendChip(pct: number | null) {
+  if (pct === null) return { text: null, arrow: '', color: 'flat' as const };
+  if (pct > 0.5)
+    return { text: `+${Math.abs(pct).toFixed(0)}%`, arrow: '↗', color: 'up' as const };
+  if (pct < -0.5)
+    return { text: `-${Math.abs(pct).toFixed(0)}%`, arrow: '↘', color: 'down' as const };
+  return { text: '0%', arrow: '─', color: 'flat' as const };
 }
 
 const cards = computed<CardSpec[]>(() => {
   const c = props.data?.cards;
+  const sp = props.spark;
+  // Skeleton/empty placeholder shape
   if (!c) {
-    // skeleton placeholders
     return [
-      { key: 'r', label: 'Doanh số tổng', icon: 'mdi-cash-multiple', tone: 'primary', formattedValue: '—', trendChip: null, trendColor: 'grey', trendIcon: 'mdi-minus', subtitle: '' },
-      { key: 're', label: 'DS Resale', icon: 'mdi-repeat-variant', tone: 'success', formattedValue: '—', trendChip: null, trendColor: 'grey', trendIcon: 'mdi-minus', subtitle: '' },
-      { key: 'a', label: 'Đại lý active', icon: 'mdi-account-check', tone: 'info', formattedValue: '—', trendChip: null, trendColor: 'grey', trendIcon: 'mdi-minus', subtitle: '' },
-      { key: 'p', label: 'Lợi nhuận', icon: 'mdi-trending-up', tone: 'warning', formattedValue: '—', trendChip: null, trendColor: 'grey', trendIcon: 'mdi-minus', subtitle: '' },
+      { key: '1', label: 'DOANH SỐ', tone: 'primary', displayValue: '—', trend: { text: null, arrow: '', color: 'flat' }, subtitle: '', sparkData: [], sparkColor: '#F97316' },
+      { key: '2', label: 'DS RESALE', tone: 'success', displayValue: '—', trend: { text: null, arrow: '', color: 'flat' }, subtitle: '', sparkData: [], sparkColor: '#10B981' },
+      { key: '3', label: 'ĐẠI LÝ ACTIVE', tone: 'info', displayValue: '—', trend: { text: null, arrow: '', color: 'flat' }, subtitle: '', sparkData: [], sparkColor: '#0EA5E9' },
+      { key: '4', label: 'LỢI NHUẬN', tone: 'warning', displayValue: '—', trend: { text: null, arrow: '', color: 'flat' }, subtitle: '', sparkData: [], sparkColor: '#F59E0B' },
     ];
   }
+
+  const activeRate = c.activeAgents.rate;
+  const progressColor: 'good' | 'warn' | 'bad' =
+    activeRate >= 70 ? 'good' : activeRate >= 50 ? 'warn' : 'bad';
+
   return [
     {
       key: 'totalRevenue',
-      label: 'Doanh số tổng',
-      icon: 'mdi-cash-multiple',
+      label: 'DOANH SỐ',
       tone: 'primary',
-      formattedValue: formatVNDShort(c.totalRevenue.value),
-      trendChip: trendText(c.totalRevenue.trendPercent),
-      trendColor: trendColor(c.totalRevenue.trendPercent),
-      trendIcon: trendIcon(c.totalRevenue.trendPercent),
-      subtitle: 'so với kỳ trước',
+      displayValue: formatVNDShort(c.totalRevenue.value),
+      trend: trendChip(c.totalRevenue.trendPercent),
+      subtitle: 'vs kỳ trước',
+      sparkData: sp?.totalRevenue ?? [],
+      sparkColor: '#F97316',
     },
     {
       key: 'resaleRevenue',
-      label: 'DS Resale',
-      icon: 'mdi-repeat-variant',
+      label: 'DS RESALE',
       tone: 'success',
-      formattedValue: formatVNDShort(c.resaleRevenue.value),
-      trendChip: trendText(c.resaleRevenue.trendPercent),
-      trendColor: trendColor(c.resaleRevenue.trendPercent),
-      trendIcon: trendIcon(c.resaleRevenue.trendPercent),
+      displayValue: formatVNDShort(c.resaleRevenue.value),
+      trend: trendChip(c.resaleRevenue.trendPercent),
       subtitle: `${c.resaleRevenue.ratioOfTotal}% tổng DS`,
+      sparkData: sp?.resaleRevenue ?? [],
+      sparkColor: '#10B981',
     },
     {
       key: 'activeAgents',
-      label: 'Đại lý active',
-      icon: 'mdi-account-check',
+      label: 'ĐẠI LÝ ACTIVE',
       tone: 'info',
-      formattedValue: `${c.activeAgents.active}/${c.activeAgents.total}`,
-      trendChip:
+      displayValue: `${c.activeAgents.active}/${c.activeAgents.total}`,
+      trend:
         c.activeAgents.delta === 0
-          ? '0'
-          : `${c.activeAgents.delta > 0 ? '+' : ''}${c.activeAgents.delta}`,
-      trendColor:
-        c.activeAgents.delta > 0
-          ? 'success'
-          : c.activeAgents.delta < 0
-            ? 'error'
-            : 'grey',
-      trendIcon:
-        c.activeAgents.delta > 0
-          ? 'mdi-trending-up'
-          : c.activeAgents.delta < 0
-            ? 'mdi-trending-down'
-            : 'mdi-minus',
-      subtitle: `${c.activeAgents.rate.toFixed(0)}% active 60d`,
+          ? { text: '0', arrow: '─', color: 'flat' as const }
+          : c.activeAgents.delta > 0
+            ? { text: `+${c.activeAgents.delta}`, arrow: '↗', color: 'up' as const }
+            : { text: `${c.activeAgents.delta}`, arrow: '↘', color: 'down' as const },
+      subtitle: `${activeRate.toFixed(0)}% active 60d`,
+      sparkData: [],
+      sparkColor: '#0EA5E9',
+      progress: activeRate,
+      progressColor,
     },
     {
       key: 'profit',
-      label: 'Lợi nhuận',
-      icon: 'mdi-trending-up',
+      label: 'LỢI NHUẬN',
       tone: 'warning',
-      formattedValue: formatVNDShort(c.profit.value),
-      trendChip: trendText(c.profit.trendPercent),
-      trendColor: trendColor(c.profit.trendPercent),
-      trendIcon: trendIcon(c.profit.trendPercent),
+      displayValue: formatVNDShort(c.profit.value),
+      trend: trendChip(c.profit.trendPercent),
       subtitle:
         c.profit.costCoveragePercent < 100
           ? `Biên ${c.profit.marginPercent}% (${c.profit.costCoveragePercent}% có cost)`
           : `Biên LN ${c.profit.marginPercent}%`,
+      sparkData: sp?.profit ?? [],
+      sparkColor: '#F59E0B',
     },
   ];
 });
 </script>
 
 <style scoped>
+/* ── Grid: 2×2 mobile, 4×1 ≥640px (per spec, never stack 1-col) ── */
 .kpi-grid {
-  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
+@media (min-width: 640px) {
+  .kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+/* ── Card ── */
 .kpi-card {
-  background: rgb(var(--v-theme-surface)) !important;
+  background: #1e293b; /* slate-800 */
+  border: 1px solid rgba(148, 163, 184, 0.06);
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.08);
-  transition: border-color 0.15s;
+  padding: 12px;
+  transition: border-color 0.18s, transform 0.18s;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 110px;
 }
 .kpi-card:hover {
-  border-color: rgba(245, 158, 11, 0.25);
+  border-color: rgba(245, 158, 11, 0.2);
+  transform: translateY(-1px);
 }
-.kpi-number {
+
+/* tone accent on left edge — subtle */
+.tone-primary { box-shadow: inset 2px 0 0 #F97316; }
+.tone-success { box-shadow: inset 2px 0 0 #10B981; }
+.tone-info    { box-shadow: inset 2px 0 0 #0EA5E9; }
+.tone-warning { box-shadow: inset 2px 0 0 #F59E0B; }
+
+/* ── Head row ── */
+.kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.kpi-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748B; /* slate-500 */
+  white-space: nowrap;
+}
+.trend-pill {
+  font-size: 0.65rem;
+  font-weight: 600;
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  padding: 2px 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.trend-arrow {
+  font-size: 0.78rem;
+  line-height: 1;
+}
+.trend-up   { background: rgba(16, 185, 129, 0.12); color: #10B981; }
+.trend-down { background: rgba(239, 68, 68, 0.12);  color: #EF4444; }
+.trend-flat { background: rgba(245, 158, 11, 0.12); color: #F59E0B; }
+
+/* ── Big number ── */
+.kpi-value {
   font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 1.4rem;
-  font-weight: 700;
+  font-size: 1.35rem;
+  font-weight: 500;          /* spec: not heavy bold */
   letter-spacing: -0.01em;
-  color: rgb(var(--v-theme-on-surface));
+  color: #F8FAFC;
   line-height: 1.1;
 }
-.kpi-meta {
-  min-height: 24px;
+@media (min-width: 640px) {
+  .kpi-value { font-size: 1.55rem; }
 }
+
+/* ── Sparkline + subtitle ── */
+.kpi-spark {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kpi-sub {
+  font-size: 0.68rem;
+  color: #64748B;
+  letter-spacing: 0.01em;
+}
+
+/* ── Progress bar (Card 3 only) ── */
+.kpi-progress { display: flex; flex-direction: column; gap: 6px; }
+.progress-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease-out;
+}
+.progress-good { background: #10B981; }
+.progress-warn { background: #F59E0B; }
+.progress-bad  { background: #EF4444; }
+
+/* ── Skeleton ── */
 .kpi-skeleton {
   height: 28px;
   width: 70%;

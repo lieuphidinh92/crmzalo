@@ -16,7 +16,7 @@
       >
         <v-btn value="admin" size="small">
           <v-icon start size="16">mdi-view-dashboard-variant</v-icon>
-          Tổng quan điều hành
+          Báo cáo tổng quan
         </v-btn>
         <v-btn value="personal" size="small">
           <v-icon start size="16">mdi-account-eye-outline</v-icon>
@@ -31,7 +31,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import AdminDashboard from '@/components/home/AdminDashboard.vue';
+import OverviewReportView from '@/views/OverviewReportView.vue';
 import PersonalDashboard from '@/components/home/PersonalDashboard.vue';
 import { useAuthStore } from '@/stores/auth';
 
@@ -52,8 +52,11 @@ const viewMode = ref<'admin' | 'personal'>(
 );
 
 const dashboardComponent = computed(() => {
+  // Admin/owner default landing: the redesigned "Báo cáo tổng quan"
+  // (formerly two screens — old AdminDashboard is kept reachable via
+  // its component file but no longer the homepage).
   if (viewMode.value === 'admin' && isAdminOrOwner.value) {
-    return AdminDashboard;
+    return OverviewReportView;
   }
   return PersonalDashboard;
 });

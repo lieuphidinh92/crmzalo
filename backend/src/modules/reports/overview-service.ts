@@ -66,6 +66,62 @@ function withSaleScope<T extends Record<string, unknown>>(
   } as T;
 }
 
+/* ── 0. Sparklines (6 monthly buckets ending at `to`) ────────────── */
+
+/** Build 6 month-aligned [from, to) buckets ending at the period end.
+ * `end` is exclusive (route layer adds +1 day to user-supplied `to`).
+ * We anchor on the *last actual day* in the window so the rightmost
+ * bucket is the month that contains real data, not the month after. */
+function sixMonthBuckets(end: Date): Array<{ from: Date; to: Date }> {
+  const lastDay = new Date(end.getTime() - 1);
+  const anchor = new Date(lastDay.getFullYear(), lastDay.getMonth(), 1);
+  const windows: Array<{ from: Date; to: Date }> = [];
+  for (let i = 5; i >= 0; i--) {
+    const start = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
+    const stop = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    windows.push({ from: start, to: stop });
+  }
+  return windows;
+}
+
+export async function getSparklines(
+  orgId: string,
+  filters: OverviewFilters,
+): Promise<{
+  buckets: string[]; // ['YYYY-MM', ...] length 6
+  totalRevenue: number[];
+  resaleRevenue: number[];
+  activeAgents: number[]; // active count at month end
+  profit: number[];
+}> {
+  const windows = sixMonthBuckets(filters.to);
+  const labels = windows.map(
+    (w) =>
+      `${w.from.getFullYear()}-${String(w.from.getMonth() + 1).padStart(2, '0')}`,
+  );
+
+  const data = await Promise.all(
+    windows.map(async (w) => {
+      const rev = await periodRevenue(orgId, w.from, w.to, filters.saleId);
+      const agents = await activeAgents(orgId, w.to, filters.saleId);
+      return {
+        total: rev.totalRevenue,
+        resale: rev.resaleRevenue,
+        active: agents.active,
+        profit: rev.profit,
+      };
+    }),
+  );
+
+  return {
+    buckets: labels,
+    totalRevenue: data.map((d) => d.total),
+    resaleRevenue: data.map((d) => d.resale),
+    activeAgents: data.map((d) => d.active),
+    profit: data.map((d) => d.profit),
+  };
+}
+
 /* ── 1. KPI cards ─────────────────────────────────────────────────── */
 
 interface PeriodRevenue {

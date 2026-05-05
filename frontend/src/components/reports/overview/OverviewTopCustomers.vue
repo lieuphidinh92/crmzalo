@@ -39,11 +39,12 @@
       <div class="mt-2">{{ emptyText }}</div>
     </div>
 
-    <ul v-else class="customer-list">
+    <!-- Default tabs: compact row layout -->
+    <ul v-if="activeType !== 'at_risk'" class="customer-list">
       <li
         v-for="c in customers"
         :key="c.contactId"
-        :class="['customer-row', c.atRisk && 'customer-row--warn']"
+        class="customer-row"
         @click="goContact(c.contactId)"
       >
         <div class="rank-col">
@@ -55,63 +56,59 @@
           <div class="name" :title="c.fullName">{{ c.fullName }}</div>
           <div class="sub-meta">
             <span v-if="c.province">{{ c.province }}</span>
-            <span v-if="c.province && (c.orderCount || c.daysInactive)" class="dot">•</span>
+            <span v-if="c.province && c.orderCount" class="dot">•</span>
             <span v-if="c.orderCount">{{ c.orderCount }} đơn</span>
-            <v-chip
-              v-if="!c.atRisk"
-              size="x-small"
-              color="success"
-              variant="tonal"
-              class="status-chip"
-            >Active</v-chip>
-            <v-chip
-              v-else
-              size="x-small"
-              color="error"
-              variant="flat"
-              class="status-chip"
-            >
-              <v-icon size="11" start>mdi-clock-alert-outline</v-icon>
-              {{ c.daysInactive }}d không order
+            <v-chip size="x-small" color="success" variant="tonal" class="status-chip">
+              Active
             </v-chip>
           </div>
         </div>
         <div class="num-col">
           <div class="primary-num">{{ formatVNDShort(primaryValue(c)) }}</div>
-          <div v-if="!c.atRisk" class="secondary-num">
-            <v-icon size="11" :color="c.profit && c.profit >= 0 ? 'success' : 'error'">
-              {{ c.profit && c.profit >= 0 ? 'mdi-arrow-up-bold' : 'mdi-arrow-down-bold' }}
+          <div class="secondary-num">
+            <v-icon size="11" :color="(c.profit ?? 0) >= 0 ? 'success' : 'error'">
+              {{ (c.profit ?? 0) >= 0 ? 'mdi-arrow-up-bold' : 'mdi-arrow-down-bold' }}
             </v-icon>
             LN {{ formatVNDShort(c.profit ?? 0) }}
           </div>
-          <div v-else class="secondary-num lifetime">
-            Lifetime {{ formatVNDShort(c.lifetimeRevenue ?? 0) }}
+        </div>
+      </li>
+    </ul>
+
+    <!-- At-risk tab: card-per-VIP with red left border + full-width CTA -->
+    <ul v-else class="atrisk-list">
+      <li
+        v-for="c in customers"
+        :key="c.contactId"
+        class="atrisk-card"
+        @click="goContact(c.contactId)"
+      >
+        <div class="atrisk-head">
+          <div class="atrisk-info">
+            <div class="name" :title="c.fullName">{{ c.fullName }}</div>
+            <div class="sub-meta">
+              <span v-if="c.province">{{ c.province }}</span>
+              <span v-if="c.province" class="dot">•</span>
+              <span class="lifetime-tag">
+                Lifetime {{ formatVNDShort(c.lifetimeRevenue ?? 0) }}
+              </span>
+            </div>
+          </div>
+          <div class="days-badge" :title="`${c.daysInactive} ngày chưa order`">
+            <span class="days-num">{{ c.daysInactive ?? 0 }}</span>
+            <span class="days-unit">ngày</span>
           </div>
         </div>
-        <div v-if="c.atRisk" class="action-col" @click.stop>
-          <v-btn
-            size="x-small"
-            color="error"
-            variant="flat"
-            icon="mdi-message-text-outline"
-            :disabled="!c.zaloUid"
-            :title="c.zaloUid ? 'Mở chat Zalo với KH này' : 'KH chưa có Zalo UID'"
-            class="zalo-btn-mobile"
-            @click="contactZalo(c)"
-          />
-          <v-btn
-            size="x-small"
-            color="error"
-            variant="flat"
-            prepend-icon="mdi-message-text-outline"
-            :disabled="!c.zaloUid"
-            :title="c.zaloUid ? 'Mở chat Zalo với KH này' : 'KH chưa có Zalo UID'"
-            class="zalo-btn-desktop"
-            @click="contactZalo(c)"
-          >
-            Liên hệ
-          </v-btn>
-        </div>
+        <button
+          type="button"
+          class="contact-cta"
+          :disabled="!c.zaloUid"
+          :title="c.zaloUid ? 'Mở chat Zalo' : 'KH chưa có Zalo UID'"
+          @click.stop="contactZalo(c)"
+        >
+          <v-icon size="15">mdi-message-text-outline</v-icon>
+          Liên hệ Zalo ngay
+        </button>
       </li>
     </ul>
   </v-card>
@@ -244,9 +241,6 @@ function contactZalo(c: TopCustomerRow) {
 }
 .customer-row:hover { background: rgba(148, 163, 184, 0.04); }
 .customer-row:last-child { border-bottom: none; }
-.customer-row--warn {
-  grid-template-columns: 28px 1fr auto auto;
-}
 
 .rank-col { display: flex; justify-content: center; }
 .rank-badge {
@@ -260,10 +254,10 @@ function contactZalo(c: TopCustomerRow) {
   font-size: 0.78rem;
   font-family: ui-monospace, monospace;
 }
-.rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1e293b; }
-.rank-2 { background: linear-gradient(135deg, #cbd5e1, #94a3b8); color: #1e293b; }
-.rank-3 { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
-.rank-rest { background: rgba(148, 163, 184, 0.15); color: rgb(var(--v-theme-on-surface)); opacity: 0.7; }
+.rank-1 { background: rgba(254, 243, 199, 0.95); color: #78350F; }
+.rank-2 { background: rgba(226, 232, 240, 0.92); color: #334155; }
+.rank-3 { background: rgba(254, 215, 170, 0.92); color: #7C2D12; }
+.rank-rest { background: rgba(51, 65, 85, 0.55); color: #94A3B8; }
 
 .info-col { min-width: 0; }
 .name {
@@ -302,15 +296,67 @@ function contactZalo(c: TopCustomerRow) {
 }
 .lifetime { color: rgb(245, 158, 11); }
 
-.action-col { padding-left: 4px; }
-
-/* Show icon-only button on narrow phones, full label on tablet+ */
-.zalo-btn-mobile { display: inline-flex; }
-.zalo-btn-desktop { display: none; }
-@media (min-width: 600px) {
-  .zalo-btn-mobile { display: none; }
-  .zalo-btn-desktop { display: inline-flex; }
+/* ── At-risk card layout ── */
+.atrisk-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.atrisk-card {
+  background: rgba(127, 29, 29, 0.18);              /* red-950 / ~30% */
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  border-left: 3px solid #EF4444;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
 }
+.atrisk-card:hover { background: rgba(127, 29, 29, 0.28); }
+
+.atrisk-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.atrisk-info { min-width: 0; }
+.lifetime-tag { color: #F59E0B; font-weight: 600; }
+
+/* Big circular days-inactive badge */
+.days-badge {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #DC2626, #B91C1C);
+  color: #FEF2F2;
+  font-family: ui-monospace, monospace;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+.days-num { font-size: 1.05rem; font-weight: 700; }
+.days-unit { font-size: 0.55rem; opacity: 0.85; margin-top: 2px; letter-spacing: 0.05em; }
+
+/* Full-width orange CTA */
+.contact-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #F97316;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.contact-cta:hover:not(:disabled) { background: #EA580C; }
+.contact-cta:disabled { background: #475569; cursor: not-allowed; opacity: 0.7; }
 
 .empty-state {
   text-align: center;

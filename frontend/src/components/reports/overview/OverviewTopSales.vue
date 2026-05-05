@@ -4,12 +4,15 @@
       <div>
         <div class="d-flex align-center">
           <v-icon icon="mdi-trophy-outline" color="primary" class="mr-2" />
-          <span class="text-h6">Top NV Sale tháng</span>
+          <span class="text-h6">{{ hideRanking ? 'Doanh số của bạn' : 'Top NV Sale tháng' }}</span>
         </div>
-        <div class="text-caption text-medium-emphasis">Xếp theo doanh số đem về</div>
+        <div class="text-caption text-medium-emphasis">
+          {{ hideRanking ? 'Tóm tắt cá nhân trong kỳ' : 'Xếp theo doanh số đem về' }}
+        </div>
       </div>
       <v-spacer />
       <v-btn
+        v-if="!hideRanking"
         size="x-small"
         variant="text"
         append-icon="mdi-arrow-right"
@@ -23,14 +26,14 @@
       <div v-for="n in 5" :key="n" class="row-skeleton" />
     </div>
 
-    <div v-else-if="!sales.length" class="empty-state">
+    <div v-else-if="visibleSales.length === 0" class="empty-state">
       <v-icon size="44" color="grey-darken-1">mdi-account-group-outline</v-icon>
       <div class="mt-2">Chưa có data sale trong kỳ</div>
     </div>
 
     <ul v-else class="sale-list">
-      <li v-for="s in sales" :key="s.saleId" class="sale-row">
-        <div class="rank-col">
+      <li v-for="s in visibleSales" :key="s.saleId" class="sale-row">
+        <div v-if="!hideRanking" class="rank-col">
           <span :class="['rank-badge', `rank-${s.rank <= 3 ? s.rank : 'rest'}`]">
             {{ s.rank }}
           </span>
@@ -70,6 +73,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
+import { computed } from 'vue';
 import { formatVNDShort } from '@/composables/use-overview-report';
 
 interface SaleRow {
@@ -86,9 +90,22 @@ interface SaleRow {
 interface Props {
   sales: SaleRow[];
   loading: boolean;
+  /** Per spec: members see only their own row, no ranking column. */
+  hideRanking?: boolean;
+  currentUserId?: string | null;
 }
-defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  hideRanking: false,
+  currentUserId: null,
+});
 
+const visibleSales = computed<SaleRow[]>(() => {
+  const list = props.sales ?? [];
+  if (!props.hideRanking) return list;
+  if (!props.currentUserId) return list.slice(0, 1);
+  const own = list.find((s) => s.saleId === props.currentUserId);
+  return own ? [own] : [];
+});
 const router = useRouter();
 function goCeo() {
   router.push('/dashboard/ceo');
@@ -157,10 +174,10 @@ function scoreColor(s: number): 'success' | 'warning' | 'error' | 'grey' {
   font-size: 0.78rem;
   font-family: ui-monospace, monospace;
 }
-.rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1e293b; }
-.rank-2 { background: linear-gradient(135deg, #cbd5e1, #94a3b8); color: #1e293b; }
-.rank-3 { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
-.rank-rest { background: rgba(148, 163, 184, 0.15); color: rgb(var(--v-theme-on-surface)); opacity: 0.7; }
+.rank-1 { background: rgba(254, 243, 199, 0.95); color: #78350F; }
+.rank-2 { background: rgba(226, 232, 240, 0.92); color: #334155; }
+.rank-3 { background: rgba(254, 215, 170, 0.92); color: #7C2D12; }
+.rank-rest { background: rgba(51, 65, 85, 0.55); color: #94A3B8; }
 
 .avatar {
   width: 28px;
