@@ -84,6 +84,15 @@
     <!-- Section 7: Critical alerts (auto-hide if both lists empty) -->
     <OverviewCriticalAlerts :data="criticalAlerts" class="mb-3" />
 
+    <!-- Section 8: Revenue trend 12m -->
+    <OverviewRevenueTrend
+      :data="revenueTrend"
+      :loading="loadingTrend"
+      :active-group="trendGroupBy"
+      class="mb-3"
+      @change-group="onChangeTrendGroup"
+    />
+
     <!-- Section 9: Quick links horizontal scroll -->
     <OverviewQuickLinks class="mb-3" />
 
@@ -123,6 +132,7 @@ import OverviewTopProducts from '@/components/reports/overview/OverviewTopProduc
 import OverviewTopSales from '@/components/reports/overview/OverviewTopSales.vue';
 import OverviewTopCustomers from '@/components/reports/overview/OverviewTopCustomers.vue';
 import OverviewCriticalAlerts from '@/components/reports/overview/OverviewCriticalAlerts.vue';
+import OverviewRevenueTrend from '@/components/reports/overview/OverviewRevenueTrend.vue';
 import OverviewQuickLinks from '@/components/reports/overview/OverviewQuickLinks.vue';
 import {
   formatDateVN,
@@ -151,6 +161,10 @@ const {
   kpi,
   sparklines,
   criticalAlerts,
+  revenueTrend,
+  trendGroupBy,
+  loadingTrend,
+  fetchRevenueTrend,
   topProducts,
   topSales,
   topCustomers,
@@ -169,6 +183,10 @@ const {
 
 function onChangeCustomerType(type: CustomerType) {
   void fetchTopCustomers(type);
+}
+
+function onChangeTrendGroup(g: 'total' | 'customer_type' | 'brand') {
+  void fetchRevenueTrend(g);
 }
 
 const showCustom = ref(filters.preset === 'custom');

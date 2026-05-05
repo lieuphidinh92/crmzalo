@@ -66,6 +66,13 @@ export interface TopProductRow {
   costCoveragePercent: number;
 }
 
+export type TrendGroupBy = 'total' | 'customer_type' | 'brand';
+export interface RevenueTrendResponse {
+  buckets: string[];
+  series: Array<{ key: string; label: string; values: number[] }>;
+  target: number | null;
+}
+
 export interface CriticalAlertsResponse {
   vipAtRisk: Array<{
     contactId: string;
@@ -251,6 +258,9 @@ export function useOverviewReport() {
   const kpi = ref<KpiResponse | null>(null);
   const sparklines = ref<SparklineResponse | null>(null);
   const criticalAlerts = ref<CriticalAlertsResponse | null>(null);
+  const revenueTrend = ref<RevenueTrendResponse | null>(null);
+  const trendGroupBy = ref<TrendGroupBy>('total');
+  const loadingTrend = ref(false);
   const topProducts = ref<TopProductRow[]>([]);
   const topSales = ref<TopSaleRow[]>([]);
   const topCustomers = ref<TopCustomerRow[]>([]);
@@ -328,6 +338,21 @@ export function useOverviewReport() {
     }
   }
 
+  async function fetchRevenueTrend(gb: TrendGroupBy = trendGroupBy.value) {
+    loadingTrend.value = true;
+    trendGroupBy.value = gb;
+    try {
+      const { data } = await api.get<RevenueTrendResponse>(
+        `/reports/overview/revenue-trend?${queryString.value}&group_by=${gb}`,
+      );
+      revenueTrend.value = data;
+    } catch (e: unknown) {
+      error.value = (e as Error)?.message ?? 'Lỗi tải biểu đồ doanh số';
+    } finally {
+      loadingTrend.value = false;
+    }
+  }
+
   async function fetchCriticalAlerts() {
     try {
       const { data } = await api.get<CriticalAlertsResponse>(
@@ -380,6 +405,7 @@ export function useOverviewReport() {
       fetchTopSales(),
       fetchTopCustomers(),
       fetchCriticalAlerts(),
+      fetchRevenueTrend(),
     ]);
   }
 
@@ -397,6 +423,10 @@ export function useOverviewReport() {
     kpi,
     sparklines,
     criticalAlerts,
+    revenueTrend,
+    trendGroupBy,
+    loadingTrend,
+    fetchRevenueTrend,
     topProducts,
     topSales,
     topCustomers,

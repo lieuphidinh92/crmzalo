@@ -21,12 +21,14 @@ import {
 import {
   getCriticalAlerts,
   getKpi,
+  getRevenueTrend12m,
   getSparklines,
   getTopCustomers,
   getTopProducts,
   getTopSalesForPeriod,
   type CustomerRankType,
   type OverviewFilters,
+  type TrendGroupBy,
 } from './overview-service.js';
 
 type Q = Record<string, string>;
@@ -146,6 +148,28 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
           limit,
         ),
       }));
+    },
+  );
+
+  app.get(
+    '/api/v1/reports/overview/revenue-trend',
+    async (request: FastifyRequest) => {
+      const q = request.query as Q;
+      const filters = parseFilters(q, request.user!);
+      const requested = (q.group_by || q.groupBy || 'total') as TrendGroupBy;
+      const groupBy: TrendGroupBy =
+        ['total', 'customer_type', 'brand'].includes(requested)
+          ? requested
+          : 'total';
+      const key = filterCacheKey(
+        'overview-revenue-trend',
+        request.user!.orgId,
+        filters,
+        groupBy,
+      );
+      return withCache(key, () =>
+        getRevenueTrend12m(request.user!.orgId, filters, groupBy),
+      );
     },
   );
 

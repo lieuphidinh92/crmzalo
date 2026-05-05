@@ -393,6 +393,130 @@ export async function getTopSalesForPeriod(
   return getTopSales(orgId, limit);
 }
 
+/* ── 4a. Revenue trend 12 months (total / by customer_type / by brand) ─── */
+
+export type TrendGroupBy = 'total' | 'customer_type' | 'brand';
+
+export interface RevenueTrendResponse {
+  buckets: string[]; // ['YYYY-MM', ...] length 12
+  series: Array<{ key: string; label: string; values: number[] }>;
+  /** Optional dashed target line per month (current YTD / 12). */
+  target: number | null;
+}
+
+/** Group SKU into the 4 brand buckets used elsewhere in the app. */
+function groupSkuByBrand(sku: string): string {
+  return brandFromSku(sku);
+}
+
+const CUSTOMER_TYPE_LABELS: Record<string, string> = {
+  nha_thuoc: 'Nhà thuốc',
+  si_online: 'Sỉ online',
+  duoc_si: 'Dược sĩ',
+  cua_hang_me_be: 'Cửa hàng mẹ bé',
+  unknown: 'Chưa phân loại',
+};
+
+export async function getRevenueTrend12m(
+  orgId: string,
+  filters: OverviewFilters,
+  groupBy: TrendGroupBy,
+): Promise<RevenueTrendResponse> {
+  // Build 12 monthly buckets ending at filter `to` (inclusive of last
+  // day's month). We reuse sixMonthBuckets style but with 12 windows.
+  const lastDay = new Date(filters.to.getTime() - 1);
+  const anchor = new Date(lastDay.getFullYear(), lastDay.getMonth(), 1);
+  const windows: Array<{ from: Date; to: Date; label: string }> = [];
+  for (let i = 11; i >= 0; i--) {
+    const start = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
+    const stop = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    windows.push({
+      from: start,
+      to: stop,
+      label: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
+    });
+  }
+  const buckets = windows.map((w) => w.label);
+
+  // ── total only — single series ─────────────────────────────
+  if (groupBy === 'total') {
+    const values = await Promise.all(
+      windows.map(async (w) => {
+        const agg = await prisma.order.aggregate({
+          where: withSaleScope(
+            { orgId, ...orderInWindowWhere(w.from, w.to) },
+            filters.saleId,
+          ),
+          _sum: { totalAmount: true },
+        });
+        return Number(agg._sum.totalAmount ?? 0);
+      }),
+    );
+    const ytdTotal = values.reduce((s, v) => s + v, 0);
+    return {
+      buckets,
+      series: [{ key: 'total', label: 'Tổng doanh số', values }],
+      target: ytdTotal > 0 ? Math.round(ytdTotal / 12) : null,
+    };
+  }
+
+  // ── customer_type — multi-series ────────────────────────────
+  if (groupBy === 'customer_type') {
+    const seen = new Set<string>();
+    const buf: Record<string, number[]> = {};
+    for (let i = 0; i < windows.length; i++) {
+      const w = windows[i];
+      const orders = await prisma.order.findMany({
+        where: withSaleScope(
+          { orgId, ...orderInWindowWhere(w.from, w.to) },
+          filters.saleId,
+        ),
+        select: { totalAmount: true, contact: { select: { customerType: true } } },
+      });
+      for (const o of orders) {
+        const ct = o.contact?.customerType ?? 'unknown';
+        seen.add(ct);
+        if (!buf[ct]) buf[ct] = new Array(windows.length).fill(0);
+        buf[ct][i] += o.totalAmount;
+      }
+    }
+    const series = [...seen]
+      .sort((a, b) =>
+        buf[b].reduce((s, v) => s + v, 0) - buf[a].reduce((s, v) => s + v, 0),
+      )
+      .map((k) => ({
+        key: k,
+        label: CUSTOMER_TYPE_LABELS[k] ?? k,
+        values: buf[k] ?? new Array(windows.length).fill(0),
+      }));
+    return { buckets, series, target: null };
+  }
+
+  // ── brand (parsed from SKU) — multi-series ─────────────────
+  const buf: Record<string, number[]> = {};
+  for (let i = 0; i < windows.length; i++) {
+    const w = windows[i];
+    const items = await prisma.orderItem.findMany({
+      where: {
+        order: withSaleScope(
+          { orgId, ...orderInWindowWhere(w.from, w.to) },
+          filters.saleId,
+        ),
+      },
+      select: { sku: true, lineTotal: true },
+    });
+    for (const it of items) {
+      const b = groupSkuByBrand(it.sku);
+      if (!buf[b]) buf[b] = new Array(windows.length).fill(0);
+      buf[b][i] += it.lineTotal;
+    }
+  }
+  const series = Object.keys(buf)
+    .sort((a, b) => buf[b].reduce((s, v) => s + v, 0) - buf[a].reduce((s, v) => s + v, 0))
+    .map((k) => ({ key: k, label: k, values: buf[k] }));
+  return { buckets, series, target: null };
+}
+
 /* ── 4b. Critical alerts (VIP churn + underperforming sales) ─────── */
 
 interface CriticalAlertsResponse {
