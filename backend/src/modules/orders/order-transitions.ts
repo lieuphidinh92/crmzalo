@@ -364,7 +364,8 @@ async function restoreStockForOrder(
  *  - Update contact.lastOrderDate
  *  - Set first_contact_date if missing (for retention math)
  *  - Promote stage `dang_thu_hang → dai_ly_chinh_thuc` if this is the
- *    first completed order (handled in Session 2B — placeholder log here)
+ *    first completed order on a contact still in trial. Records the
+ *    transition in stage_history so the resale/pipeline reports see it.
  */
 async function applyCompletionSideEffects(
   orderId: string,
@@ -376,17 +377,52 @@ async function applyCompletionSideEffects(
     select: {
       orderDate: true,
       contactId: true,
-      contact: { select: { firstContactDate: true } },
+      contact: { select: { firstContactDate: true, stage: true } },
     },
   });
 
+  const completionDate = order.orderDate ?? new Date();
+  const data: Record<string, unknown> = {
+    lastOrderDate: completionDate,
+  };
+  if (!order.contact.firstContactDate) {
+    data.firstContactDate = completionDate;
+  }
+
+  // Auto-promote: dang_thu_hang → dai_ly_chinh_thuc on first completed order.
+  // We check there is no PRIOR completed order on this contact (so we only
+  // promote once). Use Prisma `findFirst` excluding the current order id.
+  let promotedStage: string | null = null;
+  if (order.contact.stage === 'dang_thu_hang') {
+    const priorCompleted = await tx.order.count({
+      where: {
+        contactId: order.contactId,
+        status: 'completed',
+        id: { not: orderId },
+      },
+    });
+    if (priorCompleted === 0) {
+      promotedStage = 'dai_ly_chinh_thuc';
+      data.stage = 'dai_ly_chinh_thuc';
+      data.stageUpdatedAt = new Date();
+    }
+  }
+
   await tx.contact.update({
     where: { id: order.contactId },
-    data: {
-      lastOrderDate: order.orderDate ?? new Date(),
-      ...(order.contact.firstContactDate
-        ? {}
-        : { firstContactDate: order.orderDate ?? new Date() }),
-    },
+    data,
   });
+
+  if (promotedStage) {
+    await tx.stageHistory.create({
+      data: {
+        contactId: order.contactId,
+        fromStage: 'dang_thu_hang',
+        toStage: 'dai_ly_chinh_thuc',
+        changedAt: new Date(),
+        changedByUserId: user.id,
+        reason: `Tự động chuyển khi đơn ${orderId.slice(0, 8)} hoàn tất`,
+      },
+    });
+  }
 }

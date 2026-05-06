@@ -458,6 +458,25 @@
       </v-card>
     </v-dialog>
 
+    <!-- Delivery note preview dialog with print action -->
+    <v-dialog v-model="previewPrint" fullscreen scrollable>
+      <v-card>
+        <v-toolbar density="compact" color="surface" flat class="print-toolbar">
+          <v-btn icon variant="text" @click="closePrintPreview">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+          <v-toolbar-title>Xem trước phiếu giao — {{ order?.orderCode }}</v-toolbar-title>
+          <v-spacer />
+          <v-btn color="primary" prepend-icon="mdi-printer" @click="doPrint">
+            In / Lưu PDF
+          </v-btn>
+        </v-toolbar>
+        <v-card-text class="pa-0 print-host">
+          <OrderDeliveryNote v-if="order" :order="order" :print-mode="true" />
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
     <v-snackbar v-model="snack.show" :color="snack.color" :timeout="3500">
       {{ snack.text }}
     </v-snackbar>
@@ -484,6 +503,7 @@ import OrderProductPickerDialog from '@/components/orders/OrderProductPickerDial
 import OrderGiftDialog from '@/components/orders/OrderGiftDialog.vue';
 import OrderPaymentSection from '@/components/orders/OrderPaymentSection.vue';
 import OrderInvoiceCard from '@/components/orders/OrderInvoiceCard.vue';
+import OrderDeliveryNote from '@/components/orders/OrderDeliveryNote.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -828,8 +848,32 @@ async function onSavePayment(payload: { paidAmount: number; paymentMethod: strin
   }
 }
 
+// ── Print delivery note ─────────────────────────────────────────────────
+// Pattern: hide everything else, show only the print component, call
+// window.print(). Browser native "Save as PDF" gives us a free PDF.
+const previewPrint = ref(false);
+
 function onPrint() {
-  showSnack('In phiếu giao PDF — sẽ kích hoạt ở Session 2B', 'info');
+  if (!order.value) return;
+  if ((order.value.items?.length ?? 0) === 0) {
+    showSnack('Đơn chưa có sản phẩm — không thể in phiếu', 'error');
+    return;
+  }
+  previewPrint.value = true;
+}
+
+async function doPrint() {
+  await new Promise((r) => requestAnimationFrame(() => r(null)));
+  document.body.classList.add('printing-delivery-note');
+  try {
+    window.print();
+  } finally {
+    document.body.classList.remove('printing-delivery-note');
+  }
+}
+
+function closePrintPreview() {
+  previewPrint.value = false;
 }
 
 function goBack() {
@@ -926,6 +970,42 @@ onMounted(async () => {
   .item-profit {
     grid-column: 2;
     font-size: 0.75rem;
+  }
+}
+
+.print-toolbar {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+</style>
+
+<!-- Global rules for print mode — applied via document.body class toggle.
+     Scoped <style> can't reach body so we use a non-scoped block here. -->
+<style>
+body.printing-delivery-note .v-application__wrap > *:not(.v-overlay-container),
+body.printing-delivery-note .v-overlay > *:not(.v-overlay__content),
+body.printing-delivery-note .v-overlay__scrim,
+body.printing-delivery-note .v-toolbar,
+body.printing-delivery-note .v-snackbar {
+  visibility: hidden !important;
+}
+body.printing-delivery-note .v-overlay__content,
+body.printing-delivery-note .v-overlay__content * {
+  visibility: visible !important;
+}
+body.printing-delivery-note .v-overlay__content {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: auto !important;
+  background: white !important;
+  box-shadow: none !important;
+}
+body.printing-delivery-note .print-host {
+  background: white !important;
+}
+@media print {
+  body.printing-delivery-note .v-overlay__content {
+    overflow: visible !important;
   }
 }
 </style>

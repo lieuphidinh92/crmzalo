@@ -88,7 +88,92 @@ export async function notificationRoutes(app: FastifyInstance) {
       });
     }
 
-    // 4. Disconnected Zalo accounts
+    // 4. Overdue debt — orders with debt past due date, scoped to user.
+    //    Same scope as orderScopeWhere(): owner+admin see all, member only
+    //    sees orders they own.
+    const isAdmin = user.role === 'owner' || user.role === 'admin';
+    const orderScope = isAdmin
+      ? { orgId: user.orgId }
+      : {
+          orgId: user.orgId,
+          OR: [
+            { assignedSaleId: user.id },
+            { createdByUserId: user.id },
+            { contact: { assignedUserId: user.id } },
+          ],
+        };
+
+    const overdueDebtList = await prisma.order.findMany({
+      where: {
+        AND: [
+          orderScope,
+          {
+            debtAmountValue: { gt: 0 },
+            debtDueDate: { lt: new Date() },
+            status: { notIn: ['cancelled'] },
+          },
+        ],
+      },
+      select: {
+        id: true,
+        orderCode: true,
+        debtAmountValue: true,
+        debtDueDate: true,
+        contact: { select: { fullName: true, phone: true } },
+      },
+      orderBy: { debtDueDate: 'asc' },
+      take: 5,
+    });
+    for (const o of overdueDebtList) {
+      const days = o.debtDueDate
+        ? Math.ceil((Date.now() - o.debtDueDate.getTime()) / (24 * 60 * 60 * 1000))
+        : 0;
+      notifications.push({
+        id: `overdue-${o.id}`,
+        type: 'error',
+        priority: 'high',
+        title: `Đơn ${o.orderCode} quá hạn nợ ${days} ngày`,
+        detail: `${o.contact?.fullName ?? 'KH'} · còn ${Number(o.debtAmountValue).toLocaleString('vi-VN')} đ`,
+        createdAt: o.debtDueDate?.toISOString() ?? new Date().toISOString(),
+      });
+    }
+
+    // 5. Expiring batches (90 days). Org-wide — anyone in org should know.
+    const horizon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    const expiringBatches = await prisma.inventoryBatch.findMany({
+      where: {
+        orgId: user.orgId,
+        status: 'active',
+        currentQuantity: { gt: 0 },
+        expiryDate: { not: null, lt: horizon },
+      },
+      select: {
+        id: true,
+        batchCode: true,
+        currentQuantity: true,
+        expiryDate: true,
+        product: { select: { sku: true, name: true } },
+      },
+      orderBy: { expiryDate: 'asc' },
+      take: 3,
+    });
+    for (const b of expiringBatches) {
+      const days = b.expiryDate
+        ? Math.ceil((b.expiryDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+        : 0;
+      notifications.push({
+        id: `batch-${b.id}`,
+        type: days < 0 ? 'error' : 'warning',
+        priority: days < 30 ? 'high' : 'medium',
+        title: days < 0
+          ? `Lô ${b.batchCode} đã hết hạn`
+          : `Lô ${b.batchCode} hết hạn trong ${days} ngày`,
+        detail: `${b.product?.name ?? ''} · còn ${b.currentQuantity}`,
+        createdAt: b.expiryDate?.toISOString() ?? new Date().toISOString(),
+      });
+    }
+
+    // 6. Disconnected Zalo accounts
     const accounts = await prisma.zaloAccount.findMany({
       where: { orgId: user.orgId },
       select: { id: true, displayName: true },

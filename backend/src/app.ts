@@ -55,6 +55,7 @@ import { orderTransitionRoutes } from './modules/orders/order-transitions.js';
 import { orderItemsRoutes } from './modules/orders/order-items-routes.js';
 import { orderGiftsRoutes } from './modules/orders/order-gifts-routes.js';
 import { orderPaymentRoutes } from './modules/orders/order-payment-routes.js';
+import { startOrderCronJobs } from './modules/orders/order-cron.js';
 import { productRoutes } from './modules/products/product-routes.js';
 import { brandRoutes } from './modules/products/brand-routes.js';
 import { batchRoutes } from './modules/inventory/batch-routes.js';
@@ -228,6 +229,7 @@ async function bootstrap() {
     startDailyStatsAggregation();
     startZaloHealthCheck();
     startTaskCronJobs();
+    startOrderCronJobs();
   } catch (err) {
     logger.error('Failed to start server:', err);
     process.exit(1);

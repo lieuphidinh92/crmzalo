@@ -216,8 +216,21 @@
                   <v-list-item prepend-icon="mdi-eye-outline" @click="goDetail(o.id)">
                     <v-list-item-title>Xem chi tiết</v-list-item-title>
                   </v-list-item>
-                  <v-list-item prepend-icon="mdi-printer" disabled>
-                    <v-list-item-title>In phiếu (Session 2B)</v-list-item-title>
+                  <v-list-item
+                    prepend-icon="mdi-printer"
+                    :disabled="!canPrint(o)"
+                    @click="openPrint(o)"
+                  >
+                    <v-list-item-title>In phiếu giao</v-list-item-title>
+                  </v-list-item>
+                  <v-divider class="my-1" />
+                  <v-list-item
+                    prepend-icon="mdi-close-circle-outline"
+                    :disabled="!canCancel(o)"
+                    base-color="error"
+                    @click="askCancel(o)"
+                  >
+                    <v-list-item-title>Huỷ đơn</v-list-item-title>
                   </v-list-item>
                 </v-list>
               </v-menu>
@@ -230,11 +243,65 @@
     <div v-if="orders.length > 0" class="text-caption text-medium-emphasis mt-3 text-center">
       Hiển thị {{ orders.length }} / {{ total }} đơn
     </div>
+
+    <!-- Inline cancel dialog -->
+    <v-dialog v-model="cancelDialog" max-width="420">
+      <v-card>
+        <v-card-title>Huỷ đơn {{ cancelTarget?.orderCode }}?</v-card-title>
+        <v-card-text>
+          <v-textarea
+            v-model="cancelReason"
+            label="Lý do huỷ *"
+            rows="3"
+            autofocus
+            hide-details="auto"
+            :error-messages="cancelTried && !cancelReason ? 'Bắt buộc' : ''"
+          />
+          <v-alert
+            v-if="cancelTarget && ['packing','shipping'].includes(cancelTarget.statusNormalized)"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mt-3"
+          >
+            Đơn đã trừ kho — huỷ sẽ tự động hoàn kho về batch gốc.
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="cancelDialog = false">Bỏ qua</v-btn>
+          <v-btn color="error" :loading="cancelling" @click="confirmCancel">Huỷ đơn</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Inline delivery-note preview dialog -->
+    <v-dialog v-model="printOpen" fullscreen scrollable>
+      <v-card>
+        <v-toolbar density="compact" color="surface" flat class="print-toolbar">
+          <v-btn icon variant="text" @click="closePrint">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+          <v-toolbar-title>Xem trước phiếu giao — {{ printOrder?.orderCode }}</v-toolbar-title>
+          <v-spacer />
+          <v-btn color="primary" prepend-icon="mdi-printer" @click="doPrint">
+            In / Lưu PDF
+          </v-btn>
+        </v-toolbar>
+        <v-card-text class="pa-0 print-host">
+          <OrderDeliveryNote v-if="printOrder" :order="printOrder" :print-mode="true" />
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
+    <v-snackbar v-model="snack.show" :color="snack.color" :timeout="3500">
+      {{ snack.text }}
+    </v-snackbar>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
   useOrders,
@@ -242,9 +309,11 @@ import {
   formatVND,
   isOverdue,
   toNum,
+  type Order,
   type OrderStatus,
 } from '@/composables/use-orders';
 import { useUsers } from '@/composables/use-users';
+import OrderDeliveryNote from '@/components/orders/OrderDeliveryNote.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -257,7 +326,9 @@ const {
   filters,
   hasActiveFilters,
   fetchOrders,
+  fetchOrder,
   fetchPipelineSummary,
+  cancelOrder,
   resetFilters,
   statusLabel,
   statusColor,
@@ -327,6 +398,81 @@ function goNew() {
 }
 function goDetail(id: string) {
   router.push(`/orders/${id}`);
+}
+
+// ── Print delivery note from list ──────────────────────────────────────
+const printOpen = ref(false);
+const printOrder = ref<Order | null>(null);
+
+function canPrint(o: Order): boolean {
+  return ['confirmed', 'packing', 'shipping', 'completed'].includes(o.statusNormalized);
+}
+
+async function openPrint(o: Order) {
+  // Need full detail (items + gifts + contact) for the printed note
+  const full = await fetchOrder(o.id);
+  if (!full) {
+    showSnack('Không tải được đơn — thử lại', 'error');
+    return;
+  }
+  printOrder.value = full;
+  printOpen.value = true;
+}
+
+function closePrint() {
+  printOpen.value = false;
+  printOrder.value = null;
+}
+
+async function doPrint() {
+  await new Promise((r) => requestAnimationFrame(() => r(null)));
+  document.body.classList.add('printing-delivery-note');
+  try {
+    window.print();
+  } finally {
+    document.body.classList.remove('printing-delivery-note');
+  }
+}
+
+// ── Cancel from list ────────────────────────────────────────────────────
+const cancelDialog = ref(false);
+const cancelTarget = ref<Order | null>(null);
+const cancelReason = ref('');
+const cancelTried = ref(false);
+const cancelling = ref(false);
+
+function canCancel(o: Order): boolean {
+  return !['completed', 'cancelled'].includes(o.statusNormalized);
+}
+
+function askCancel(o: Order) {
+  cancelTarget.value = o;
+  cancelReason.value = '';
+  cancelTried.value = false;
+  cancelDialog.value = true;
+}
+
+async function confirmCancel() {
+  cancelTried.value = true;
+  if (!cancelReason.value.trim() || !cancelTarget.value) return;
+  cancelling.value = true;
+  try {
+    await cancelOrder(cancelTarget.value.id, cancelReason.value.trim());
+    cancelDialog.value = false;
+    showSnack('Đã huỷ đơn', 'info');
+    await Promise.all([fetchOrders(), fetchPipelineSummary()]);
+  } catch (err: any) {
+    showSnack(err?.response?.data?.error ?? 'Huỷ thất bại', 'error');
+  } finally {
+    cancelling.value = false;
+  }
+}
+
+const snack = reactive<{ show: boolean; text: string; color: string }>({ show: false, text: '', color: 'success' });
+function showSnack(text: string, color: 'success' | 'error' | 'info' = 'success') {
+  snack.text = text;
+  snack.color = color;
+  snack.show = true;
 }
 
 onMounted(async () => {
@@ -411,6 +557,10 @@ onMounted(async () => {
 
 .font-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.print-toolbar {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 @media (max-width: 600px) {
