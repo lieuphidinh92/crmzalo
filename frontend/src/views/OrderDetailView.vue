@@ -484,7 +484,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import {
@@ -884,6 +884,27 @@ onMounted(async () => {
   await fetchUsers();
   if (!isNew.value) await loadOrder();
 });
+
+// When the route changes (clicking from list to a different order, or
+// switching between two orders), reset transient dialog state and reload
+// the new order's data.
+watch(
+  () => route.params.id,
+  async (newId) => {
+    if (!newId || newId === 'new') {
+      orderId.value = null;
+      order.value = null;
+      return;
+    }
+    orderId.value = newId as string;
+    previewPrint.value = false;
+    cancelDialog.value = false;
+    trackingDialog.value = false;
+    productDialog.value = false;
+    giftDialog.value = false;
+    await loadOrder();
+  },
+);
 </script>
 
 <style scoped>
