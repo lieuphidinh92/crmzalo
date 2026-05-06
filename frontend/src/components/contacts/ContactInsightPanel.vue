@@ -117,6 +117,63 @@
 
         <v-divider class="my-4" />
 
+        <!-- ── Wholesale orders section ──────────────────────────────── -->
+        <div class="d-flex align-center mb-3">
+          <v-icon icon="mdi-cart-outline" color="primary" class="mr-2" />
+          <div class="text-h6">Đơn hàng</div>
+          <v-spacer />
+          <v-btn
+            v-if="orderStats.orderCount > 0 || contactOrders.length > 0"
+            size="x-small"
+            variant="text"
+            append-icon="mdi-arrow-right"
+            @click="goAllOrders"
+          >
+            Xem tất cả
+          </v-btn>
+        </div>
+
+        <div v-if="orderStats.orderCount > 0 || contactOrders.length > 0" class="orders-stats mb-3">
+          <div class="orders-stat">
+            <div class="text-caption text-medium-emphasis">Tổng DS lifetime</div>
+            <div class="text-body-1 font-weight-bold font-mono text-primary">{{ formatVND(orderStats.totalValue) }}</div>
+          </div>
+          <div class="orders-stat">
+            <div class="text-caption text-medium-emphasis">Số đơn hoàn tất</div>
+            <div class="text-body-1 font-weight-bold font-mono">{{ orderStats.orderCount }}</div>
+          </div>
+        </div>
+
+        <div v-if="contactOrders.length === 0" class="text-caption text-medium-emphasis text-center py-3" style="border: 1px dashed rgba(255, 255, 255, 0.18); border-radius: 8px;">
+          Chưa có đơn hàng nào
+        </div>
+        <div v-else class="orders-mini-list">
+          <a
+            v-for="o in contactOrders.slice(0, 5)"
+            :key="o.id"
+            href="#"
+            class="order-mini"
+            @click.prevent="goOrder(o.id)"
+          >
+            <div class="d-flex align-center">
+              <div class="font-mono font-weight-medium text-body-2">{{ o.orderCode }}</div>
+              <v-chip :color="orderStatusColor(o.statusNormalized || o.status)" size="x-small" variant="tonal" class="ml-2">
+                {{ orderStatusLabel(o.statusNormalized || o.status) }}
+              </v-chip>
+              <v-spacer />
+              <span class="font-mono text-body-2 font-weight-medium">{{ formatVND(o.totalAmountValue ?? o.totalAmount) }}</span>
+            </div>
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ formatDate(o.orderDate ?? o.createdAt) }}
+              <span v-if="Number(o.debtAmountValue) > 0" class="text-error ml-2">
+                · còn nợ {{ formatVND(o.debtAmountValue) }}
+              </span>
+            </div>
+          </a>
+        </div>
+
+        <v-divider class="my-4" />
+
         <!-- ── AI Insight section ──────────────────────────────────────── -->
         <div class="d-flex align-center mb-3">
           <v-icon icon="mdi-brain" color="primary" class="mr-2" />
@@ -263,6 +320,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import {
   CUSTOMER_TYPE_OPTIONS,
   STAGE_OPTIONS,
@@ -272,6 +330,13 @@ import {
   type AIInsight,
   type Contact,
 } from '@/composables/use-contacts';
+import {
+  fetchContactWholesaleOrders,
+  formatVND,
+  statusLabel as orderStatusLabel,
+  statusColor as orderStatusColor,
+  type Order,
+} from '@/composables/use-orders';
 
 interface Props {
   modelValue: boolean;
@@ -287,6 +352,7 @@ const emit = defineEmits<{
 }>();
 
 const { refreshAiInsight } = useContacts();
+const router = useRouter();
 
 const open = computed({
   get: () => props.modelValue,
@@ -297,10 +363,50 @@ const loadingInsight = ref(false);
 const statusMessage = ref('');
 const statusType = ref<'info' | 'success' | 'warning' | 'error'>('info');
 
+const contactOrders = ref<Order[]>([]);
+const orderStats = ref<{ totalValue: number; orderCount: number; lastOrderDate: string | null }>({
+  totalValue: 0,
+  orderCount: 0,
+  lastOrderDate: null,
+});
+
+async function loadContactOrders(contactId: string) {
+  try {
+    const res = await fetchContactWholesaleOrders(contactId);
+    contactOrders.value = res.orders;
+    orderStats.value = res.stats;
+  } catch (err) {
+    console.error('[contact-panel] orders fetch error:', err);
+    contactOrders.value = [];
+    orderStats.value = { totalValue: 0, orderCount: 0, lastOrderDate: null };
+  }
+}
+
+function goAllOrders() {
+  if (props.contact) {
+    router.push({ path: '/orders', query: { contactId: props.contact.id } });
+  }
+}
+function goOrder(id: string) {
+  router.push(`/orders/${id}`);
+}
+
 watch(
   () => props.contact?.id,
-  () => {
+  (id) => {
     statusMessage.value = '';
+    contactOrders.value = [];
+    orderStats.value = { totalValue: 0, orderCount: 0, lastOrderDate: null };
+    if (id && props.modelValue) {
+      loadContactOrders(id);
+    }
+  },
+);
+
+watch(
+  () => props.modelValue,
+  (v) => {
+    if (v && props.contact?.id) loadContactOrders(props.contact.id);
   },
 );
 
@@ -470,6 +576,39 @@ function formatCurrency(v: number | string | null | undefined): string {
   border: 1px dashed var(--brand-navy-500);
   border-radius: 12px;
   background: var(--brand-navy-700);
+}
+
+.orders-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.orders-stat {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.orders-mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.order-mini {
+  display: block;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  text-decoration: none;
+  color: inherit;
+}
+.order-mini:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgb(var(--v-theme-primary));
+}
+.font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .insight-card {

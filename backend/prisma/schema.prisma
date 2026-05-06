@@ -32,6 +32,9 @@ model Organization {
   suppliers           Supplier[]
   brands              Brand[]
   products            Product[]
+  warehouses          Warehouse[]
+  inventoryBatches    InventoryBatch[]
+  inventoryMovements  InventoryMovement[]
 
   @@map("organizations")
 }
@@ -71,6 +74,8 @@ model User {
   repliedMessages  Message[]           @relation("RepliedMessages")
   activityLogs     ActivityLog[]
   createdOrders    Order[]             @relation("CreatedOrders")
+  saleOrders       Order[]             @relation("AssignedSaleOrders")
+  mktOrders        Order[]             @relation("MktOwnerOrders")
   assignedTasks    Task[]              @relation("AssignedTasks")
   learningProgress LearningProgress[]
 
@@ -138,6 +143,7 @@ model Contact {
   // All fields nullable / default-empty so existing rows don't break.
   storeName              String?   @map("store_name")
   province               String?
+  address                String?
   customerType           String?   @map("customer_type")              // nha_thuoc | si_online | duoc_si | cua_hang_me_be
   scale                  String?                                       // nho | vua | lon
   currentProducts        Json      @default("[]") @map("current_products")
@@ -423,7 +429,17 @@ model AppSetting {
   @@map("app_settings")
 }
 
-// Sales order linked to a contact (and optionally a conversation)
+// Sales order linked to a contact (and optionally a conversation).
+//
+// HISTORY: This model started as a thin row populated by MISA imports
+// (`order_code` = "XK*"). In Session 2 of the wholesale CRM build it was
+// extended with the wholesale-order workflow: 6-status pipeline, payment
+// tracking, debt management, shipping, gifts, batch links. Old MISA rows
+// keep their original status/totalAmount; new rows from the UI populate
+// the new `subtotalAmount`/`paidAmount`/`debtAmount` Decimal columns.
+// The legacy `Float` `totalAmount` is mirrored to `total_amount_value`
+// (Decimal) on every write so dashboards/resale-service keep working
+// without changes.
 model Order {
   id              String    @id @default(uuid())
   orgId           String    @map("org_id")
@@ -431,6 +447,9 @@ model Order {
   createdByUserId String    @map("created_by_user_id")
   conversationId  String?   @map("conversation_id")
   orderCode       String    @map("order_code")
+  // Legacy Float total — kept for backward compat with MISA-imported rows
+  // and the dashboard/resale services that aggregate it. New wholesale
+  // orders also write here so existing reports keep working.
   totalAmount     Float     @map("total_amount")
   // Real business date the customer placed the order. Falls back to
   // `createdAt` if staff doesn't enter it. All resale analytics use
@@ -440,20 +459,72 @@ model Order {
   // for now; structured as objects later if/when we add unit prices per
   // line. Used for product-level resale frequency analytics.
   productSkus     Json      @default("[]") @map("product_skus")
-  status          String    @default("new") // new, confirmed, paid, shipped, completed, cancelled
+  // 6-status pipeline (new schema): draft | confirmed | packing |
+  // shipping | completed | cancelled. Legacy MISA rows may still carry
+  // "shipped"/"paid" until backfill — handled with status normalization
+  // in the service layer.
+  status          String    @default("draft")
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
+  // ── Session 2 wholesale-order extension ───────────────────────────
+  assignedSaleId       String?  @map("assigned_sale_id")
+  mktOwnerId           String?  @map("mkt_owner_id")
+  source               String?  // facebook | zalo | gioi_thieu | khac
+  shippingMethod       String?  @map("shipping_method") // pickup_at_warehouse | cod | prepaid
+  shippingProvider     String?  @map("shipping_provider")
+  trackingCode         String?  @map("tracking_code")
+  shippingFee          Decimal  @default(0) @map("shipping_fee") @db.Decimal(15, 2)
+  deliveryAddress      String?  @map("delivery_address")
+  // Snapshots of the cart total (auto-computed in service):
+  //   subtotalAmount  = SUM(line_total)
+  //   discountAmount  = the resolved discount in VND (already applied)
+  //   totalAmountValue = subtotal - discount + shipping_fee
+  //   debtAmountValue  = total - paid (auto)
+  subtotalAmount       Decimal? @map("subtotal_amount") @db.Decimal(15, 2)
+  discountType         String?  @map("discount_type") // percent | fixed
+  discountValue        Decimal  @default(0) @map("discount_value") @db.Decimal(15, 2)
+  discountAmount       Decimal  @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  totalAmountValue     Decimal? @map("total_amount_value") @db.Decimal(15, 2)
+  paidAmount           Decimal  @default(0) @map("paid_amount") @db.Decimal(15, 2)
+  debtAmountValue      Decimal  @default(0) @map("debt_amount_value") @db.Decimal(15, 2)
+  paymentMethod        String?  @map("payment_method") // bank_transfer | cod | cash | credit
+  debtDueDate          DateTime? @map("debt_due_date") @db.Date
+
+  internalNote         String?  @map("internal_note")
+  customerNote         String?  @map("customer_note")
+  cancelReason         String?  @map("cancel_reason")
+
+  // VAT placeholder for Easy Invoice integration (Session 2B)
+  vatInvoiceId         String?  @map("vat_invoice_id")
+  vatInvoiceStatus     String   @default("not_issued") @map("vat_invoice_status")
+  vatInvoiceUrl        String?  @map("vat_invoice_url")
+
+  // Stage timestamps
+  confirmedAt          DateTime? @map("confirmed_at")
+  packedAt             DateTime? @map("packed_at")
+  shippedAt            DateTime? @map("shipped_at")
+  completedAt          DateTime? @map("completed_at")
+  cancelledAt          DateTime? @map("cancelled_at")
+  // ──────────────────────────────────────────────────────────────────
+
   org          Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
   createdBy    User          @relation("CreatedOrders", fields: [createdByUserId], references: [id])
+  assignedSale User?         @relation("AssignedSaleOrders", fields: [assignedSaleId], references: [id])
+  mktOwner     User?         @relation("MktOwnerOrders", fields: [mktOwnerId], references: [id])
   conversation Conversation? @relation(fields: [conversationId], references: [id])
   items        OrderItem[]
+  gifts        OrderGift[]
+  movements    InventoryMovement[]
 
   @@unique([orgId, orderCode])
   @@index([orgId, orderDate])
   @@index([orgId, contactId])
+  @@index([orgId, status])
+  @@index([orgId, assignedSaleId])
+  @@index([orgId, debtDueDate])
   @@map("orders")
 }
 
@@ -476,11 +547,136 @@ model OrderItem {
   returnValue   Float   @default(0) @map("return_value")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // ── Session 2 wholesale-order extension ───────────────────────────
+  // Link to the Product table (Session 1). Nullable because legacy MISA
+  // imports populated only `sku` text.
+  productId     String?  @map("product_id")
+  // Which lot this line was picked from. Nullable for legacy rows / for
+  // gift items that don't deduct stock from a specific batch.
+  batchId       String?  @map("batch_id")
+  // Which `product_prices` tier the unit_price came from. Snapshot —
+  // editing the price tier later does not retroactively change the
+  // order. Nullable for legacy rows / manual overrides.
+  priceTierId   String?  @map("price_tier_id")
+  // Derived: `line_total - line_cost`. Owner/admin only.
+  unitCost      Decimal? @map("unit_cost") @db.Decimal(15, 2)
+  lineCost      Decimal? @map("line_cost") @db.Decimal(15, 2)
+  profit        Decimal? @db.Decimal(15, 2)
+  // ──────────────────────────────────────────────────────────────────
+
+  order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product?     @relation(fields: [productId], references: [id])
+  batch   InventoryBatch? @relation(fields: [batchId], references: [id])
+  tier    ProductPrice?   @relation(fields: [priceTierId], references: [id])
 
   @@index([orderId])
   @@index([sku])
+  @@index([productId])
+  @@index([batchId])
   @@map("order_items")
+}
+
+// ── Session 2: Wholesale order add-ons ──────────────────────────────
+// Per-warehouse inventory lots with expiry tracking. Master "kho" record
+// in `warehouses` (we ship from a single warehouse for now). When admin
+// imports new stock through Session 3 they create one batch per shipment.
+model Warehouse {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  name      String
+  address   String?
+  managerId String?  @map("manager_id")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  org     Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  batches InventoryBatch[]
+
+  @@map("warehouses")
+}
+
+// One row per (product, lot, warehouse). `currentQuantity` is the live
+// stock in the warehouse — decremented on order packing, incremented on
+// cancel-after-packing or returns. `importQuantity` is the original
+// amount when the lot was received (immutable after creation).
+model InventoryBatch {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  productId       String   @map("product_id")
+  warehouseId     String   @map("warehouse_id")
+  batchCode       String   @map("batch_code")
+  manufactureDate DateTime? @map("manufacture_date") @db.Date
+  expiryDate      DateTime? @map("expiry_date") @db.Date
+  importQuantity  Int      @map("import_quantity")
+  currentQuantity Int      @map("current_quantity")
+  importCost      Decimal? @map("import_cost") @db.Decimal(15, 2)
+  status          String   @default("active") // active | expired | recalled
+  importedAt      DateTime @default(now()) @map("imported_at")
+  createdById     String?  @map("created_by")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  org         Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  product     Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse           @relation(fields: [warehouseId], references: [id])
+  orderItems  OrderItem[]
+  orderGifts  OrderGift[]
+  movements   InventoryMovement[]
+
+  @@unique([orgId, productId, batchCode])
+  @@index([orgId, productId, status])
+  @@index([orgId, expiryDate])
+  @@map("inventory_batches")
+}
+
+// Free gift attached to an order. Two flavours:
+//  - product gift: `productId` set, `batchId` set → deducts from stock
+//                  on packing, restored on cancel-after-packing.
+//  - custom gift:  productId / batchId NULL, free-text `giftName` (e.g.
+//                  "Túi vải Manhae"). Does NOT touch inventory.
+model OrderGift {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  productId String?  @map("product_id")
+  batchId   String?  @map("batch_id")
+  giftName  String   @map("gift_name")
+  quantity  Int      @default(1)
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id])
+  batch   InventoryBatch? @relation(fields: [batchId], references: [id])
+
+  @@index([orderId])
+  @@map("order_gifts")
+}
+
+// Audit log for every quantity change on a batch. Reads write-only — no
+// updates after insert. Used by the stock dashboard (Session 3) and to
+// reconcile if a manual adjust differs from order traffic.
+model InventoryMovement {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  productId     String   @map("product_id")
+  batchId       String   @map("batch_id")
+  type          String   // import | export | adjust | return
+  quantity      Int      // signed; negative for export
+  referenceType String?  @map("reference_type") // order | manual_adjust | import
+  referenceId   String?  @map("reference_id")
+  note          String?
+  createdById   String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  org      Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  batch    InventoryBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  order    Order?          @relation(fields: [referenceId], references: [id])
+
+  @@index([orgId, productId, createdAt])
+  @@index([batchId, createdAt])
+  @@map("inventory_movements")
 }
 
 // Quick-reply templates — single shared set per organization.
@@ -688,9 +884,12 @@ model Product {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  org    Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  brand  Brand?         @relation(fields: [brandId], references: [id])
-  prices ProductPrice[]
+  org        Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  brand      Brand?           @relation(fields: [brandId], references: [id])
+  prices     ProductPrice[]
+  batches    InventoryBatch[]
+  orderItems OrderItem[]
+  orderGifts OrderGift[]
 
   @@unique([orgId, sku])
   @@index([orgId, status])
@@ -709,7 +908,8 @@ model ProductPrice {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
 
   @@index([productId, active, displayOrder])
   @@map("product_prices")
