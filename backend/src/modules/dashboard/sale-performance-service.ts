@@ -25,6 +25,12 @@ import {
 const OFFICIAL_STAGE = 'dai_ly_chinh_thuc';
 const ACTIVE_LOOKBACK_DAYS = 60;
 
+/** Statuses that count as booked revenue. Excludes draft (not yet
+ * confirmed) and cancelled. Mirrors COUNTABLE_ORDER_STATUSES in
+ * overview-service — kept as a local copy so this module has no
+ * cross-dependency on the reports layer. */
+const COUNTABLE_STATUSES = ['confirmed', 'shipped', 'completed'] as const;
+
 /* ── Helpers ────────────────────────────────────────────────────────── */
 
 function startOfMonth(date = new Date()): Date {
@@ -61,15 +67,17 @@ export async function calculateResaleRevenue(
   from: Date,
   to: Date,
 ): Promise<number> {
-  // "Đại lý cũ" = contact created BEFORE `from`. Excludes brand-new
-  // closes (those count under newAgents instead).
+  // "Đại lý cũ" = contact created BEFORE `from`. Sale attribution is on
+  // `order.assignedSaleId` (who closed the order), not `contact
+  // .assignedUserId` — those diverge for MISA-imported contacts where
+  // the import script defaults contact-owner to Admin while orders
+  // carry the real sale_id.
   const result = await prisma.order.aggregate({
     where: {
       orgId,
-      contact: {
-        assignedUserId: saleId,
-        createdAt: { lt: from },
-      },
+      assignedSaleId: saleId,
+      status: { in: [...COUNTABLE_STATUSES] },
+      contact: { createdAt: { lt: from } },
       OR: [
         { orderDate: { gte: from, lt: to } },
         { orderDate: null, createdAt: { gte: from, lt: to } },
@@ -93,10 +101,9 @@ export async function calculateNewAgentRevenue(
   const result = await prisma.order.aggregate({
     where: {
       orgId,
-      contact: {
-        assignedUserId: saleId,
-        createdAt: { gte: from, lt: to },
-      },
+      assignedSaleId: saleId,
+      status: { in: [...COUNTABLE_STATUSES] },
+      contact: { createdAt: { gte: from, lt: to } },
       OR: [
         { orderDate: { gte: from, lt: to } },
         { orderDate: null, createdAt: { gte: from, lt: to } },
@@ -125,6 +132,7 @@ export async function calculateActiveRate(
         stage: OFFICIAL_STAGE,
         orders: {
           some: {
+            status: { in: [...COUNTABLE_STATUSES] },
             OR: [
               { orderDate: { gte: addDays(asOf, -ACTIVE_LOOKBACK_DAYS) } },
               {
@@ -223,6 +231,7 @@ export async function calculateRetention90d(
       id: { in: cohortIds },
       orders: {
         some: {
+          status: { in: [...COUNTABLE_STATUSES] },
           OR: [
             { orderDate: { gte: addDays(asOf, -ACTIVE_LOOKBACK_DAYS) } },
             {

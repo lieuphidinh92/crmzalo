@@ -27,6 +27,10 @@ const ACTIVE_LOOKBACK_DAYS = 60;
 const AT_RISK_INACTIVE_DAYS = 45;
 const AT_RISK_LIFETIME_VND = 100_000_000;
 
+/** Statuses that count as "real revenue". Excludes draft (chưa chốt) and
+ * cancelled (đã huỷ). Confirmed/shipped/completed are all booked sales. */
+export const COUNTABLE_ORDER_STATUSES = ['confirmed', 'shipped', 'completed'] as const;
+
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
 /** Return the same-length window immediately preceding [from, to). */
@@ -44,9 +48,11 @@ export function brandFromSku(sku: string): 'Manhae' | 'Bioisland' | 'Neubria' | 
   return 'Khác';
 }
 
-/** Order date filter: prefer orderDate, fall back to createdAt. */
+/** Order date filter: prefer orderDate, fall back to createdAt. Also
+ * gates by status so draft/cancelled never inflate revenue numbers. */
 function orderInWindowWhere(from: Date, to: Date) {
   return {
+    status: { in: [...COUNTABLE_ORDER_STATUSES] },
     OR: [
       { orderDate: { gte: from, lt: to } },
       { orderDate: null, createdAt: { gte: from, lt: to } },
@@ -54,16 +60,17 @@ function orderInWindowWhere(from: Date, to: Date) {
   } as const;
 }
 
-/** Apply optional saleId scope through contact.assignedUserId. */
+/** Apply optional saleId scope through `order.assignedSaleId` — i.e. who
+ * actually closed the order, not who owns the contact. (Owner of the
+ * contact is decoupled because the same contact can be served by
+ * multiple sales over time, and MISA-imported contacts default-own to
+ * Admin while orders carry the real sale_id.) */
 function withSaleScope<T extends Record<string, unknown>>(
   where: T,
   saleId?: string | null,
 ): T {
   if (!saleId) return where;
-  return {
-    ...where,
-    contact: { ...((where.contact as object) ?? {}), assignedUserId: saleId },
-  } as T;
+  return { ...where, assignedSaleId: saleId } as T;
 }
 
 /* ── 0. Sparklines (6 monthly buckets ending at `to`) ────────────── */
@@ -188,6 +195,9 @@ async function activeAgents(
   saleId?: string | null,
 ): Promise<{ active: number; total: number }> {
   const lookbackStart = new Date(asOf.getTime() - ACTIVE_LOOKBACK_DAYS * 86400_000);
+  // "Active agent count" is contact-side: how many of MY agents (contact
+  // owner) are still ordering. So we keep contact.assignedUserId here —
+  // this is *not* the same semantic as revenue (= order.assignedSaleId).
   const baseWhere: Record<string, unknown> = {
     orgId,
     stage: OFFICIAL_STAGE,
@@ -200,6 +210,7 @@ async function activeAgents(
         ...baseWhere,
         orders: {
           some: {
+            status: { in: [...COUNTABLE_ORDER_STATUSES] },
             OR: [
               { orderDate: { gte: lookbackStart, lte: asOf } },
               { orderDate: null, createdAt: { gte: lookbackStart, lte: asOf } },
@@ -374,23 +385,74 @@ export async function getTopProducts(
   }));
 }
 
-/* ── 3. Top sales — delegate to existing service ──────────────────── */
+/* ── 3. Top sales — ranked by revenue in [from, to) ──────────────── */
 
 export async function getTopSalesForPeriod(
   orgId: string,
   filters: OverviewFilters,
   limit = 5,
 ) {
-  // Existing helper computes for the *current* calendar month only.
-  // For now we surface the same data on the overview page; if the user
-  // picks a custom range, top-sales still shows current-month numbers
-  // and the UI labels it accordingly. Refactoring sale-performance to
-  // accept arbitrary windows is a Session-2+ task.
-  const { getTopSales } = await import(
-    '../dashboard/admin-dashboard-service.js'
+  // The CEO Sale-Performance score is a weighted multi-metric model
+  // tied to a calendar month (active_rate / retention_90d / etc. only
+  // make sense at month granularity). For the overview page we want a
+  // value that *does* respect the date filter, so we rank by raw
+  // revenue in the window: resale (orders for agents created before
+  // `from`) + new-agent (orders for agents created within the window).
+  // `score` here is a relative 0-100 vs. the leader so the colored
+  // chip in the UI still conveys ranking visually.
+  const { calculateResaleRevenue, calculateNewAgentRevenue } = await import(
+    '../dashboard/sale-performance-service.js'
   );
-  void filters; // intentional — see comment above
-  return getTopSales(orgId, limit);
+
+  const sales = await prisma.user.findMany({
+    where: {
+      orgId,
+      isActive: true,
+      ...(filters.saleId ? { id: filters.saleId } : {}),
+    },
+    select: { id: true, fullName: true },
+    orderBy: { fullName: 'asc' },
+  });
+  if (sales.length === 0) return [];
+
+  interface SaleRow {
+    saleId: string;
+    saleName: string;
+    resaleRevenue: number;
+    newAgentRevenue: number;
+    totalRevenue: number;
+  }
+
+  const rows: SaleRow[] = await Promise.all(
+    sales.map(async (s: { id: string; fullName: string }): Promise<SaleRow> => {
+      const [resale, newAgent] = await Promise.all([
+        calculateResaleRevenue(orgId, s.id, filters.from, filters.to),
+        calculateNewAgentRevenue(orgId, s.id, filters.from, filters.to),
+      ]);
+      return {
+        saleId: s.id,
+        saleName: s.fullName,
+        resaleRevenue: resale,
+        newAgentRevenue: newAgent,
+        totalRevenue: resale + newAgent,
+      };
+    }),
+  );
+
+  rows.sort((a: SaleRow, b: SaleRow) => b.totalRevenue - a.totalRevenue);
+  const top = rows.slice(0, limit);
+  const topRevenue = top[0]?.totalRevenue ?? 0;
+
+  return top.map((r: SaleRow, i: number) => ({
+    rank: i + 1,
+    saleId: r.saleId,
+    saleName: r.saleName,
+    score: topRevenue > 0 ? Math.round((r.totalRevenue / topRevenue) * 100) : 0,
+    monthRevenue: r.resaleRevenue,
+    resaleRevenue: r.resaleRevenue,
+    newAgentRevenue: r.newAgentRevenue,
+    totalRevenue: r.totalRevenue,
+  }));
 }
 
 /* ── 4a. Revenue trend 12 months (total / by customer_type / by brand) ─── */
@@ -603,7 +665,8 @@ export async function getTopCustomers(
       by: ['contactId'],
       where: {
         orgId,
-        ...(saleId ? { contact: { assignedUserId: saleId } } : {}),
+        status: { in: [...COUNTABLE_ORDER_STATUSES] },
+        ...(saleId ? { assignedSaleId: saleId } : {}),
       },
       _sum: { totalAmount: true },
       _max: { orderDate: true, createdAt: true },
@@ -760,7 +823,7 @@ export async function getTopCustomers(
  * because most contacts imported from MISA have stage=NULL and a strict
  * stage filter would empty the lists.
  *
- * Sale scoping: `contact.assignedUserId = filters.saleId` (member auto
+ * Sale scoping: `order.assignedSaleId = filters.saleId` (member auto
  * passes their own id; admin sees all).
  *
  * The window is anchored on `filters.to` so changing the date filter
@@ -795,9 +858,13 @@ export async function getAtRiskCustomers(
   filters: OverviewFilters,
 ): Promise<AtRiskResponse> {
   const { to, saleId } = filters;
-  const now = to;
-  const cutoff30 = new Date(now.getTime() - NEED_CARE_MIN_DAYS * 86400_000);
-  const cutoff60 = new Date(now.getTime() - NEED_CARE_MAX_DAYS * 86400_000);
+  // Cutoff anchors use `to` so date-filter shifts the window as intended.
+  const cutoff30 = new Date(to.getTime() - NEED_CARE_MIN_DAYS * 86400_000);
+  const cutoff60 = new Date(to.getTime() - NEED_CARE_MAX_DAYS * 86400_000);
+  // But `daysInactive` shown on UI must reflect reality (today), not the
+  // filter boundary — otherwise a May-8 user sees "34 days" when the
+  // last order was only 10 days ago (because `to` = Jun 1).
+  const today = new Date();
 
   // Aggregate lifetime revenue + last order per contact, scoped to org
   // (and to assigned sale for non-admin callers).
@@ -805,7 +872,8 @@ export async function getAtRiskCustomers(
     by: ['contactId'],
     where: {
       orgId,
-      ...(saleId ? { contact: { assignedUserId: saleId } } : {}),
+      status: { in: [...COUNTABLE_ORDER_STATUSES] },
+      ...(saleId ? { assignedSaleId: saleId } : {}),
     },
     _sum: { totalAmount: true },
     _max: { orderDate: true, createdAt: true },
@@ -830,18 +898,20 @@ export async function getAtRiskCustomers(
         contactId: g.contactId,
         lifetimeRevenue: Number(g._sum.totalAmount ?? 0),
         lastOrderAt: last,
-        daysInactive: Math.floor((now.getTime() - last.getTime()) / 86400_000),
+        // daysInactive reflects actual elapsed time from today, not from
+        // the filter `to` boundary.
+        daysInactive: Math.floor((today.getTime() - last.getTime()) / 86400_000),
       };
     })
     .filter((c): c is Candidate => c !== null);
 
-  // Group A: needCareNow → 30 ≤ days < 60
+  // Group A: needCareNow → last order before cutoff30, after cutoff60
   const needCareCandidates = allCandidates
     .filter((c) => c.lastOrderAt < cutoff30 && c.lastOrderAt >= cutoff60)
     .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue)
     .slice(0, NEED_CARE_NOW_LIMIT);
 
-  // Group B: longDormant → days ≥ 60
+  // Group B: longDormant → last order before cutoff60
   const longDormantCandidates = allCandidates
     .filter((c) => c.lastOrderAt < cutoff60)
     .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue)
