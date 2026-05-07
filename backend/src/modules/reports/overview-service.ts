@@ -73,6 +73,20 @@ function withSaleScope<T extends Record<string, unknown>>(
   return { ...where, assignedSaleId: saleId } as T;
 }
 
+/** Day-resolution diff in the Vietnam timezone, regardless of how the
+ * input Date was parsed. Postgres stores `timestamp without time zone`
+ * (e.g. `2026-04-08 00:00:00`) as VN local time but Prisma reads them
+ * back as UTC Dates — so a raw `(now - last) / 86400000` is 7 hours
+ * short and Math.floor turns "30 days exactly" into 29. We solve it
+ * by re-anchoring both ends to the start of their VN-local day. */
+const VN_TZ_OFFSET_MS = 7 * 3600 * 1000;
+function vnLocalDayIndex(d: Date): number {
+  return Math.floor((d.getTime() + VN_TZ_OFFSET_MS) / 86400_000);
+}
+function daysBetweenVN(later: Date, earlier: Date): number {
+  return vnLocalDayIndex(later) - vnLocalDayIndex(earlier);
+}
+
 /* ── 0. Sparklines (6 monthly buckets ending at `to`) ────────────── */
 
 /** Build 6 month-aligned [from, to) buckets ending at the period end.
@@ -660,7 +674,9 @@ export async function getTopCustomers(
   if (type === 'at_risk') {
     // VIPs: lifetime revenue ≥ AT_RISK_LIFETIME_VND, last_order > 45d ago.
     // We compute lifetime totals via groupBy on orders, then filter inactive.
-    const cutoff = new Date(to.getTime() - AT_RISK_INACTIVE_DAYS * 86400_000);
+    // Cutoff anchors on `today` (not filters.to) — "at risk" is a real-time
+    // health check on the customer base, decoupled from the date filter
+    // pill. (See getAtRiskCustomers for the same convention.)
     const groups = (await prisma.order.groupBy({
       by: ['contactId'],
       where: {
@@ -682,6 +698,7 @@ export async function getTopCustomers(
       lastOrderAt: Date | null;
       daysInactive: number | null;
     }
+    const todayDayIdx = vnLocalDayIndex(new Date());
     const candidates: AtRiskCandidate[] = groups
       .map((g): AtRiskCandidate => {
         const last = g._max.orderDate ?? g._max.createdAt;
@@ -689,12 +706,13 @@ export async function getTopCustomers(
           contactId: g.contactId,
           lifetimeRevenue: Number(g._sum.totalAmount ?? 0),
           lastOrderAt: last,
-          daysInactive: last
-            ? Math.floor((to.getTime() - last.getTime()) / 86400_000)
-            : null,
+          daysInactive: last ? todayDayIdx - vnLocalDayIndex(last) : null,
         };
       })
-      .filter((c: AtRiskCandidate) => !!c.lastOrderAt && c.lastOrderAt < cutoff)
+      .filter(
+        (c: AtRiskCandidate) =>
+          c.daysInactive !== null && c.daysInactive > AT_RISK_INACTIVE_DAYS,
+      )
       .sort(
         (a: AtRiskCandidate, b: AtRiskCandidate) =>
           (b.daysInactive ?? 0) - (a.daysInactive ?? 0),
@@ -826,9 +844,12 @@ export async function getTopCustomers(
  * Sale scoping: `order.assignedSaleId = filters.saleId` (member auto
  * passes their own id; admin sees all).
  *
- * The window is anchored on `filters.to` so changing the date filter
- * shifts the cutoff. This is intentional — letting the sale ask "as of
- * end of last month, who's about to churn?".
+ * Cutoffs anchor on `today`, NOT on `filters.to` — "at risk" is a
+ * real-time health check on the customer base, decoupled from the date
+ * filter pill. Otherwise picking "Tháng này" (to=end of month, often in
+ * the future relative to today) shifts cutoffs forward and pulls in
+ * customers that are only 8-29 days inactive — which contradicts the
+ * "30-60 days" label shown to the sale.
  */
 export interface AtRiskCustomer {
   contactId: string;
@@ -857,14 +878,13 @@ export async function getAtRiskCustomers(
   orgId: string,
   filters: OverviewFilters,
 ): Promise<AtRiskResponse> {
-  const { to, saleId } = filters;
-  // Cutoff anchors use `to` so date-filter shifts the window as intended.
-  const cutoff30 = new Date(to.getTime() - NEED_CARE_MIN_DAYS * 86400_000);
-  const cutoff60 = new Date(to.getTime() - NEED_CARE_MAX_DAYS * 86400_000);
-  // But `daysInactive` shown on UI must reflect reality (today), not the
-  // filter boundary — otherwise a May-8 user sees "34 days" when the
-  // last order was only 10 days ago (because `to` = Jun 1).
-  const today = new Date();
+  const { saleId } = filters;
+  // Cutoffs anchor on TODAY (see header comment). `filters.to` is
+  // intentionally ignored for this endpoint so the "Cần chăm 30-60d" /
+  // "Ngủ dài >60d" buckets always reflect real-time customer health.
+  // We compute day-difference in VN local time so an order placed
+  // "exactly 30 days ago" lands at 30 (not 29 due to UTC-vs-local).
+  const todayDayIdx = vnLocalDayIndex(new Date());
 
   // Aggregate lifetime revenue + last order per contact, scoped to org
   // (and to assigned sale for non-admin callers).
@@ -898,22 +918,26 @@ export async function getAtRiskCustomers(
         contactId: g.contactId,
         lifetimeRevenue: Number(g._sum.totalAmount ?? 0),
         lastOrderAt: last,
-        // daysInactive reflects actual elapsed time from today, not from
-        // the filter `to` boundary.
-        daysInactive: Math.floor((today.getTime() - last.getTime()) / 86400_000),
+        daysInactive: todayDayIdx - vnLocalDayIndex(last),
       };
     })
     .filter((c): c is Candidate => c !== null);
 
-  // Group A: needCareNow → last order before cutoff30, after cutoff60
+  // Group A: needCareNow → NEED_CARE_MIN_DAYS ≤ daysInactive ≤ NEED_CARE_MAX_DAYS.
+  // Both bounds inclusive so the boundary cases (exactly 30 or 60 days)
+  // land in A. Above MAX falls through to Group B.
   const needCareCandidates = allCandidates
-    .filter((c) => c.lastOrderAt < cutoff30 && c.lastOrderAt >= cutoff60)
+    .filter(
+      (c) =>
+        c.daysInactive >= NEED_CARE_MIN_DAYS &&
+        c.daysInactive <= NEED_CARE_MAX_DAYS,
+    )
     .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue)
     .slice(0, NEED_CARE_NOW_LIMIT);
 
-  // Group B: longDormant → last order before cutoff60
+  // Group B: longDormant → daysInactive > NEED_CARE_MAX_DAYS
   const longDormantCandidates = allCandidates
-    .filter((c) => c.lastOrderAt < cutoff60)
+    .filter((c) => c.daysInactive > NEED_CARE_MAX_DAYS)
     .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue)
     .slice(0, LONG_DORMANT_LIMIT);
 
