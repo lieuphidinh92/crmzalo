@@ -91,6 +91,24 @@ export interface CriticalAlertsResponse {
   }>;
 }
 
+export interface AtRiskCustomer {
+  contactId: string;
+  fullName: string;
+  province: string | null;
+  phone: string | null;
+  zaloUid: string | null;
+  assignedSaleId: string | null;
+  assignedSaleName: string | null;
+  lifetimeRevenue: number;
+  lastOrderDate: string | null;
+  daysInactive: number;
+}
+
+export interface AtRiskCustomersResponse {
+  needCareNow: AtRiskCustomer[];
+  longDormant: AtRiskCustomer[];
+}
+
 export interface SparklineResponse {
   buckets: string[];
   totalRevenue: number[];
@@ -258,6 +276,7 @@ export function useOverviewReport() {
   const kpi = ref<KpiResponse | null>(null);
   const sparklines = ref<SparklineResponse | null>(null);
   const criticalAlerts = ref<CriticalAlertsResponse | null>(null);
+  const atRiskCustomers = ref<AtRiskCustomersResponse | null>(null);
   const revenueTrend = ref<RevenueTrendResponse | null>(null);
   const trendGroupBy = ref<TrendGroupBy>('total');
   const loadingTrend = ref(false);
@@ -365,6 +384,17 @@ export function useOverviewReport() {
     }
   }
 
+  async function fetchAtRiskCustomers() {
+    try {
+      const { data } = await api.get<AtRiskCustomersResponse>(
+        `/reports/overview/at-risk-customers?${queryString.value}`,
+      );
+      atRiskCustomers.value = data;
+    } catch (e: unknown) {
+      console.warn('[overview] at-risk-customers fetch failed:', e);
+    }
+  }
+
   async function fetchTopSales() {
     loadingSales.value = true;
     try {
@@ -397,6 +427,13 @@ export function useOverviewReport() {
     }
   }
 
+  /**
+   * Refetch every widget that respects the date filter. The 12-month
+   * revenue trend is INTENTIONALLY excluded — it always anchors at the
+   * current month server-side, so re-fetching on every filter pill
+   * change just churns the cache. The trend is loaded once on mount
+   * via `fetchRevenueTrend()`.
+   */
   async function refreshAll() {
     error.value = null;
     await Promise.all([
@@ -405,11 +442,11 @@ export function useOverviewReport() {
       fetchTopSales(),
       fetchTopCustomers(),
       fetchCriticalAlerts(),
-      fetchRevenueTrend(),
+      fetchAtRiskCustomers(),
     ]);
   }
 
-  // Auto-refetch on filter change (debounce-less; cache on backend dedup).
+  // Filter-driven widgets: re-fetch on filter change.
   watch(
     () => `${filters.from}|${filters.to}|${filters.saleId ?? ''}`,
     () => {
@@ -418,11 +455,16 @@ export function useOverviewReport() {
     { immediate: true },
   );
 
+  // 12-month trend: load once on first mount; user can switch group_by
+  // explicitly via fetchRevenueTrend(g).
+  void fetchRevenueTrend();
+
   return {
     filters,
     kpi,
     sparklines,
     criticalAlerts,
+    atRiskCustomers,
     revenueTrend,
     trendGroupBy,
     loadingTrend,

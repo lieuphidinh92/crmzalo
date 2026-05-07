@@ -422,10 +422,14 @@ export async function getRevenueTrend12m(
   filters: OverviewFilters,
   groupBy: TrendGroupBy,
 ): Promise<RevenueTrendResponse> {
-  // Build 12 monthly buckets ending at filter `to` (inclusive of last
-  // day's month). We reuse sixMonthBuckets style but with 12 windows.
-  const lastDay = new Date(filters.to.getTime() - 1);
-  const anchor = new Date(lastDay.getFullYear(), lastDay.getMonth(), 1);
+  // Build 12 monthly buckets ALWAYS ending at the CURRENT month — the
+  // chart is supposed to give a stable long-term view that doesn't
+  // shift when the user changes the date filter pill (per spec). The
+  // page-level filter still scopes the OTHER widgets (KPI, top SKU,
+  // top sale, top customer). Sale scoping is preserved so a member
+  // still only sees their own series.
+  const now = new Date();
+  const anchor = new Date(now.getFullYear(), now.getMonth(), 1);
   const windows: Array<{ from: Date; to: Date; label: string }> = [];
   for (let i = 11; i >= 0; i--) {
     const start = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
@@ -735,4 +739,161 @@ export async function getTopCustomers(
     orderCount: r.orderCount,
     atRisk: false,
   }));
+}
+
+/* ── 5. At-risk customers — split into 2 groups ─────────────────────
+ *
+ * Refactor of the old "VIP sắp churn" → 2 groups so sales know which
+ * customers are still rescuable vs which are long-dormant background
+ * tasks for admin to plan around.
+ *
+ * Group A — needCareNow:    last_order in [60d, 30d) ago, top 10 by
+ *                            lifetime revenue (largest agents first).
+ *                            These are the "wake them up THIS week"
+ *                            list — surfaced by default to sale.
+ * Group B — longDormant:    last_order > 60d ago, up to 50 records.
+ *                            Hidden by default; admin can expand for
+ *                            long-term re-activation planning.
+ *
+ * Per session decision (2026-05-07): we DO NOT filter by stage at all
+ * (B option chosen by user) — using only lifetime + days_inactive
+ * because most contacts imported from MISA have stage=NULL and a strict
+ * stage filter would empty the lists.
+ *
+ * Sale scoping: `contact.assignedUserId = filters.saleId` (member auto
+ * passes their own id; admin sees all).
+ *
+ * The window is anchored on `filters.to` so changing the date filter
+ * shifts the cutoff. This is intentional — letting the sale ask "as of
+ * end of last month, who's about to churn?".
+ */
+export interface AtRiskCustomer {
+  contactId: string;
+  fullName: string;
+  province: string | null;
+  phone: string | null;
+  zaloUid: string | null;
+  assignedSaleId: string | null;
+  assignedSaleName: string | null;
+  lifetimeRevenue: number;
+  lastOrderDate: string | null;
+  daysInactive: number;
+}
+
+export interface AtRiskResponse {
+  needCareNow: AtRiskCustomer[];
+  longDormant: AtRiskCustomer[];
+}
+
+const NEED_CARE_NOW_LIMIT = 10;
+const LONG_DORMANT_LIMIT = 50;
+const NEED_CARE_MIN_DAYS = 30;
+const NEED_CARE_MAX_DAYS = 60;
+
+export async function getAtRiskCustomers(
+  orgId: string,
+  filters: OverviewFilters,
+): Promise<AtRiskResponse> {
+  const { to, saleId } = filters;
+  const now = to;
+  const cutoff30 = new Date(now.getTime() - NEED_CARE_MIN_DAYS * 86400_000);
+  const cutoff60 = new Date(now.getTime() - NEED_CARE_MAX_DAYS * 86400_000);
+
+  // Aggregate lifetime revenue + last order per contact, scoped to org
+  // (and to assigned sale for non-admin callers).
+  const groups = (await prisma.order.groupBy({
+    by: ['contactId'],
+    where: {
+      orgId,
+      ...(saleId ? { contact: { assignedUserId: saleId } } : {}),
+    },
+    _sum: { totalAmount: true },
+    _max: { orderDate: true, createdAt: true },
+  })) as Array<{
+    contactId: string;
+    _sum: { totalAmount: number | null };
+    _max: { orderDate: Date | null; createdAt: Date | null };
+  }>;
+
+  interface Candidate {
+    contactId: string;
+    lifetimeRevenue: number;
+    lastOrderAt: Date;
+    daysInactive: number;
+  }
+
+  const allCandidates: Candidate[] = groups
+    .map((g): Candidate | null => {
+      const last = g._max.orderDate ?? g._max.createdAt;
+      if (!last) return null;
+      return {
+        contactId: g.contactId,
+        lifetimeRevenue: Number(g._sum.totalAmount ?? 0),
+        lastOrderAt: last,
+        daysInactive: Math.floor((now.getTime() - last.getTime()) / 86400_000),
+      };
+    })
+    .filter((c): c is Candidate => c !== null);
+
+  // Group A: needCareNow → 30 ≤ days < 60
+  const needCareCandidates = allCandidates
+    .filter((c) => c.lastOrderAt < cutoff30 && c.lastOrderAt >= cutoff60)
+    .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue)
+    .slice(0, NEED_CARE_NOW_LIMIT);
+
+  // Group B: longDormant → days ≥ 60
+  const longDormantCandidates = allCandidates
+    .filter((c) => c.lastOrderAt < cutoff60)
+    .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue)
+    .slice(0, LONG_DORMANT_LIMIT);
+
+  const allContactIds = [
+    ...needCareCandidates.map((c) => c.contactId),
+    ...longDormantCandidates.map((c) => c.contactId),
+  ];
+  if (allContactIds.length === 0) {
+    return { needCareNow: [], longDormant: [] };
+  }
+  const contacts = (await prisma.contact.findMany({
+    where: { id: { in: allContactIds } },
+    select: {
+      id: true,
+      fullName: true,
+      phone: true,
+      province: true,
+      zaloUid: true,
+      assignedUserId: true,
+      assignedUser: { select: { id: true, fullName: true } },
+    },
+  })) as Array<{
+    id: string;
+    fullName: string | null;
+    phone: string | null;
+    province: string | null;
+    zaloUid: string | null;
+    assignedUserId: string | null;
+    assignedUser: { id: string; fullName: string } | null;
+  }>;
+  const byId = new Map(contacts.map((c) => [c.id, c]));
+
+  function hydrate(c: Candidate): AtRiskCustomer {
+    const ct = byId.get(c.contactId);
+    return {
+      contactId: c.contactId,
+      fullName: ct?.fullName ?? '(không tên)',
+      province: ct?.province ?? null,
+      phone: ct?.phone ?? null,
+      zaloUid: ct?.zaloUid ?? null,
+      assignedSaleId: ct?.assignedUserId ?? null,
+      assignedSaleName: ct?.assignedUser?.fullName ?? null,
+      lifetimeRevenue: c.lifetimeRevenue,
+      lastOrderDate: c.lastOrderAt.toISOString(),
+      daysInactive: c.daysInactive,
+    };
+  }
+
+  return {
+    needCareNow: needCareCandidates.map(hydrate),
+    longDormant: longDormantCandidates.map(hydrate),
+  };
 }

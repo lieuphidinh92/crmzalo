@@ -19,6 +19,7 @@ import {
   withCache,
 } from './resale-service.js';
 import {
+  getAtRiskCustomers,
   getCriticalAlerts,
   getKpi,
   getRevenueTrend12m,
@@ -184,6 +185,25 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
       );
       return withCache(key, () =>
         getCriticalAlerts(request.user!.orgId, filters),
+      );
+    },
+  );
+
+  // 2-bucket at-risk view (needCareNow 30-60d, longDormant >60d).
+  // Replaces the legacy single-list "VIP sắp churn" — see service for
+  // logic. Legacy /critical-alerts kept untouched for the
+  // sale-underperforming card.
+  app.get(
+    '/api/v1/reports/overview/at-risk-customers',
+    async (request: FastifyRequest) => {
+      const filters = parseFilters(request.query as Q, request.user!);
+      const key = filterCacheKey(
+        'overview-at-risk-customers',
+        request.user!.orgId,
+        filters,
+      );
+      return withCache(key, () =>
+        getAtRiskCustomers(request.user!.orgId, filters),
       );
     },
   );

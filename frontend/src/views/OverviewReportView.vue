@@ -81,23 +81,10 @@
       class="mb-3"
     />
 
-    <!-- Section 7: Critical alerts (auto-hide if both lists empty) -->
-    <OverviewCriticalAlerts :data="criticalAlerts" class="mb-3" />
-
-    <!-- Section 8: Revenue trend 12m -->
-    <OverviewRevenueTrend
-      :data="revenueTrend"
-      :loading="loadingTrend"
-      :active-group="trendGroupBy"
-      class="mb-3"
-      @change-group="onChangeTrendGroup"
-    />
-
-    <!-- Section 9: Quick links horizontal scroll -->
-    <OverviewQuickLinks class="mb-3" />
-
-    <!-- Sections 2-4: Top products / Top sales / Top customers -->
-    <v-row dense>
+    <!-- Sections 2-4: Top products / Top sales / Top customers
+         (moved up — these are the primary scan targets when changing
+         the date filter pill, so they sit right under the KPIs) -->
+    <v-row dense class="mb-3">
       <v-col cols="12" md="6" lg="4">
         <OverviewTopProducts :products="topProducts" :loading="loadingProducts" />
       </v-col>
@@ -119,6 +106,28 @@
       </v-col>
     </v-row>
 
+    <!-- Section 5: Quick links horizontal scroll -->
+    <OverviewQuickLinks class="mb-3" />
+
+    <!-- Section 6: Revenue trend 12m (always last 12 months ending NOW —
+         intentionally NOT re-fetched when the date filter pill changes) -->
+    <OverviewRevenueTrend
+      :data="revenueTrend"
+      :loading="loadingTrend"
+      :active-group="trendGroupBy"
+      class="mb-3"
+      @change-group="onChangeTrendGroup"
+    />
+
+    <!-- Section 7: At-risk customers (replaces "VIP sắp churn") +
+         Sale dưới chuẩn — moved to bottom because these are advisory
+         alerts, not high-frequency scan targets. -->
+    <OverviewAtRiskCustomers
+      :at-risk="atRiskCustomers"
+      :critical-alerts="criticalAlerts"
+      class="mb-3"
+    />
+
     <v-snackbar v-model="hasError" color="error" :timeout="4000">
       {{ error }}
     </v-snackbar>
@@ -131,7 +140,7 @@ import OverviewKpiCards from '@/components/reports/overview/OverviewKpiCards.vue
 import OverviewTopProducts from '@/components/reports/overview/OverviewTopProducts.vue';
 import OverviewTopSales from '@/components/reports/overview/OverviewTopSales.vue';
 import OverviewTopCustomers from '@/components/reports/overview/OverviewTopCustomers.vue';
-import OverviewCriticalAlerts from '@/components/reports/overview/OverviewCriticalAlerts.vue';
+import OverviewAtRiskCustomers from '@/components/reports/overview/OverviewAtRiskCustomers.vue';
 import OverviewRevenueTrend from '@/components/reports/overview/OverviewRevenueTrend.vue';
 import OverviewQuickLinks from '@/components/reports/overview/OverviewQuickLinks.vue';
 import {
@@ -161,6 +170,7 @@ const {
   kpi,
   sparklines,
   criticalAlerts,
+  atRiskCustomers,
   revenueTrend,
   trendGroupBy,
   loadingTrend,
