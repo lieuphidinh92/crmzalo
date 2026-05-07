@@ -87,7 +87,7 @@ const routes = [
   {
     path: '/inventory',
     name: 'Inventory',
-    component: () => import('@/views/InventoryPlaceholderView.vue'),
+    component: () => import('@/views/InventoryView.vue'),
     meta: { requiresAuth: true },
   },
   {

@@ -274,22 +274,14 @@
           </span>
         </v-expansion-panel-title>
         <v-expansion-panel-text>
-          <v-alert
-            type="info"
-            variant="tonal"
-            density="compact"
-            class="mb-3"
-          >
-            Tồn kho thực tế sẽ được quản lý qua Module Kho (Session 3 — sắp build). Hiện tại số tồn được lưu thủ công.
-          </v-alert>
           <v-row dense>
             <v-col cols="12" sm="6">
               <v-text-field
                 :model-value="form.totalStock"
-                label="Tồn hiện tại"
+                label="Tồn hiện tại (auto từ lô)"
                 readonly
                 :suffix="form.unit"
-                hint="Sẽ tự động tính từ batches ở Session 3"
+                hint="Tự động tính = SUM(currentQuantity) các lô active"
                 persistent-hint
                 class="font-mono"
               />
@@ -307,6 +299,56 @@
               />
             </v-col>
           </v-row>
+
+          <!-- Mini-table batches -->
+          <v-divider class="my-4" />
+          <div class="d-flex align-center mb-2">
+            <span class="text-caption font-weight-bold" style="text-transform: uppercase; letter-spacing: 0.04em;">
+              <v-icon size="14" class="mr-1">mdi-package-variant</v-icon>
+              Các lô hiện có
+            </span>
+            <v-spacer />
+            <v-btn
+              variant="text"
+              size="small"
+              prepend-icon="mdi-warehouse"
+              @click="goInventory"
+            >
+              Quản lý kho cho SP này
+            </v-btn>
+          </div>
+          <v-progress-linear v-if="batchesLoading" indeterminate color="primary" />
+          <div v-else-if="productBatches.length === 0" class="text-caption text-medium-emphasis text-center py-3 batches-empty">
+            Chưa có lô nào
+          </div>
+          <v-table v-else density="compact" class="batches-mini-table">
+            <thead>
+              <tr>
+                <th>Mã lô</th>
+                <th>HSD</th>
+                <th class="text-right">Tồn / Nhập</th>
+                <th>Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="b in productBatches.slice(0, 5)" :key="b.id">
+                <td class="font-mono">{{ b.batchCode }}</td>
+                <td class="text-caption">{{ formatBatchDate(b.expiryDate) }}</td>
+                <td class="text-right font-mono">
+                  <span :class="b.currentQuantity === 0 ? 'text-error' : ''">{{ b.currentQuantity }}</span>
+                  / {{ b.importQuantity }}
+                </td>
+                <td>
+                  <v-chip v-if="b.warning === 'expired'" color="error" size="x-small" variant="tonal">Hết hạn</v-chip>
+                  <v-chip v-else-if="b.warning === 'expiring_soon'" color="warning" size="x-small" variant="tonal">Sắp hết hạn</v-chip>
+                  <v-chip v-else color="success" size="x-small" variant="tonal">Còn hạn</v-chip>
+                </td>
+              </tr>
+            </tbody>
+          </v-table>
+          <div v-if="productBatches.length > 5" class="text-caption text-medium-emphasis text-center mt-2">
+            và {{ productBatches.length - 5 }} lô khác — xem đầy đủ ở Quản lý kho
+          </div>
         </v-expansion-panel-text>
       </v-expansion-panel>
 
@@ -375,6 +417,7 @@ import { useBrands } from '@/composables/use-brands';
 import ProductPriceTierEditor from '@/components/products/ProductPriceTierEditor.vue';
 import MarketingDocsList from '@/components/products/MarketingDocsList.vue';
 import BrandFormDialog from '@/components/products/BrandFormDialog.vue';
+import { useBatches } from '@/composables/use-batches';
 
 const route = useRoute();
 const router = useRouter();
@@ -491,9 +534,28 @@ async function reloadProduct() {
   try {
     const p = await fetchProduct(productId.value);
     if (p) applyProduct(p);
+    // Refresh batches mini-table at the same time
+    await loadBatches();
   } finally {
     loading.value = false;
   }
+}
+
+const { batches: productBatches, loading: batchesLoading, fetchProductBatches } = useBatches();
+
+async function loadBatches() {
+  if (!productId.value) return;
+  await fetchProductBatches(productId.value, { includeEmpty: true });
+}
+
+function formatBatchDate(d: string | null) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('vi-VN', { month: '2-digit', year: 'numeric' });
+}
+
+function goInventory() {
+  if (!productId.value) return;
+  router.push({ path: '/inventory', query: { productId: productId.value } });
 }
 
 async function reloadPrices() {
@@ -599,6 +661,7 @@ onMounted(async () => {
       const p = await fetchProduct(productId.value);
       if (p) {
         applyProduct(p);
+        await loadBatches();
       } else {
         loadError.value = 'Không tìm thấy sản phẩm';
       }
@@ -625,6 +688,14 @@ onMounted(async () => {
   border: 1px solid rgba(245, 158, 11, 0.35);
   border-radius: 12px;
   background: rgba(245, 158, 11, 0.06);
+}
+.batches-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+}
+.batches-mini-table {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
 }
 .gap-2 {
   gap: 8px;
