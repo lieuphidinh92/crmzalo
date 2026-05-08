@@ -167,9 +167,43 @@ Khi order chuyển sang `packing`:
 ## 🚦 Tiến độ sub-sessions
 
 - [x] **3.5A** — Schema + Backend imports + seed
-- [x] **3.5B** — FIFO core logic (commit pending)
-- [ ] **3.5C** — Frontend imports
+- [x] **3.5B** — FIFO core logic
+- [x] **3.5C** — Frontend imports (commit pending)
 - [ ] **3.5D** — Cảnh báo + permission + roadmap B
+
+### 3.5C done (09/05/2026)
+- `composables/use-imports.ts` (mới ~280 LOC): types ImportOrder/ImportLine/ImportSupplier/ParsedExcelRow/Filters; helpers `formatVNDFull`, `formatVNDCompact`, `formatDateVN`, `suggestBatchCode`; API wrappers fetchImports/fetchImport/createImport/updateImport/deleteImport/confirmImport/parseExcel + fetchSuppliers (cached); computed `stats` derive client-side từ list (monthAmount confirmed-this-month, draftCount, totalCount, topSupplier YTD). Stats card thứ 3 dùng draftCount theo CEO chốt (option b).
+- `views/ImportsListView.vue` (mới ~400 LOC): header + 3 stats cards + filter (search/supplier/status/from/to) + v-data-table-server với cột ImportCode/Date/Supplier/Invoice/Qty/Amount/Status/Actions. Click row draft → /edit, confirmed → /detail. Permission `adminOnly`.
+- `views/ImportFormView.vue` (mới ~500 LOC): create + edit (path /imports/new và /imports/:id/edit). 3 sections (info / line items / summary). 2 actions: "Lưu nháp" (POST/PUT) + "Xác nhận nhập kho" (lưu rồi confirm). "Xoá nháp" delete-only-draft. Edit mode loads existing draft; redirect /imports/:id nếu confirmed (read-only). Toast feedback. Tích hợp ItemPicker + ExcelUpload dialog.
+- `views/ImportDetailView.vue` (mới ~250 LOC): header + 4 info cells + lines table + linked batches table (visible chỉ khi confirmed) + summary card. Action "Sửa" và "Xác nhận nhập kho" chỉ hiện cho draft. Re-fetch sau confirm.
+- `components/imports/ItemPickerDialog.vue` (mới ~250 LOC): autocomplete SKU/tên (call `/products?search=`), inputs qty/cost/batchCode/dates/notes, validate client-side (qty>0, cost>0, expiry>mfg), live total preview, auto-suggest batchCode `L{YYMM}-A`, prefill costPrice từ product nếu có. Edit mode load existing line.
+- `components/imports/ExcelUploadDialog.vue` (mới ~250 LOC): drag/drop file picker, parse qua `/imports/parse-excel`, preview table với row-error highlight đỏ, button "Đưa X dòng vào form" chỉ enable khi có row hợp lệ. Bỏ qua row có lỗi tự động.
+- `router/index.ts` (edit): +4 routes `/imports`, `/imports/new`, `/imports/:id/edit`, `/imports/:id` đều `meta.adminOnly`.
+- `layouts/DefaultLayout.vue` (edit): +menu "Nhập hàng" trong nhóm BÁN HÀNG, trước "Quản lý kho", `adminOnly: true`.
+- `views/ProductDetailView.vue` (edit nhỏ): cost_price field thêm `hint="Giá vốn TB tính từ FIFO — tự cập nhật khi tạo đơn nhập"`.
+- `app.ts` (edit): register `@fastify/multipart` (đã có trong package, chỉ thiếu register) với limits 5MB / 1 file.
+
+### 3.5C verify
+- TypeScript: `npx vue-tsc --noEmit` cho frontend imports module → sạch.
+- Backend curl: list (4 đơn), suppliers (6), products search (3 matches), `parse-excel` multipart fixture (3 rows + 2 lỗi đúng: SKU không tồn tại, qty=0).
+- Test browser end-to-end (List → Create form → ItemPicker → Excel upload merge → Save draft → Detail → Confirm) defer cho CEO verify trên `/imports`.
+
+### 3.5C files
+- `frontend/src/composables/use-imports.ts` (mới)
+- `frontend/src/views/ImportsListView.vue` (mới)
+- `frontend/src/views/ImportFormView.vue` (mới)
+- `frontend/src/views/ImportDetailView.vue` (mới)
+- `frontend/src/components/imports/ItemPickerDialog.vue` (mới)
+- `frontend/src/components/imports/ExcelUploadDialog.vue` (mới)
+- `frontend/src/router/index.ts` (edit)
+- `frontend/src/layouts/DefaultLayout.vue` (edit)
+- `frontend/src/views/ProductDetailView.vue` (edit nhỏ)
+- `backend/src/app.ts` (edit — register fastify-multipart)
+
+### Defer sang 3.5D (đã note ở plan handoff)
+- ProductDetail "Xem chi tiết các lô" + cost min/max/avg 6 tháng — cần endpoint stats riêng.
+- 5 cảnh báo + permission audit + cron HSD-expired + Roadmap B.
+- Race-condition 2-tab test thực (Serializable + P2034).
 
 ### 3.5B done (08/05/2026)
 - `fifo-service.ts` mới — exports `validateFifoStock`, `processFIFO`, `reverseFIFO`. Tất cả nhận `tx` (Prisma transaction client) — caller chịu trách nhiệm wrap transaction.

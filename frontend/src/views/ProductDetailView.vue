@@ -201,6 +201,8 @@
               suffix="đ"
               class="font-mono"
               hide-details
+              persistent-hint
+              hint="Giá vốn TB tính từ FIFO — tự cập nhật khi tạo đơn nhập"
             />
           </div>
           <div v-else class="text-caption text-medium-emphasis">

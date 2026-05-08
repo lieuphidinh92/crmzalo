@@ -91,6 +91,30 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/imports',
+    name: 'ImportsList',
+    component: () => import('@/views/ImportsListView.vue'),
+    meta: { requiresAuth: true, adminOnly: true },
+  },
+  {
+    path: '/imports/new',
+    name: 'ImportCreate',
+    component: () => import('@/views/ImportFormView.vue'),
+    meta: { requiresAuth: true, adminOnly: true },
+  },
+  {
+    path: '/imports/:id/edit',
+    name: 'ImportEdit',
+    component: () => import('@/views/ImportFormView.vue'),
+    meta: { requiresAuth: true, adminOnly: true },
+  },
+  {
+    path: '/imports/:id',
+    name: 'ImportDetail',
+    component: () => import('@/views/ImportDetailView.vue'),
+    meta: { requiresAuth: true, adminOnly: true },
+  },
+  {
     path: '/settings/brands',
     name: 'BrandSettings',
     component: () => import('@/views/BrandSettingsView.vue'),
