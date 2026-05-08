@@ -94,12 +94,57 @@ const VALID_CUSTOMER_TYPES: ReadonlyArray<CustomerRankType> = [
   'at_risk',
 ];
 
-/** Default range = current calendar month [first-of-month, first-of-next). */
+/**
+ * Date filters use **VN-local day boundaries** (Asia/Ho_Chi_Minh,
+ * fixed +07:00). The frontend pill bar computes "Hôm nay / Hôm qua /
+ * Tháng này" against the user's local Vietnamese calendar; the
+ * backend has to interpret the YYYY-MM-DD strings the same way or
+ * else a 17-hour window (midnight UTC → next-day-LOCAL midnight UTC)
+ * silently truncates the day's data.
+ *
+ * For YYYY-MM-DD = '2026-05-08':
+ *   from = '2026-05-08T00:00:00+07:00'   (= 2026-05-07T17:00:00Z)
+ *   to   = '2026-05-09T00:00:00+07:00'   (exclusive next-VN-midnight)
+ *
+ * This way a full VN day is 24h regardless of where the Node process
+ * is running, and orders with `order_date='2026-05-08T00:00:00Z'`
+ * (UTC noon-VN time, what ExcelJS produces from MISA exports) fall
+ * inside the window, as does anything imported as `2026-05-07T17:00Z`
+ * (which IS midnight VN of day 8).
+ */
+const VN_OFFSET = '+07:00';
+
+/** Default range = current calendar month in VN time [first-of-month,
+ * first-of-next-month). Anchored on `now` interpreted in VN local. */
 function defaultRange(): { from: Date; to: Date } {
   const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  // Convert "now" to VN time to extract the calendar fields, then build
+  // the boundary dates with explicit +07:00 offset.
+  const vnNow = new Date(now.getTime() + 7 * 3600_000);
+  const y = vnNow.getUTCFullYear();
+  const m = vnNow.getUTCMonth();
+  const from = new Date(`${y}-${String(m + 1).padStart(2, '0')}-01T00:00:00${VN_OFFSET}`);
+  const to = new Date(
+    new Date(`${y}-${String(m + 2).padStart(2, '0')}-01T00:00:00${VN_OFFSET}`).getTime(),
+  );
+  // Handle Dec rollover (m+2 = 13 → invalid); fall back to next-year Jan
+  if (Number.isNaN(to.getTime())) {
+    return {
+      from,
+      to: new Date(`${y + 1}-01-01T00:00:00${VN_OFFSET}`),
+    };
+  }
   return { from, to };
+}
+
+/** Parse YYYY-MM-DD as midnight VN local. */
+function vnDayStart(yyyymmdd: string, addDays = 0): Date {
+  // Validate basic format. If invalid, fall back to UTC parse so callers
+  // get NaN and we don't silently substitute wrong dates.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(yyyymmdd)) return new Date(yyyymmdd);
+  const base = new Date(`${yyyymmdd}T00:00:00${VN_OFFSET}`);
+  if (addDays !== 0) base.setUTCDate(base.getUTCDate() + addDays);
+  return base;
 }
 
 function parseFilters(
@@ -109,15 +154,9 @@ function parseFilters(
   const def = defaultRange();
   const fromRaw = q.from;
   const toRaw = q.to;
-  const from = fromRaw ? new Date(fromRaw) : def.from;
-  // Treat `to` inclusively at the day level — [from, to+1day).
-  let to: Date;
-  if (toRaw) {
-    const parsed = new Date(toRaw);
-    to = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate() + 1);
-  } else {
-    to = def.to;
-  }
+  const from = fromRaw ? vnDayStart(fromRaw) : def.from;
+  // Treat `to` inclusively at the day level — [from, to+1day in VN).
+  const to = toRaw ? vnDayStart(toRaw, 1) : def.to;
   // Permission: members are auto-scoped to themselves.
   let saleId: string | null | undefined = q.sale_id || q.saleId || null;
   if (user.role === 'member') saleId = user.id;

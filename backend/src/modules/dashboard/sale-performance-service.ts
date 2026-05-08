@@ -89,9 +89,18 @@ export async function calculateResaleRevenue(
 }
 
 /** Counterpart to calculateResaleRevenue: revenue from contacts that
- * BECAME customers within [from, to). Used for the "Top 5 Sale" panel
- * total = resaleRevenue + newAgentRevenue. Not part of the score
- * (newAgents is scored by count, not revenue). */
+ * are NOT old (i.e. created on or after `from`) — i.e. agents who
+ * became customers within or after the start of the period. Used for
+ * the "Top 5 Sale" panel total = resaleRevenue + newAgentRevenue.
+ *
+ * IMPORTANT: contact.createdAt is bounded only by `gte: from`, NOT
+ * `< to`. The previous tighter range opened a "gap" for orders whose
+ * contact was created LATER than the order itself (e.g. MISA imports
+ * the order header before the customer record is finalised). With
+ * the gap, those orders fell out of BOTH resale (createdAt >= from)
+ * AND newAgent (createdAt >= to) buckets — Top Sale silently lost
+ * them while KPI total still counted them. (Bug fixed 2026-05-08.)
+ */
 export async function calculateNewAgentRevenue(
   orgId: string,
   saleId: string,
@@ -103,7 +112,7 @@ export async function calculateNewAgentRevenue(
       orgId,
       assignedSaleId: saleId,
       status: { in: [...COUNTABLE_STATUSES] },
-      contact: { createdAt: { gte: from, lt: to } },
+      contact: { createdAt: { gte: from } }, // exhaustive partner of resale
       OR: [
         { orderDate: { gte: from, lt: to } },
         { orderDate: null, createdAt: { gte: from, lt: to } },
