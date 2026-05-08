@@ -168,8 +168,54 @@ Khi order chuyển sang `packing`:
 
 - [x] **3.5A** — Schema + Backend imports + seed
 - [x] **3.5B** — FIFO core logic
-- [x] **3.5C** — Frontend imports (commit pending)
-- [ ] **3.5D** — Cảnh báo + permission + roadmap B
+- [x] **3.5C** — Frontend imports
+- [x] **3.5D-1** — Permission audit + cron expire + 2 cảnh báo + Roadmap B (commit pending)
+- [ ] **3.5D-2** — Alerts endpoint + UI banners + ProductDetail cost stats (defer)
+
+### 3.5D-1 done (09/05/2026)
+
+**Permission audit (5 endpoints — security fix)**:
+- `inventory/batch-routes.ts`: helper `stripBatchCost` strip `importCost` cho member ở list + detail.
+- `inventory/inventory-reports.ts`: helper `canSeeCost` strip `stockValue` ở `/summary` + `/by-brand` (set null).
+- `reports/overview-routes.ts`: 4 helper `stripKpi` / `stripSparklines` / `stripTopProducts` / `stripTopCustomers` apply post-cache. Strip: `cards.profit.{value,previous,trendPercent,marginPercent,costCoveragePercent}`, `sparklines.profit[]`, products[].`profit/profitMarginPercent`, customers[].`profit`.
+- `contacts/contact-routes.ts`: list strip `profitYtd`, `profitMonth` cho member. revenueYtd/Month/Lifetime giữ nguyên (CEO Q1 chốt option a).
+
+**Cron expire batches**:
+- `inventory/inventory-cron.ts` mới. `cron.schedule('30 0 * * *', ..., { timezone: 'Asia/Ho_Chi_Minh' })`. Anchor day-start local TZ. Export `sweepExpiredBatches()` để test.
+- Register ở `app.ts:startInventoryCronJobs()`.
+
+**2 cảnh báo confirm import**:
+- `GET /api/v1/imports/:id/warnings` (owner|admin only): `cost_above_price` (high) + `price_jump >20% vs avg 3 latest` (medium).
+- Frontend: `useImports.fetchWarnings(id)` + ImportDetailView render `v-alert` đỏ/vàng theo severity.
+
+**Test 5/5 PASS**:
+| # | Test | Result |
+|---|---|---|
+| 1 | Member /inventory/batches | importCost: null ✅ vs admin 220000 |
+| 2 | Member /inventory/summary | stockValue: null ✅ vs admin 354,730,000 |
+| 3 | Member /reports/overview/kpi | profit.value: null ✅ vs admin 1,336,180,112 |
+| 4 | Member /contacts | profitYtd: null, revenueYtd kept ✅ |
+| 5 | sweepExpiredBatches() | OK (0 batches today) |
+
+Test 6 (`/warnings` endpoint): defer test thực — dev backend đang chạy plain `tsx` (không watch) chưa pick up route mới. CEO restart backend sẽ verify trên browser.
+
+### 3.5D-1 files
+- `backend/src/modules/inventory/batch-routes.ts` (edit — stripBatchCost)
+- `backend/src/modules/inventory/inventory-reports.ts` (edit — stockValue null)
+- `backend/src/modules/inventory/inventory-cron.ts` (mới)
+- `backend/src/modules/imports/imports-routes.ts` (edit — /warnings endpoint)
+- `backend/src/modules/reports/overview-routes.ts` (edit — 4 strip helpers)
+- `backend/src/modules/contacts/contact-routes.ts` (edit — strip profit)
+- `backend/src/app.ts` (edit — register cron + multipart đã có sẵn)
+- `frontend/src/composables/use-imports.ts` (edit — fetchWarnings)
+- `frontend/src/views/ImportDetailView.vue` (edit — render warnings alerts)
+- `CLAUDE.md` (edit — Roadmap section)
+- `docs/LESSONS_LEARNED.md` (edit — 7 bài học)
+
+### Lưu ý cho 3.5D-2 (next, last)
+- Foundation đã đặt: cron expire daily, warnings endpoint, permission strip cost ở 4 endpoints.
+- 3.5D-2 UI: alerts endpoint gộp 5 loại + dashboard banner + inventory badge SP-level + ProductDetail "Xem các lô" + cost stats min/max/avg 6 tháng.
+- Verify race-condition 2-tab thực sẽ làm cùng 3.5D-2.
 
 ### 3.5C done (09/05/2026)
 - `composables/use-imports.ts` (mới ~280 LOC): types ImportOrder/ImportLine/ImportSupplier/ParsedExcelRow/Filters; helpers `formatVNDFull`, `formatVNDCompact`, `formatDateVN`, `suggestBatchCode`; API wrappers fetchImports/fetchImport/createImport/updateImport/deleteImport/confirmImport/parseExcel + fetchSuppliers (cached); computed `stats` derive client-side từ list (monthAmount confirmed-this-month, draftCount, totalCount, topSupplier YTD). Stats card thứ 3 dùng draftCount theo CEO chốt (option b).

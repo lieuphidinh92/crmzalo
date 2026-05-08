@@ -7,6 +7,54 @@ Format: `[Ngày] - [Vấn đề] - [Cách fix] - [Bài học]`
 
 ---
 
+## 09/05/2026 — Module Giá Vốn FIFO build xong (Phần A)
+
+**Phạm vi 4 sub-session đã xong**:
+- 3.5A: Schema + Backend `/imports` + Seed
+- 3.5B: FIFO core (processFIFO, reverseFIFO, transactional Serializable, P2034 catch)
+- 3.5C: Frontend `/imports` (List/Form/Detail + ItemPicker + Excel upload + Sidebar menu)
+- 3.5D-1: Permission audit (4 endpoints) + cron expire + 2 cảnh báo confirm
+
+**Bài học rút ra**:
+
+1. **OrderItemBatch trace là vô giá khi audit**. 1 OrderItem có thể trừ
+   từ NHIỀU lô (FIFO chia line). Không có trace thì không biết line đó
+   tính cost theo lô nào → không thể audit margin sai. Schema design
+   ban đầu phải có table trace, đừng cố nhồi vào JSON column.
+
+2. **Two related FK columns ≠ một** (lặp lại bài 08/05): `cost_value`
+   (per-unit cost) vs `line_cost` (qty × unit_cost). Code dùng nhầm
+   → margin 95% (bug đã commit `7f0cd75`). Naming tốt + comment
+   rõ ràng ngay tại schema giúp người sau không nhầm.
+
+3. **Permission audit phải scan TOÀN BỘ endpoints, không chỉ
+   "endpoint chính"**. 4 endpoint rò cost: inventory/batches,
+   inventory/summary, reports/overview/{kpi,top-products,top-customers},
+   contacts/list. Mỗi endpoint thêm field cost cần đính kèm strip helper
+   ngay từ commit đầu, đừng để "session sau audit".
+
+4. **Polymorphic FK = bỏ FK constraint**. `inventory_movements
+   .reference_id` cần trỏ tới orders HOẶC import_orders → Prisma FK
+   relation không đủ flexibility. Bỏ relation, giữ string column +
+   `referenceType` discriminator, hydrate manual qua từng caller. Có
+   chỗ tốn 1 round trip nhưng schema cleaner.
+
+5. **Serializable isolation cho FIFO + catch P2034 là MUST**. Nếu chỉ
+   dùng default READ COMMITTED, 2 đơn cùng pack 1 SKU vừa đủ → cả 2
+   thấy stock đủ → cả 2 trừ → âm tồn kho. Code path đã có (3.5B), chỉ
+   cần test 2-tab thực để xác nhận.
+
+6. **Cron expire phải anchor day-start local TZ**, không phải UTC.
+   Schema dùng `timestamp without time zone` → Prisma parse Date có
+   giờ-offset. Filter `expiryDate < new Date(...)` ở chỗ today=00:00
+   local đảm bảo lô có HSD đúng hôm nay KHÔNG bị flip expired sớm.
+
+7. **Backfill `legacyCost = true` cho đơn cũ TRƯỚC khi merge FIFO
+   logic** — nếu không, FIFO sẽ chạm vào 399 đơn MISA và phá data.
+   Pattern: schema field mới + backfill SQL + code branch theo flag.
+
+---
+
 ## 08/05/2026 — Filter "Cần chăm 30-60d" hiện KH chỉ 8-29 ngày do anchor lệch
 
 **Vấn đề**:

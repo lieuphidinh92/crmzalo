@@ -45,6 +45,18 @@ interface AdjustBody {
   reason?: string;
 }
 
+/** Members must not see cost/profit. Owners/admins see everything.
+ * Centralized so future role tweaks happen in one place. */
+function canSeeCost(role: string): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+/** Strip `importCost` from a batch row when the caller is a member. */
+function stripBatchCost<T extends { importCost?: unknown }>(b: T, role: string): T {
+  if (canSeeCost(role)) return b;
+  return { ...b, importCost: null };
+}
+
 async function syncProductTotalStock(productId: string): Promise<void> {
   const sum = await prisma.inventoryBatch.aggregate({
     where: { productId, status: 'active' },
@@ -135,7 +147,7 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
           else if (days < 60) warning = 'expiring_60';
           else if (days < 90) warning = 'expiring_90';
         }
-        return { ...b, warning };
+        return stripBatchCost({ ...b, warning }, user.role);
       });
 
       return { batches: enriched, total, page: pageNum, limit: limitNum };
@@ -226,7 +238,7 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
         },
       });
       if (!batch) return reply.status(404).send({ error: 'Batch not found' });
-      return batch;
+      return stripBatchCost(batch, user.role);
     } catch (err) {
       logger.error('[batches] Detail error:', err);
       return reply.status(500).send({ error: 'Failed to fetch batch' });

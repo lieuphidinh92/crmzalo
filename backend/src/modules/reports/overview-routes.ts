@@ -34,6 +34,59 @@ import {
 
 type Q = Record<string, string>;
 
+/** Per CEO decision (Q1 in Session 3.5D): members see revenue but not
+ * cost / profit / margin. The cache-key intentionally does NOT include
+ * role — the cached payload always carries full data and we strip
+ * post-cache before responding. */
+function canSeeCost(role: string): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+function stripKpi<T extends { cards?: any }>(d: T, role: string): T {
+  if (canSeeCost(role) || !d?.cards?.profit) return d;
+  return {
+    ...d,
+    cards: {
+      ...d.cards,
+      profit: {
+        value: null,
+        previous: null,
+        trendPercent: null,
+        marginPercent: null,
+        costCoveragePercent: null,
+      },
+    },
+  };
+}
+
+function stripSparklines<T extends { profit?: number[] }>(d: T, role: string): T {
+  if (canSeeCost(role) || !d?.profit) return d;
+  return { ...d, profit: d.profit.map(() => 0) };
+}
+
+function stripTopProducts<T extends { products?: any[] }>(d: T, role: string): T {
+  if (canSeeCost(role) || !d?.products) return d;
+  return {
+    ...d,
+    products: d.products.map((p: any) => ({
+      ...p,
+      profit: null,
+      profitMarginPercent: null,
+    })),
+  };
+}
+
+function stripTopCustomers<T extends { customers?: any[] }>(d: T, role: string): T {
+  if (canSeeCost(role) || !d?.customers) return d;
+  return {
+    ...d,
+    customers: d.customers.map((c: any) => {
+      if (c.profit === undefined) return c;
+      return { ...c, profit: null };
+    }),
+  };
+}
+
 const VALID_CUSTOMER_TYPES: ReadonlyArray<CustomerRankType> = [
   'revenue',
   'resale',
@@ -95,7 +148,8 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
     async (request: FastifyRequest) => {
       const filters = parseFilters(request.query as Q, request.user!);
       const key = filterCacheKey('overview-kpi', request.user!.orgId, filters);
-      return withCache(key, () => getKpi(request.user!.orgId, filters));
+      const data = await withCache(key, () => getKpi(request.user!.orgId, filters));
+      return stripKpi(data, request.user!.role);
     },
   );
 
@@ -108,7 +162,10 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
         request.user!.orgId,
         filters,
       );
-      return withCache(key, () => getSparklines(request.user!.orgId, filters));
+      const data = await withCache(key, () =>
+        getSparklines(request.user!.orgId, filters),
+      );
+      return stripSparklines(data, request.user!.role);
     },
   );
 
@@ -124,9 +181,10 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
         filters,
         String(limit),
       );
-      return withCache(key, async () => ({
+      const data = await withCache(key, async () => ({
         products: await getTopProducts(request.user!.orgId, filters, limit),
       }));
+      return stripTopProducts(data, request.user!.role);
     },
   );
 
@@ -224,7 +282,7 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
         filters,
         `${type}:${limit}`,
       );
-      return withCache(key, async () => ({
+      const data = await withCache(key, async () => ({
         type,
         customers: await getTopCustomers(
           request.user!.orgId,
@@ -233,6 +291,7 @@ export async function overviewReportRoutes(app: FastifyInstance): Promise<void> 
           limit,
         ),
       }));
+      return stripTopCustomers(data, request.user!.role);
     },
   );
 }

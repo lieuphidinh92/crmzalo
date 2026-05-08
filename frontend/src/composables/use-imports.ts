@@ -97,6 +97,15 @@ export interface ParsedExcelResponse {
   summary: { totalRows: number; errorRows: number };
 }
 
+export interface ImportWarning {
+  type: 'cost_above_price' | 'price_jump';
+  severity: 'high' | 'medium';
+  productId: string;
+  sku: string;
+  productName: string;
+  message: string;
+}
+
 /** Suggest a batch code in the format `L{YYMM}-A`. The trailing letter
  * is conservative — admin can edit before save. */
 export function suggestBatchCode(date = new Date()): string {
@@ -269,6 +278,21 @@ export function useImports() {
     }
   }
 
+  /** Pre-confirm sanity check — backend computes 2 soft warnings
+   * (cost > min price, price-jump >20% vs avg of last 3 imports). Empty
+   * array = OK to confirm without prompting. */
+  async function fetchWarnings(id: string): Promise<ImportWarning[]> {
+    try {
+      const { data } = await api.get<{ warnings: ImportWarning[] }>(
+        `/imports/${id}/warnings`,
+      );
+      return data.warnings ?? [];
+    } catch (err) {
+      console.error('[imports] warnings fetch failed:', err);
+      return [];
+    }
+  }
+
   /** Upload `.xlsx` and receive parsed rows + per-row errors. The
    * caller renders a preview table; rows are accepted only when the
    * user clicks "Đưa vào form". */
@@ -342,5 +366,6 @@ export function useImports() {
     deleteImport,
     confirmImport,
     parseExcel,
+    fetchWarnings,
   };
 }

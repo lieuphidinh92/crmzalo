@@ -400,6 +400,104 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // ── GET /api/v1/imports/:id/warnings ──────────────────────────────
+  // Two soft warnings shown to admin BEFORE confirm:
+  //   #4 cost_above_price: unitCost > MIN(active product_prices)
+  //   #5 price_jump:       unitCost > 1.2 × avg(3 most-recent imports)
+  // Pure read-only — never mutates. Returns [] if everything's normal.
+  app.get(
+    '/api/v1/imports/:id/warnings',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = request.user!;
+        const { id } = request.params as { id: string };
+        const order = await prisma.importOrder.findFirst({
+          where: { id, orgId: user.orgId },
+          include: {
+            items: {
+              include: {
+                product: { select: { id: true, sku: true, name: true } },
+              },
+            },
+          },
+        });
+        if (!order) return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
+
+        const warnings: Array<{
+          type: 'cost_above_price' | 'price_jump';
+          severity: 'high' | 'medium';
+          productId: string;
+          sku: string;
+          productName: string;
+          message: string;
+        }> = [];
+
+        for (const it of order.items) {
+          const sku = it.product?.sku ?? '';
+          const name = it.product?.name ?? it.productId;
+          const unitCostNum = Number(it.unitCost);
+
+          // #4 cost > min selling price
+          const minPriceAgg = await prisma.productPrice.aggregate({
+            where: { productId: it.productId, active: true },
+            _min: { price: true },
+          });
+          const minPrice = minPriceAgg._min.price;
+          if (minPrice != null && unitCostNum > Number(minPrice)) {
+            warnings.push({
+              type: 'cost_above_price',
+              severity: 'high',
+              productId: it.productId,
+              sku,
+              productName: name,
+              message: `${sku} ${name}: Giá vốn ${unitCostNum.toLocaleString('vi-VN')} cao hơn giá bán thấp nhất ${Number(minPrice).toLocaleString('vi-VN')}. Sẽ LỖ nếu áp tier này.`,
+            });
+          }
+
+          // #5 price jump > 20% vs avg of 3 most-recent CONFIRMED imports
+          // for the same product (excluding this draft so editing same
+          // order doesn't trigger).
+          const recent = await prisma.importOrderItem.findMany({
+            where: {
+              productId: it.productId,
+              importOrderId: { not: order.id },
+              importOrder: { orgId: user.orgId, status: 'confirmed' },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 3,
+            select: { unitCost: true },
+          });
+          if (recent.length > 0) {
+            const avg =
+              recent.reduce(
+                (s: number, r: { unitCost: any }) => s + Number(r.unitCost),
+                0,
+              ) / recent.length;
+            if (avg > 0) {
+              const pct = ((unitCostNum - avg) / avg) * 100;
+              if (pct > 20) {
+                warnings.push({
+                  type: 'price_jump',
+                  severity: 'medium',
+                  productId: it.productId,
+                  sku,
+                  productName: name,
+                  message: `${sku} ${name}: Giá nhập ${unitCostNum.toLocaleString('vi-VN')} cao hơn ${pct.toFixed(0)}% so với TB 3 lần nhập gần nhất (${avg.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}). Kiểm tra lại NCC có tăng giá hay nhập sai.`,
+                });
+              }
+            }
+          }
+        }
+
+        return { warnings };
+      } catch (err) {
+        logger.error('[imports] warnings error:', err);
+        return reply.status(500).send({ error: 'Không tính được cảnh báo' });
+      }
+    },
+  );
+
   // ── POST /api/v1/imports/:id/confirm ──────────────────────────────
   // Materialise one inventory_batch + one inventory_movement(import) per
   // line item. Idempotency: status check inside the transaction so two

@@ -221,15 +221,21 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         );
       }
 
-      const enriched = contacts.map((c: { id: string }) => ({
-        ...c,
-        daysSinceLastOrder: metricsMap.get(c.id)?.daysSinceLastOrder ?? null,
-        revenueYtd: metricsMap.get(c.id)?.revenueYtd ?? 0,
-        profitYtd: metricsMap.get(c.id)?.profitYtd ?? 0,
-        revenueMonth: metricsMap.get(c.id)?.revenueMonth ?? 0,
-        profitMonth: metricsMap.get(c.id)?.profitMonth ?? 0,
-        revenueLifetime: metricsMap.get(c.id)?.revenueLifetime ?? 0,
-      }));
+      // Per CEO decision (Q1 in Session 3.5D): members see revenue
+      // (DS) but NOT profit (LN). Cost / margin is owner+admin only.
+      const canSeeProfit = user.role === 'owner' || user.role === 'admin';
+      const enriched = contacts.map((c: { id: string }) => {
+        const m = metricsMap.get(c.id);
+        return {
+          ...c,
+          daysSinceLastOrder: m?.daysSinceLastOrder ?? null,
+          revenueYtd: m?.revenueYtd ?? 0,
+          revenueMonth: m?.revenueMonth ?? 0,
+          revenueLifetime: m?.revenueLifetime ?? 0,
+          profitYtd: canSeeProfit ? (m?.profitYtd ?? 0) : null,
+          profitMonth: canSeeProfit ? (m?.profitMonth ?? 0) : null,
+        };
+      });
 
       return {
         contacts: enriched,

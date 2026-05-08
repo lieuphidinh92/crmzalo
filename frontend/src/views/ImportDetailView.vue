@@ -46,6 +46,21 @@
     </div>
 
     <div v-else>
+      <!-- Warnings (only for draft) -->
+      <v-alert
+        v-for="w in warnings"
+        :key="w.productId + w.type"
+        :type="w.severity === 'high' ? 'error' : 'warning'"
+        variant="tonal"
+        class="mb-2"
+        density="compact"
+      >
+        <strong>
+          {{ w.type === 'cost_above_price' ? '⚠ Giá vốn cao hơn giá bán' : '⚠ Giá nhập tăng đột biến' }}
+        </strong>
+        — {{ w.message }}
+      </v-alert>
+
       <!-- Header info -->
       <v-card variant="flat" class="section pa-4 mb-3">
         <v-row dense>
@@ -177,13 +192,15 @@ import {
   formatVNDFull,
   useImports,
   type ImportOrder,
+  type ImportWarning,
 } from '@/composables/use-imports';
 
 const route = useRoute();
 const router = useRouter();
-const { fetchImport, confirmImport, error } = useImports();
+const { fetchImport, confirmImport, fetchWarnings, error } = useImports();
 
 const order = ref<ImportOrder | null>(null);
+const warnings = ref<ImportWarning[]>([]);
 const confirming = ref(false);
 const toast = ref({ show: false, text: '', color: 'success' });
 
@@ -195,6 +212,13 @@ async function load() {
   if (!order.value) {
     toast.value = { show: true, text: 'Không tìm thấy đơn nhập', color: 'error' };
     router.replace('/imports');
+    return;
+  }
+  // Soft warnings only meaningful while draft (admin can still edit).
+  if (order.value.status === 'draft') {
+    warnings.value = await fetchWarnings(id);
+  } else {
+    warnings.value = [];
   }
 }
 

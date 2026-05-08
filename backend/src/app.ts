@@ -61,6 +61,7 @@ import { productRoutes } from './modules/products/product-routes.js';
 import { brandRoutes } from './modules/products/brand-routes.js';
 import { batchRoutes } from './modules/inventory/batch-routes.js';
 import { inventoryReportRoutes } from './modules/inventory/inventory-reports.js';
+import { startInventoryCronJobs } from './modules/inventory/inventory-cron.js';
 import { importsRoutes } from './modules/imports/imports-routes.js';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
 import { quickReplyRoutes } from './modules/quick-replies/quick-reply-routes.js';
@@ -240,6 +241,7 @@ async function bootstrap() {
     startZaloHealthCheck();
     startTaskCronJobs();
     startOrderCronJobs();
+    startInventoryCronJobs();
   } catch (err) {
     logger.error('Failed to start server:', err);
     process.exit(1);

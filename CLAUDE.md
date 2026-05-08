@@ -239,6 +239,52 @@ Một task chỉ được gọi là XONG khi:
   - KHÔNG hỏi quá 1 câu trong cùng 1 lần
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 🛣️ ROADMAP MODULE GIÁ VỐN — PHẦN B (CHƯA LÀM)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Phần A đã xong (Session 3.5A → 3.5D-1, tháng 5/2026):
+  ✅ Form upload đơn nhập hàng (NK-YYYYMM-NNN auto)
+  ✅ Quản lý lô hàng FIFO (inventory_batches)
+  ✅ FIFO core khi xuất kho (processFIFO + reverseFIFO,
+     trace qua order_item_batches, transactional Serializable)
+  ✅ 2 cảnh báo confirm import (cost > min price + tăng >20%)
+  ✅ Cron daily auto status='expired' khi HSD<today
+  ✅ Phân quyền: chỉ Owner/Admin thấy cost/profit; member
+     thấy revenue (DS) nhưng KHÔNG thấy cost/lineCost/profit/
+     stockValue/importCost ở 4 endpoint đã audit
+
+### Phần A còn lại (Session 3.5D-2 — defer):
+  ☐ Endpoint `/api/v1/inventory/alerts` gộp 5 loại
+  ☐ Dashboard banner: tồn thấp + lô expiring + lô expired
+  ☐ Inventory badge SP-level: HSD <90d (gom batch level)
+  ☐ ProductDetail "Xem các lô" + cost stats min/max/avg 6 tháng
+  ☐ Verify race-condition 2-tab thực (Serializable + P2034)
+
+### Phần B (đề xuất build sau khi user yêu cầu):
+
+  ☐ Module Rebate NCC (thưởng quý/năm)
+     - Cấu hình tier thưởng cho từng NCC (theo doanh số nhập)
+     - Track tổng nhập theo NCC trong inventory_batches
+     - Auto nhắc đòi thưởng khi đạt mốc
+     - Bảng `supplier_rebates` lưu lịch sử nhận
+
+  ☐ Dashboard NCC chi tiết
+     - Trang /suppliers/:id/dashboard
+     - Tổng nhập YTD, tier, thưởng đã/đang
+     - Top SP nhập từ NCC này
+     - Lịch sử nhập 12 tháng (chart)
+
+  ☐ Phân bổ thưởng vào giá vốn
+     - Tuỳ chọn 1: coi thưởng = doanh thu khác (báo cáo riêng)
+     - Tuỳ chọn 2: phân bổ ngược về cost các lô của NCC đó
+       → giá vốn thực tế thấp hơn, profit margin tăng
+
+  ☐ API tỷ giá ngoại tệ tự động
+     - Tích hợp Vietcombank/exchangerate.host
+     - Khi nhập hàng từ Pháp bằng EUR → tự convert VND
+     - Track tỷ giá tại thời điểm nhập
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 > Đây là luật. Không phải gợi ý. Không có ngoại lệ.
-> Last updated: 01/05/2026
+> Last updated: 09/05/2026 (Module Giá Vốn FIFO Phần A)

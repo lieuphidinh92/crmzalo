@@ -12,6 +12,11 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 
+/** stockValue = sum(qty × cost) → bí mật, chỉ owner/admin thấy. */
+function canSeeCost(role: string): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
 export async function inventoryReportRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
@@ -65,7 +70,7 @@ export async function inventoryReportRoutes(app: FastifyInstance): Promise<void>
         skuOutOfStock,
         batchActive,
         expiringSoon,
-        stockValue,
+        stockValue: canSeeCost(user.role) ? stockValue : null,
       };
     } catch (err) {
       logger.error('[inventory] Summary error:', err);
@@ -88,7 +93,7 @@ export async function inventoryReportRoutes(app: FastifyInstance): Promise<void>
         productCount: number;
         batchCount: number;
         totalQuantity: number;
-        stockValue: number;
+        stockValue: number | null;
         expiringCount: number;
       }> = [];
       const now = new Date();
@@ -124,7 +129,7 @@ export async function inventoryReportRoutes(app: FastifyInstance): Promise<void>
           productCount,
           batchCount: batches.length,
           totalQuantity,
-          stockValue,
+          stockValue: canSeeCost(user.role) ? stockValue : null,
           expiringCount,
         });
       }
