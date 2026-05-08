@@ -304,12 +304,20 @@
 
           <!-- Mini-table batches -->
           <v-divider class="my-4" />
-          <div class="d-flex align-center mb-2">
+          <div class="d-flex align-center mb-2 flex-wrap gap-2">
             <span class="text-caption font-weight-bold" style="text-transform: uppercase; letter-spacing: 0.04em;">
               <v-icon size="14" class="mr-1">mdi-package-variant</v-icon>
               Các lô hiện có
             </span>
             <v-spacer />
+            <v-btn
+              variant="outlined"
+              size="small"
+              prepend-icon="mdi-eye-outline"
+              @click="batchesDialog = true"
+            >
+              Xem chi tiết các lô
+            </v-btn>
             <v-btn
               variant="text"
               size="small"
@@ -382,6 +390,14 @@
       @saved="onBrandSaved"
     />
 
+    <!-- Full batches list + cost stats (3.5D-2) -->
+    <ProductBatchesDialog
+      v-model="batchesDialog"
+      :product-id="productId"
+      :product-sku="form.sku"
+      :can-see-cost="canSeeCost"
+    />
+
     <!-- Confirm archive -->
     <v-dialog v-model="archiveDialog" max-width="380">
       <v-card>
@@ -419,6 +435,7 @@ import { useBrands } from '@/composables/use-brands';
 import ProductPriceTierEditor from '@/components/products/ProductPriceTierEditor.vue';
 import MarketingDocsList from '@/components/products/MarketingDocsList.vue';
 import BrandFormDialog from '@/components/products/BrandFormDialog.vue';
+import ProductBatchesDialog from '@/components/products/ProductBatchesDialog.vue';
 import { useBatches } from '@/composables/use-batches';
 
 const route = useRoute();
@@ -644,6 +661,7 @@ async function onArchive() {
 }
 
 const brandDialog = ref(false);
+const batchesDialog = ref(false);
 
 function onBrandSaved(brand: { id: string; name: string }) {
   fetchBrands();

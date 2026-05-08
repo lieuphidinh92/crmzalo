@@ -61,6 +61,7 @@ import { productRoutes } from './modules/products/product-routes.js';
 import { brandRoutes } from './modules/products/brand-routes.js';
 import { batchRoutes } from './modules/inventory/batch-routes.js';
 import { inventoryReportRoutes } from './modules/inventory/inventory-reports.js';
+import { inventoryAlertsRoutes } from './modules/inventory/alerts-routes.js';
 import { startInventoryCronJobs } from './modules/inventory/inventory-cron.js';
 import { importsRoutes } from './modules/imports/imports-routes.js';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
@@ -167,6 +168,7 @@ async function bootstrap() {
   await app.register(brandRoutes);
   await app.register(batchRoutes);
   await app.register(inventoryReportRoutes);
+  await app.register(inventoryAlertsRoutes);
   await app.register(importsRoutes);
   await app.register(quickReplyRoutes);
   await app.register(learningRoutes);

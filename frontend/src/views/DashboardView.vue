@@ -1,5 +1,8 @@
 <template>
   <div>
+    <!-- Inventory alerts banner (cảnh báo kho — collapse-able) -->
+    <InventoryAlertsBanner />
+
     <!-- Toggle for admin/owner — view as Sale -->
     <div
       v-if="canToggle"
@@ -33,6 +36,7 @@
 import { computed, ref } from 'vue';
 import OverviewReportView from '@/views/OverviewReportView.vue';
 import PersonalDashboard from '@/components/home/PersonalDashboard.vue';
+import InventoryAlertsBanner from '@/components/inventory/InventoryAlertsBanner.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const authStore = useAuthStore();

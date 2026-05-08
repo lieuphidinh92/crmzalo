@@ -17,6 +17,9 @@
       </v-btn>
     </div>
 
+    <!-- Inventory alerts banner (collapse-able) -->
+    <InventoryAlertsBanner />
+
     <!-- KPI cards -->
     <v-row dense class="mb-3">
       <v-col cols="6" sm="3">
@@ -476,6 +479,7 @@ import { useBrands } from '@/composables/use-brands';
 import BatchFormDialog from '@/components/inventory/BatchFormDialog.vue';
 import BatchAdjustDialog from '@/components/inventory/BatchAdjustDialog.vue';
 import BatchAuditLogPanel from '@/components/inventory/BatchAuditLogPanel.vue';
+import InventoryAlertsBanner from '@/components/inventory/InventoryAlertsBanner.vue';
 
 const router = useRouter();
 const route = useRoute();

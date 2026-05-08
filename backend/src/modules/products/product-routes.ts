@@ -382,6 +382,96 @@ export async function productRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ── Price tiers ────────────────────────────────────────────────────────
+  // GET /api/v1/products/:id/cost-stats
+  // Owner/admin only — surfaces min/max/avg of `inventory_batches.import_cost`
+  // for the last 6 months plus the 5 most-recent imports for trend.
+  // Member doesn't get a 403 here so a permission probe doesn't leak
+  // the field's existence; instead we return a sentinel { canSee: false }.
+  app.get('/api/v1/products/:id/cost-stats', async (request, reply) => {
+    try {
+      const user = request.user!;
+      const { id } = request.params as { id: string };
+
+      const canSeeCostInline = user.role === 'owner' || user.role === 'admin';
+
+      const product = await prisma.product.findFirst({
+        where: { id, orgId: user.orgId },
+        select: { id: true },
+      });
+      if (!product) return reply.status(404).send({ error: 'Product not found' });
+
+      if (!canSeeCostInline) {
+        return { canSee: false };
+      }
+
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+      const batches = await prisma.inventoryBatch.findMany({
+        where: {
+          orgId: user.orgId,
+          productId: id,
+          importedAt: { gte: sixMonthsAgo },
+          importCost: { not: null },
+        },
+        select: {
+          id: true,
+          batchCode: true,
+          importedAt: true,
+          importCost: true,
+          importQuantity: true,
+          currentQuantity: true,
+          status: true,
+        },
+        orderBy: { importedAt: 'desc' },
+      });
+
+      if (batches.length === 0) {
+        return {
+          canSee: true,
+          importCount: 0,
+          min: null,
+          max: null,
+          avg: null,
+          recentImports: [],
+        };
+      }
+
+      const costs = batches.map((b: { importCost: any }) => Number(b.importCost));
+      const min = Math.min(...costs);
+      const max = Math.max(...costs);
+      // Qty-weighted average — a one-off 1000-unit import shouldn't be
+      // pulled toward a 5-unit sample at the same cost.
+      let weightedNumer = 0;
+      let weightedDenom = 0;
+      for (const b of batches as Array<{ importCost: any; importQuantity: number }>) {
+        weightedNumer += Number(b.importCost) * b.importQuantity;
+        weightedDenom += b.importQuantity;
+      }
+      const avg = weightedDenom > 0 ? weightedNumer / weightedDenom : null;
+
+      return {
+        canSee: true,
+        importCount: batches.length,
+        min,
+        max,
+        avg,
+        recentImports: batches.slice(0, 5).map((b: any) => ({
+          batchId: b.id,
+          batchCode: b.batchCode,
+          importedAt: b.importedAt,
+          importCost: Number(b.importCost),
+          importQuantity: b.importQuantity,
+          currentQuantity: b.currentQuantity,
+          status: b.status,
+        })),
+      };
+    } catch (err) {
+      logger.error('[products] cost-stats error:', err);
+      return reply.status(500).send({ error: 'Không tải được thống kê giá vốn' });
+    }
+  });
+
   // GET /api/v1/products/:id/prices
   app.get('/api/v1/products/:id/prices', async (request, reply) => {
     try {

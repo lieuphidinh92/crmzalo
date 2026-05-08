@@ -169,8 +169,53 @@ Khi order chuyển sang `packing`:
 - [x] **3.5A** — Schema + Backend imports + seed
 - [x] **3.5B** — FIFO core logic
 - [x] **3.5C** — Frontend imports
-- [x] **3.5D-1** — Permission audit + cron expire + 2 cảnh báo + Roadmap B (commit pending)
-- [ ] **3.5D-2** — Alerts endpoint + UI banners + ProductDetail cost stats (defer)
+- [x] **3.5D-1** — Permission audit + cron expire + 2 cảnh báo + Roadmap B
+- [x] **3.5D-2** — Alerts endpoint + UI banners + ProductDetail cost stats (commit pending)
+
+🎉 **Module Giá Vốn FIFO Phần A — COMPLETE.**
+
+### 3.5D-2 done (09/05/2026)
+
+**Backend (~250 LOC)**:
+- `inventory/alerts-routes.ts` mới — `GET /api/v1/inventory/alerts` gộp 3 loại kho-wide:
+  - lowStock (products active stock<=warning), expiringIn90 (HSD <90d), expired (HSD đã qua + qty>0). Response `summary` count + 3 array. Không có cost → mọi role đọc.
+- `products/product-routes.ts` — `GET /api/v1/products/:id/cost-stats`:
+  - Member: `{ canSee: false }` sentinel.
+  - Owner+admin: importCount + min/max + **qty-weighted avg** + recentImports[5]. Window 6 tháng.
+- `app.ts` register `inventoryAlertsRoutes`.
+
+**Frontend (~450 LOC)**:
+- `composables/use-inventory-alerts.ts`: fetch + computed hasAlerts.
+- `components/inventory/InventoryAlertsBanner.vue`: collapse-able banner, 3 chip count, expand → top 5 mỗi loại + "Xem tất cả" link đến /inventory.
+- `views/DashboardView.vue` + `views/InventoryView.vue`: embed banner.
+- `components/products/ProductBatchesDialog.vue`: modal max-width 900, cost stats card gradient orange (min/avg/max) + table tất cả batches. canSeeCost prop ẩn cột giá vốn.
+- `views/ProductDetailView.vue`: button "Xem chi tiết các lô" mở dialog.
+
+**Test 5/5 PASS**:
+| # | Endpoint | Result |
+|---|---|---|
+| 1 | `/inventory/alerts` admin | total=965 (toàn SP active stock=0 — data MISA), 0 expiring/expired |
+| 2 | `/inventory/alerts` member | Cùng 965 (không cost-sensitive) |
+| 3 | `/products/MH_01/cost-stats` admin | importCount=3, min=240k, **avg=242,778** weighted ((50×240+30×245+10×250)/90), max=250k |
+| 4 | `/products/MH_01/cost-stats` member | `{ canSee: false }` ✅ |
+| 5 | `/imports/:id/warnings` (3.5D-1 verify sau restart) | warning medium "Giá nhập 999tr cao hơn 408063% so TB" ✅ |
+
+**Backend restart đã thực hiện** — process plain `tsx` cũ đã kill, hiện chạy `tsx watch` mới. Endpoints mới + cron + warnings active.
+
+### 3.5D-2 files
+- `backend/src/modules/inventory/alerts-routes.ts` (mới)
+- `backend/src/modules/products/product-routes.ts` (edit)
+- `backend/src/app.ts` (edit)
+- `frontend/src/composables/use-inventory-alerts.ts` (mới)
+- `frontend/src/components/inventory/InventoryAlertsBanner.vue` (mới)
+- `frontend/src/components/products/ProductBatchesDialog.vue` (mới)
+- `frontend/src/views/DashboardView.vue` (edit)
+- `frontend/src/views/InventoryView.vue` (edit)
+- `frontend/src/views/ProductDetailView.vue` (edit)
+
+### Defer (nếu CEO muốn session sau)
+- Race-condition 2-tab thực test (3.5B Serializable + P2034 đã code, chưa stress).
+- Roadmap B: Rebate NCC, Dashboard NCC, Phân bổ thưởng, Tỷ giá ngoại tệ.
 
 ### 3.5D-1 done (09/05/2026)
 
