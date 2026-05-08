@@ -174,19 +174,19 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               WHERE o.order_date >= DATE_TRUNC('year', NOW())
                 AND o.status IN ('confirmed','shipped','completed')
             ), 0)::bigint AS revenue_ytd,
-            COALESCE(SUM(oi.line_total - COALESCE(oi.cost_value, 0)) FILTER (
+            COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
               WHERE o.order_date >= DATE_TRUNC('year', NOW())
                 AND o.status IN ('confirmed','shipped','completed')
-                AND oi.cost_value IS NOT NULL
+                AND oi.line_cost IS NOT NULL
             ), 0)::bigint AS profit_ytd,
             COALESCE(SUM(o.total_amount) FILTER (
               WHERE o.order_date >= DATE_TRUNC('month', NOW())
                 AND o.status IN ('confirmed','shipped','completed')
             ), 0)::bigint AS revenue_month,
-            COALESCE(SUM(oi.line_total - COALESCE(oi.cost_value, 0)) FILTER (
+            COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
               WHERE o.order_date >= DATE_TRUNC('month', NOW())
                 AND o.status IN ('confirmed','shipped','completed')
-                AND oi.cost_value IS NOT NULL
+                AND oi.line_cost IS NOT NULL
             ), 0)::bigint AS profit_month,
             COALESCE(SUM(o.total_amount) FILTER (
               WHERE o.status IN ('confirmed','shipped','completed')

@@ -177,21 +177,25 @@ async function periodRevenue(
     _sum: { totalAmount: true },
   });
 
-  // Profit: SUM(line_total - line_cost) on items with cost; only orders in window
+  // Profit: SUM(line_total - line_cost) on items with cost; only orders in window.
+  // NOTE: use `lineCost` (total cost for the line = qty × unit_cost), NOT
+  // `costValue` (per-unit cost stored as a Float for legacy reasons).
+  // Mixing them collapses the margin to ~95% — see commit history.
   const profitItems = await prisma.orderItem.findMany({
     where: {
-      costValue: { not: null },
+      lineCost: { not: null },
       order: withSaleScope(
         { orgId, ...orderInWindowWhere(from, to) },
         saleId,
       ),
     },
-    select: { lineTotal: true, costValue: true },
+    select: { lineTotal: true, lineCost: true },
   });
   let profit = 0;
   let profitBase = 0;
   for (const i of profitItems) {
-    profit += i.lineTotal - (i.costValue ?? 0);
+    const lc = i.lineCost == null ? 0 : Number(i.lineCost);
+    profit += i.lineTotal - lc;
     profitBase += i.lineTotal;
   }
 
@@ -254,7 +258,7 @@ export async function getKpi(orgId: string, filters: OverviewFilters) {
     }),
     prisma.orderItem.count({
       where: {
-        costValue: { not: null },
+        lineCost: { not: null },
         order: withSaleScope(
           { orgId, ...orderInWindowWhere(from, to) },
           saleId,
@@ -339,7 +343,7 @@ export async function getTopProducts(
       unit: true,
       quantity: true,
       lineTotal: true,
-      costValue: true,
+      lineCost: true,
     },
   });
 
@@ -377,8 +381,8 @@ export async function getTopProducts(
     b.qty += it.quantity;
     b.revenue += it.lineTotal;
     b.rows += 1;
-    if (it.costValue !== null) {
-      b.profit += it.lineTotal - it.costValue;
+    if (it.lineCost !== null) {
+      b.profit += it.lineTotal - Number(it.lineCost);
       b.profitBase += it.lineTotal;
       b.coverageHits += 1;
     }
@@ -758,7 +762,7 @@ export async function getTopCustomers(
       },
       items:
         type === 'profit'
-          ? { select: { lineTotal: true, costValue: true } }
+          ? { select: { lineTotal: true, lineCost: true } }
           : false,
     },
   });
@@ -793,7 +797,7 @@ export async function getTopCustomers(
     b.orderCount += 1;
     if (type === 'profit' && Array.isArray(o.items)) {
       for (const i of o.items) {
-        if (i.costValue !== null) b.profit += i.lineTotal - i.costValue;
+        if (i.lineCost !== null) b.profit += i.lineTotal - Number(i.lineCost);
       }
     }
   }
