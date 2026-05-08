@@ -166,10 +166,36 @@ Khi order chuyển sang `packing`:
 
 ## 🚦 Tiến độ sub-sessions
 
-- [x] **3.5A** — Schema + Backend imports + seed (commit pending)
-- [ ] **3.5B** — FIFO core logic
+- [x] **3.5A** — Schema + Backend imports + seed
+- [x] **3.5B** — FIFO core logic (commit pending)
 - [ ] **3.5C** — Frontend imports
 - [ ] **3.5D** — Cảnh báo + permission + roadmap B
+
+### 3.5B done (08/05/2026)
+- `fifo-service.ts` mới — exports `validateFifoStock`, `processFIFO`, `reverseFIFO`. Tất cả nhận `tx` (Prisma transaction client) — caller chịu trách nhiệm wrap transaction.
+- `processFIFO`: per item, lấy active batches sort `importedAt ASC, id ASC`, trừ FIFO chia line ra nhiều lô, insert OrderItemBatch trace + InventoryMovement type=export per lô. Update OrderItem `unitCost` = weighted avg, `lineCost` = totalCost, `profit` = lineTotal - lineCost. Re-check tồn ngay trước khi mutate (defeats race vs validateFifoStock).
+- `reverseFIFO`: đọc OrderItemBatch records, increment lại stock, insert movements type=return, xoá trace, reset OrderItem cost = null.
+- Hook ở `order-transitions.ts`:
+  - Packing: nếu `legacyCost=true` → flow cũ (validate batchId + deductStockForOrder). Nếu `false` → validate gifts batchId riêng + `validateFifoStock` (trả 400 sạch nếu thiếu) → trong transaction Serializable: `processFIFO` items + `deductGiftsOnly` gifts.
+  - Cancel sau pack: nếu `legacyCost=true` → restoreStockForOrder. Nếu `false` → `reverseFIFO` items + `restoreGiftsOnly` gifts.
+  - Catch P2034 (Postgres serialization conflict) → 409 "Đơn vừa được đóng gói bởi giao dịch khác".
+  - Catch FIFO race error "Tồn kho thay đổi giữa lúc xác nhận" → 409.
+- Tách 2 helper mới: `deductGiftsOnly` + `restoreGiftsOnly` — chỉ xử lý gifts với batchId manual. Items đi qua processFIFO/reverseFIFO; `deductStockForOrder`/`restoreStockForOrder` cũ giữ nguyên cho legacy path.
+
+### 3.5B test results (5/5 scenarios PASS)
+| # | Scenario | Verify |
+|---|---|---|
+| 1 | qty=20 → 1 lô L2604-A | Stock 50→30, OrderItemBatch 1 record, unitCost=240k, lineCost=4.8M, profit=1.2M |
+| 2 | qty=60 → 2 lô | L2604-A 30→0 + L2605-A 30→0, 2 records, unitCost=242,500 weighted, lineCost=14.55M, profit=3.45M |
+| 3 | qty=200 → insufficient | 400 "Không đủ tồn kho FIFO cho MH_01... cần 200, còn 10". Stock không bị đụng |
+| 4 | Cancel ORDER2 | Stock cộng lại đủ (0→30, 0→30), trace=0 records, cost reset NULL, movements 2 export + 2 return |
+| 5 | L2604-A status=expired + qty=25 | Skip L2604-A, chỉ trừ L2605-A 25, lineCost=6.125M (25×245k) |
+
+Race condition (test 6): defer test thực — Serializable + P2034 catch đã code. Sẽ verify trong session 3.5C/3.5D với 2 browser tabs.
+
+### 3.5B files
+- `backend/src/modules/orders/fifo-service.ts` (mới, ~250 LOC)
+- `backend/src/modules/orders/order-transitions.ts` (edit — hook FIFO + tách 2 gift helpers)
 
 ### 3.5A done (08/05/2026)
 - Schema: `ImportOrder`, `ImportOrderItem`, `OrderItemBatch` thêm mới. `InventoryBatch` thêm `importOrderId?`, `supplierId?`. `Order` thêm `legacyCost: Boolean @default(false)`. Bỏ FK `InventoryMovement.referenceId → orders.id` (giờ polymorphic — orders / import_orders / manual_adjust). `db push` xong, không cần migration files (project dùng `db push`).

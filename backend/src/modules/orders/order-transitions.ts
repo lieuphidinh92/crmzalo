@@ -30,6 +30,11 @@ import {
   reqUser,
   toNumber,
 } from './order-service.js';
+import {
+  processFIFO,
+  reverseFIFO,
+  validateFifoStock,
+} from './fifo-service.js';
 
 interface TransitionBody {
   to_status?: string;
@@ -95,42 +100,85 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
       }
 
       if (to === 'packing') {
-        // Validate every line item has a batch picked AND batch has enough stock.
-        const missingBatch = order.items.filter((it: { batchId: string | null }) => !it.batchId);
-        if (missingBatch.length > 0) {
-          return reply.status(400).send({
-            error: `${missingBatch.length} sản phẩm chưa chọn lô. Vui lòng chọn lô cho từng dòng trước khi đóng gói.`,
-          });
-        }
-        // Validate stock for items + product gifts
-        const stockNeed = new Map<string, number>();
-        for (const it of order.items) {
-          if (!it.batchId) continue;
-          stockNeed.set(it.batchId, (stockNeed.get(it.batchId) ?? 0) + it.quantity);
-        }
-        for (const g of order.gifts) {
-          if (g.batchId) {
-            stockNeed.set(g.batchId, (stockNeed.get(g.batchId) ?? 0) + g.quantity);
-          }
-        }
-        const batchIds = Array.from(stockNeed.keys());
-        type BatchSnapshot = { id: string; batchCode: string; currentQuantity: number; productId: string };
-        const batches = await prisma.inventoryBatch.findMany({
-          where: { id: { in: batchIds } },
-          select: { id: true, batchCode: true, currentQuantity: true, productId: true },
-        });
-        const batchMap = new Map<string, BatchSnapshot>(
-          batches.map((b: BatchSnapshot) => [b.id, b]),
-        );
-        for (const [batchId, need] of stockNeed) {
-          const b = batchMap.get(batchId);
-          if (!b) {
-            return reply.status(400).send({ error: `Lô ${batchId} không tồn tại` });
-          }
-          if (b.currentQuantity < need) {
+        if (order.legacyCost) {
+          // Legacy path: every line item must have a batch picked, every
+          // batch must have enough stock. Pre-FIFO MISA imports stay on
+          // this flow so their snapshot unit_cost stays untouched.
+          const missingBatch = order.items.filter((it: { batchId: string | null }) => !it.batchId);
+          if (missingBatch.length > 0) {
             return reply.status(400).send({
-              error: `Lô ${b.batchCode} chỉ còn ${b.currentQuantity}, cần ${need}. Vui lòng chọn lô khác.`,
+              error: `${missingBatch.length} sản phẩm chưa chọn lô. Vui lòng chọn lô cho từng dòng trước khi đóng gói.`,
             });
+          }
+          // Validate stock for items + product gifts
+          const stockNeed = new Map<string, number>();
+          for (const it of order.items) {
+            if (!it.batchId) continue;
+            stockNeed.set(it.batchId, (stockNeed.get(it.batchId) ?? 0) + it.quantity);
+          }
+          for (const g of order.gifts) {
+            if (g.batchId) {
+              stockNeed.set(g.batchId, (stockNeed.get(g.batchId) ?? 0) + g.quantity);
+            }
+          }
+          const batchIds = Array.from(stockNeed.keys());
+          type BatchSnapshot = { id: string; batchCode: string; currentQuantity: number; productId: string };
+          const batches = await prisma.inventoryBatch.findMany({
+            where: { id: { in: batchIds } },
+            select: { id: true, batchCode: true, currentQuantity: true, productId: true },
+          });
+          const batchMap = new Map<string, BatchSnapshot>(
+            batches.map((b: BatchSnapshot) => [b.id, b]),
+          );
+          for (const [batchId, need] of stockNeed) {
+            const b = batchMap.get(batchId);
+            if (!b) {
+              return reply.status(400).send({ error: `Lô ${batchId} không tồn tại` });
+            }
+            if (b.currentQuantity < need) {
+              return reply.status(400).send({
+                error: `Lô ${b.batchCode} chỉ còn ${b.currentQuantity}, cần ${need}. Vui lòng chọn lô khác.`,
+              });
+            }
+          }
+        } else {
+          // FIFO path: items don't need a batch picked — the allocator
+          // chooses one (or several) automatically. Gifts still go through
+          // the manual batch flow because clearance lots are usually
+          // hand-picked. Validate availability up-front so we can return
+          // 400 without entering the write transaction.
+          const giftStockNeed = new Map<string, number>();
+          for (const g of order.gifts) {
+            if (g.batchId) {
+              giftStockNeed.set(g.batchId, (giftStockNeed.get(g.batchId) ?? 0) + g.quantity);
+            }
+          }
+          if (giftStockNeed.size > 0) {
+            type BatchSnapshot = { id: string; batchCode: string; currentQuantity: number };
+            const giftBatches = await prisma.inventoryBatch.findMany({
+              where: { id: { in: Array.from(giftStockNeed.keys()) } },
+              select: { id: true, batchCode: true, currentQuantity: true },
+            });
+            const map = new Map<string, BatchSnapshot>(
+              giftBatches.map((b: BatchSnapshot) => [b.id, b]),
+            );
+            for (const [batchId, need] of giftStockNeed) {
+              const b = map.get(batchId);
+              if (!b) {
+                return reply.status(400).send({ error: `Lô quà tặng ${batchId} không tồn tại` });
+              }
+              if (b.currentQuantity < need) {
+                return reply.status(400).send({
+                  error: `Lô quà tặng ${b.batchCode} chỉ còn ${b.currentQuantity}, cần ${need}.`,
+                });
+              }
+            }
+          }
+          // Sum-per-product FIFO availability check.
+          try {
+            await validateFifoStock(prisma, order.id);
+          } catch (e: any) {
+            return reply.status(400).send({ error: e.message ?? 'Không đủ tồn FIFO' });
           }
         }
         stageData.packedAt = now;
@@ -163,17 +211,43 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
       }
 
       // ── Apply transition + side effects atomically ──
-      await prisma.$transaction(async (tx: any) => {
-        await tx.order.update({ where: { id: order.id }, data: stageData });
+      // FIFO packing needs Serializable so two concurrent packs that each
+      // see enough stock can't both succeed (Postgres surfaces the
+      // conflict as P2034 → caller returns 409).
+      const txOpts: { isolationLevel?: Prisma.TransactionIsolationLevel } =
+        to === 'packing' && !order.legacyCost
+          ? { isolationLevel: 'Serializable' as Prisma.TransactionIsolationLevel }
+          : {};
+      try {
+        await prisma.$transaction(async (tx: any) => {
+          await tx.order.update({ where: { id: order.id }, data: stageData });
 
-        if (to === 'packing') {
-          await deductStockForOrder(order.id, user, tx);
-        }
+          if (to === 'packing') {
+            if (order.legacyCost) {
+              await deductStockForOrder(order.id, user, tx);
+            } else {
+              await processFIFO(tx, order.id, user);
+              await deductGiftsOnly(order.id, user, tx);
+            }
+          }
 
-        if (to === 'completed') {
-          await applyCompletionSideEffects(order.id, user, tx);
+          if (to === 'completed') {
+            await applyCompletionSideEffects(order.id, user, tx);
+          }
+        }, txOpts);
+      } catch (e: any) {
+        if (e?.code === 'P2034') {
+          return reply.status(409).send({
+            error: 'Đơn vừa được đóng gói bởi giao dịch khác. Vui lòng tải lại và thử lại.',
+          });
         }
-      });
+        // FIFO race: validate passed but allocator found stock drained.
+        // Surface as 409 so frontend can prompt retry.
+        if (typeof e?.message === 'string' && e.message.includes('Tồn kho thay đổi')) {
+          return reply.status(409).send({ error: e.message });
+        }
+        throw e;
+      }
 
       const full = await prisma.order.findUnique({
         where: { id: order.id },
@@ -228,7 +302,12 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
           },
         });
         if (stockWasDeducted) {
-          await restoreStockForOrder(order.id, user, tx);
+          if (order.legacyCost) {
+            await restoreStockForOrder(order.id, user, tx);
+          } else {
+            await reverseFIFO(tx, order.id, user);
+            await restoreGiftsOnly(order.id, user, tx);
+          }
         }
       });
 
@@ -298,6 +377,71 @@ async function deductStockForOrder(
         referenceType: 'order',
         referenceId: orderId,
         note: `Đóng gói đơn — quà tặng (gift ${g.id})`,
+        createdById: user.id,
+      },
+    });
+  }
+}
+
+/** FIFO path counterpart: deduct stock for `order_gifts` rows that
+ * carry an explicit `batchId`. Items are handled by `processFIFO`. */
+async function deductGiftsOnly(
+  orderId: string,
+  user: { id: string; orgId: string; role: string },
+  tx: any,
+): Promise<void> {
+  const gifts = await tx.orderGift.findMany({
+    where: { orderId, batchId: { not: null } },
+    select: { id: true, productId: true, batchId: true, quantity: true },
+  });
+  for (const g of gifts) {
+    if (!g.batchId || !g.productId) continue;
+    await tx.inventoryBatch.update({
+      where: { id: g.batchId },
+      data: { currentQuantity: { decrement: g.quantity } },
+    });
+    await tx.inventoryMovement.create({
+      data: {
+        orgId: user.orgId,
+        productId: g.productId,
+        batchId: g.batchId,
+        type: 'export',
+        quantity: -g.quantity,
+        referenceType: 'order',
+        referenceId: orderId,
+        note: `Đóng gói đơn — quà tặng (gift ${g.id})`,
+        createdById: user.id,
+      },
+    });
+  }
+}
+
+/** Restore counterpart for `deductGiftsOnly`. */
+async function restoreGiftsOnly(
+  orderId: string,
+  user: { id: string; orgId: string; role: string },
+  tx: any,
+): Promise<void> {
+  const gifts = await tx.orderGift.findMany({
+    where: { orderId, batchId: { not: null } },
+    select: { id: true, productId: true, batchId: true, quantity: true },
+  });
+  for (const g of gifts) {
+    if (!g.batchId || !g.productId) continue;
+    await tx.inventoryBatch.update({
+      where: { id: g.batchId },
+      data: { currentQuantity: { increment: g.quantity } },
+    });
+    await tx.inventoryMovement.create({
+      data: {
+        orgId: user.orgId,
+        productId: g.productId,
+        batchId: g.batchId,
+        type: 'return',
+        quantity: g.quantity,
+        referenceType: 'order',
+        referenceId: orderId,
+        note: `Hoàn kho do huỷ đơn — quà tặng (gift ${g.id})`,
         createdById: user.id,
       },
     });
