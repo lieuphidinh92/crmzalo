@@ -32,9 +32,34 @@ import ExcelJS from 'exceljs';
 const APPLY = process.argv.includes('--apply');
 const DRY = !APPLY;
 
-const CATALOG_FILE = '/Users/tranhien1897/Downloads/Danh_sach_hang_hoa_dich_vu.xlsx';
-const ORDERS_FILE = '/Users/tranhien1897/Downloads/Ban_hang (3).xlsx';
-const ITEMS_FILE = '/Users/tranhien1897/Downloads/So_chi_tiet_ban_hang (1).xlsx';
+/** CLI args:
+ *   --catalog=<path>        override catalog file (skip if --skip-catalog)
+ *   --orders=<path>         override orders file
+ *   --items=<path>          override items file
+ *   --only-orders=AA,BB,CC  scope to a specific list of orderCodes — items
+ *                           and contacts for ONLY those orders are touched.
+ *                           Used for incremental delta imports without
+ *                           wiping line items of historical orders.
+ *   --skip-catalog          skip the 966-product catalog re-import.
+ *   --apply                 write to DB (default is dry-run).
+ */
+function getArgValue(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const arg = process.argv.find((a) => a.startsWith(prefix));
+  return arg ? arg.slice(prefix.length) : undefined;
+}
+const SKIP_CATALOG = process.argv.includes('--skip-catalog');
+const ONLY_ORDERS_RAW = getArgValue('only-orders');
+const ONLY_ORDERS = ONLY_ORDERS_RAW
+  ? new Set(ONLY_ORDERS_RAW.split(',').map((s) => s.trim()).filter(Boolean))
+  : null;
+
+const CATALOG_FILE = getArgValue('catalog')
+  ?? '/Users/tranhien1897/Downloads/Danh_sach_hang_hoa_dich_vu.xlsx';
+const ORDERS_FILE = getArgValue('orders')
+  ?? '/Users/tranhien1897/Downloads/Ban_hang (3).xlsx';
+const ITEMS_FILE = getArgValue('items')
+  ?? '/Users/tranhien1897/Downloads/So_chi_tiet_ban_hang (1).xlsx';
 
 const conn = process.env.DATABASE_URL;
 if (!conn) throw new Error('DATABASE_URL not set');
@@ -290,14 +315,35 @@ async function main() {
   if (!org) throw new Error('No organization in DB');
   console.log(`Org: ${org.name} (${org.id})`);
 
-  // 2. Read all 3 files
+  // 2. Read all 3 files (catalog optional via --skip-catalog)
   console.log('\nReading files...');
-  const [catalog, orders, items] = await Promise.all([
-    readCatalog(),
+  const [catalogRaw, ordersRaw, itemsRaw] = await Promise.all([
+    SKIP_CATALOG ? Promise.resolve([] as Awaited<ReturnType<typeof readCatalog>>) : readCatalog(),
     readOrders(),
     readItems(),
   ]);
-  console.log(`  catalog: ${catalog.length} products`);
+
+  // Apply --only-orders scope: keep only orders/items whose orderCode is
+  // in the allow-list. Items for orderCodes outside the list are dropped
+  // so we don't accidentally wipe historical line items.
+  const catalog = catalogRaw;
+  let orders = ordersRaw;
+  let items = itemsRaw;
+  if (ONLY_ORDERS) {
+    const before = { o: orders.length, i: items.length };
+    orders = orders.filter((o) => ONLY_ORDERS.has(o.orderCode));
+    items = items.filter((i) => ONLY_ORDERS.has(i.orderCode));
+    console.log(`  --only-orders scope: ${ONLY_ORDERS.size} codes → kept ${orders.length}/${before.o} orders, ${items.length}/${before.i} items`);
+    const missing = [...ONLY_ORDERS].filter((c) => !orders.some((o) => o.orderCode === c));
+    if (missing.length) {
+      console.warn(`  ⚠ Codes in --only-orders not found in file: ${missing.join(', ')}`);
+    }
+  }
+  if (SKIP_CATALOG) {
+    console.log(`  catalog: SKIPPED (--skip-catalog)`);
+  } else {
+    console.log(`  catalog: ${catalog.length} products`);
+  }
   console.log(`  orders:  ${orders.length} headers`);
   console.log(`  items:   ${items.length} line items`);
 
@@ -451,7 +497,11 @@ async function main() {
     }
   }
 
-  // 6. UPSERT products — preserve existing prices/descriptions
+  // 6. UPSERT products — preserve existing prices/descriptions.
+  //    Skipped entirely when --skip-catalog is passed (incremental mode).
+  if (SKIP_CATALOG) {
+    console.log('\n[1/4] Catalog import — SKIPPED (--skip-catalog)');
+  } else {
   console.log('\n[1/4] Importing catalog (products + brands)...');
   // Pre-create brands needed
   const brandsNeeded = new Set<string>();
@@ -531,6 +581,7 @@ async function main() {
     }
   }
   console.log(`  Products: created ${pCreated}, updated ${pUpdated}`);
+  } // end if (!SKIP_CATALOG)
 
   // 7. UPSERT contacts
   console.log('\n[2/4] Importing contacts...');
