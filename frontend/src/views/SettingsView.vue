@@ -30,9 +30,15 @@
               <v-chip :color="roleColor(item.role)" size="small" variant="flat">{{ roleLabel(item.role) }}</v-chip>
             </template>
             <template #item.isActive="{ item }">
-              <v-chip :color="item.isActive ? 'success' : 'default'" size="small" variant="flat">
-                {{ item.isActive ? 'Hoạt động' : 'Vô hiệu' }}
-              </v-chip>
+              <v-switch
+                :model-value="item.isActive"
+                :disabled="!authStore.isOwner || item.id === authStore.user?.id"
+                color="success"
+                density="compact"
+                hide-details
+                :label="item.isActive ? 'Hoạt động' : 'Đã nghỉ'"
+                @update:model-value="(val: boolean) => toggleActive(item, val)"
+              />
             </template>
             <template #item.actions="{ item }">
               <v-btn v-if="authStore.isAdmin" icon size="small" title="Chỉnh sửa" @click="openEdit(item)">
@@ -41,9 +47,7 @@
               <v-btn v-if="authStore.isAdmin" icon size="small" title="Đặt lại mật khẩu" @click="openPassword(item)">
                 <v-icon>mdi-lock-reset</v-icon>
               </v-btn>
-              <v-btn v-if="authStore.isOwner && item.id !== authStore.user?.id" icon size="small" color="error" title="Vô hiệu hóa" @click="confirmDelete(item)">
-                <v-icon>mdi-delete</v-icon>
-              </v-btn>
+
             </template>
           </v-data-table>
         </v-card>
@@ -101,18 +105,7 @@
           </v-card>
         </v-dialog>
 
-        <!-- Delete confirm dialog -->
-        <v-dialog v-model="showDelete" max-width="400">
-          <v-card>
-            <v-card-title>Xác nhận vô hiệu hóa</v-card-title>
-            <v-card-text>Bạn có chắc muốn vô hiệu hóa nhân viên "{{ selectedUser?.fullName }}"?</v-card-text>
-            <v-card-actions>
-              <v-spacer />
-              <v-btn @click="showDelete = false">Hủy</v-btn>
-              <v-btn color="error" :loading="saving" @click="handleDelete">Vô hiệu hóa</v-btn>
-            </v-card-actions>
-          </v-card>
-        </v-dialog>
+
       </v-window-item>
 
       <!-- Tab 2: Team management -->
@@ -135,14 +128,13 @@ import { useAuthStore } from '@/stores/auth';
 import TeamManagement from '@/components/settings/TeamManagement.vue';
 import OrgSettings from '@/components/settings/OrgSettings.vue';
 
-const { users, loading, error, fetchUsers, createUser, updateUser, resetPassword, deleteUser } = useUsers();
+const { users, loading, error, fetchUsers, createUser, updateUser, resetPassword } = useUsers();
 const authStore = useAuthStore();
 
 const tab = ref('users');
 const showCreate = ref(false);
 const showEdit = ref(false);
 const showPassword = ref(false);
-const showDelete = ref(false);
 const saving = ref(false);
 const dialogError = ref('');
 const newPassword = ref('');
@@ -159,7 +151,7 @@ const headers = [
   { title: 'Họ tên', key: 'fullName', sortable: true },
   { title: 'Email', key: 'email' },
   { title: 'Vai trò', key: 'role', sortable: true },
-  { title: 'Trạng thái', key: 'isActive', sortable: true },
+  { title: 'Trạng thái', key: 'isActive', sortable: true, width: 160 },
   { title: 'Hành động', key: 'actions', sortable: false, align: 'end' as const },
 ];
 
@@ -195,9 +187,10 @@ function openPassword(user: OrgUser) {
   showPassword.value = true;
 }
 
-function confirmDelete(user: OrgUser) {
-  selectedUser.value = user;
-  showDelete.value = true;
+async function toggleActive(user: OrgUser, val: boolean) {
+  saving.value = true;
+  await updateUser(user.id, { isActive: val });
+  saving.value = false;
 }
 
 async function handleCreate() {
@@ -226,13 +219,7 @@ async function handlePassword() {
   if (res.ok) { showPassword.value = false; } else { dialogError.value = res.error || ''; }
 }
 
-async function handleDelete() {
-  if (!selectedUser.value) return;
-  saving.value = true;
-  const res = await deleteUser(selectedUser.value.id);
-  saving.value = false;
-  if (res.ok) { showDelete.value = false; }
-}
+
 
 onMounted(fetchUsers);
 </script>

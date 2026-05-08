@@ -50,6 +50,13 @@ export interface Contact {
   rewardPoints?: number;
   aiInsight?: AIInsight | null;
   aiInsightUpdatedAt?: string | null;
+  // === Server-computed metrics (list endpoint only) =======================
+  daysSinceLastOrder?: number | null;
+  revenueYtd?: number;
+  profitYtd?: number;
+  revenueMonth?: number;
+  profitMonth?: number;
+  revenueLifetime?: number;
 }
 
 export interface ContactFilters {
@@ -59,7 +66,17 @@ export interface ContactFilters {
   stage: string;
   policyTier: string;
   province: string;
+  daysInactiveBucket: string;
 }
+
+export const DAYS_INACTIVE_OPTIONS = [
+  { text: 'Tất cả', value: '' },
+  { text: 'Active (<30 ngày)', value: 'active' },
+  { text: 'Cần chăm (30-60 ngày)', value: 'need_care' },
+  { text: 'Sắp mất (61-90 ngày)', value: 'about_to_lose' },
+  { text: 'Đã mất (>90 ngày)', value: 'lost' },
+  { text: 'Chưa từng đặt', value: 'never' },
+];
 
 export const CUSTOMER_TYPE_OPTIONS = [
   { text: 'Nhà thuốc', value: 'nha_thuoc' },
@@ -98,6 +115,7 @@ export const SOURCE_OPTIONS = [
 export function useContacts() {
   const contacts = ref<Contact[]>([]);
   const total = ref(0);
+  const summary = reactive({ total: 0, active: 0, needCare: 0 });
   const loading = ref(false);
   const saving = ref(false);
   const deleting = ref(false);
@@ -109,9 +127,11 @@ export function useContacts() {
     stage: '',
     policyTier: '',
     province: '',
+    daysInactiveBucket: '',
   });
 
-  const pagination = reactive({ page: 1, limit: 20 });
+  const pagination = reactive({ page: 1, limit: 50 });
+  const sort = reactive({ orderBy: 'daysSinceLastOrder', order: 'desc' as 'asc' | 'desc' });
 
   async function fetchContacts() {
     loading.value = true;
@@ -126,10 +146,18 @@ export function useContacts() {
           stage: filters.stage || undefined,
           policyTier: filters.policyTier || undefined,
           province: filters.province || undefined,
+          daysInactiveBucket: filters.daysInactiveBucket || undefined,
+          orderBy: sort.orderBy || undefined,
+          order: sort.order || undefined,
         },
       });
       contacts.value = res.data.contacts ?? res.data;
       total.value = res.data.total ?? contacts.value.length;
+      if (res.data.summary) {
+        summary.total = res.data.summary.total;
+        summary.active = res.data.summary.active;
+        summary.needCare = res.data.summary.needCare;
+      }
     } catch (err) {
       console.error('Failed to fetch contacts:', err);
     } finally {
@@ -197,6 +225,7 @@ export function useContacts() {
     filters.stage = '';
     filters.policyTier = '';
     filters.province = '';
+    filters.daysInactiveBucket = '';
     pagination.page = 1;
     fetchContacts();
   }
@@ -236,8 +265,8 @@ export function useContacts() {
   }
 
   return {
-    contacts, total, loading, saving, deleting,
-    filters, pagination,
+    contacts, total, summary, loading, saving, deleting,
+    filters, pagination, sort,
     fetchContacts, fetchContact,
     createContact, updateContact, deleteContact,
     resetFilters,

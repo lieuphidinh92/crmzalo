@@ -4,11 +4,25 @@
  * All routes require JWT auth and are scoped to user's org.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import pkg from '@prisma/client';
+const { Prisma } = pkg;
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { invalidateCacheByPrefix } from '../reports/resale-service.js';
 import { logCompliance } from '../../shared/utils/compliance-logger.js';
+
+/** Statuses that count as booked revenue. Mirrors the convention in
+ * reports/overview-service. Excludes draft + cancelled. */
+const COUNTABLE_STATUSES = ['confirmed', 'shipped', 'completed'] as const;
+
+/** Day-bucket boundaries for the "Số ngày chưa đặt đơn" filter. */
+const DAYS_BUCKET_ACTIVE_MAX = 29;       // <30d
+const DAYS_BUCKET_NEEDCARE_MIN = 30;     // 30-60d
+const DAYS_BUCKET_NEEDCARE_MAX = 60;
+const DAYS_BUCKET_ABOUTLOSE_MIN = 61;    // 61-90d
+const DAYS_BUCKET_ABOUTLOSE_MAX = 90;
+const DAYS_BUCKET_LOST_MIN = 91;         // >90d
 
 const PIPELINE_STAGES = [
   'tiep_can',
@@ -38,6 +52,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         policyTier = '',
         province = '',
         scale = '',
+        daysInactiveBucket = '',
+        orderBy = '',
+        order = 'desc',
       } = request.query as QueryParams;
 
       const where: any = { orgId: user.orgId };
@@ -56,24 +73,175 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         ];
       }
 
+      // Days-inactive bucket → filter on `lastOrderDate`. The boundaries
+      // mirror the at-risk grouping in reports/overview-service so labels
+      // stay consistent across the app.
+      const now = new Date();
+      const daysAgo = (n: number) => new Date(now.getTime() - n * 86400_000);
+      if (daysInactiveBucket === 'active') {
+        where.lastOrderDate = { gte: daysAgo(DAYS_BUCKET_ACTIVE_MAX) };
+      } else if (daysInactiveBucket === 'need_care') {
+        where.lastOrderDate = {
+          lte: daysAgo(DAYS_BUCKET_NEEDCARE_MIN),
+          gte: daysAgo(DAYS_BUCKET_NEEDCARE_MAX),
+        };
+      } else if (daysInactiveBucket === 'about_to_lose') {
+        where.lastOrderDate = {
+          lt: daysAgo(DAYS_BUCKET_ABOUTLOSE_MIN),
+          gte: daysAgo(DAYS_BUCKET_ABOUTLOSE_MAX),
+        };
+      } else if (daysInactiveBucket === 'lost') {
+        where.lastOrderDate = { lt: daysAgo(DAYS_BUCKET_LOST_MIN) };
+      } else if (daysInactiveBucket === 'never') {
+        where.lastOrderDate = null;
+      }
+
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
 
-      const [contacts, total] = await Promise.all([
+      // Map the "daysSinceLastOrder" virtual sort to the underlying column.
+      // Most-stale-first (desc) means smallest lastOrderDate first.
+      let orderClause: any = { updatedAt: 'desc' };
+      if (orderBy === 'daysSinceLastOrder') {
+        orderClause = { lastOrderDate: order === 'asc' ? 'desc' : 'asc' };
+      } else if (orderBy === 'fullName') {
+        orderClause = { fullName: order === 'asc' ? 'asc' : 'desc' };
+      } else if (orderBy === 'lastOrderDate') {
+        orderClause = { lastOrderDate: order === 'asc' ? 'asc' : 'desc' };
+      } else if (orderBy === 'firstContactDate') {
+        orderClause = { firstContactDate: order === 'asc' ? 'asc' : 'desc' };
+      } else if (orderBy === 'nextContactDate') {
+        orderClause = { nextContactDate: order === 'asc' ? 'asc' : 'desc' };
+      }
+
+      const [contacts, total, summaryActive, summaryNeedCare] = await Promise.all([
         prisma.contact.findMany({
           where,
           include: {
             assignedUser: { select: { id: true, fullName: true, email: true } },
             _count: { select: { conversations: true, appointments: true } },
           },
-          orderBy: { updatedAt: 'desc' },
+          orderBy: orderClause,
           skip: (pageNum - 1) * limitNum,
-          take: limitNum,
+          // limit=-1 → return all (used by "Tất cả" page-size option)
+          ...(limitNum > 0 ? { take: limitNum } : {}),
         }),
         prisma.contact.count({ where }),
+        prisma.contact.count({
+          where: { orgId: user.orgId, lastOrderDate: { gte: daysAgo(DAYS_BUCKET_ACTIVE_MAX) } },
+        }),
+        prisma.contact.count({
+          where: {
+            orgId: user.orgId,
+            lastOrderDate: {
+              lte: daysAgo(DAYS_BUCKET_NEEDCARE_MIN),
+              gte: daysAgo(DAYS_BUCKET_NEEDCARE_MAX),
+            },
+          },
+        }),
       ]);
 
-      return { contacts, total, page: pageNum, limit: limitNum };
+      // Aggregate per-contact metrics in ONE raw query. Doing it as
+      // Prisma .groupBy would need 2-3 round trips (revenue + profit
+      // separately at month + ytd) — raw SQL with FILTER is one shot.
+      // Anchored on PG NOW() so the day-diff matches the at-risk widget.
+      let metricsMap = new Map<string, {
+        daysSinceLastOrder: number | null;
+        revenueYtd: number;
+        profitYtd: number;
+        revenueMonth: number;
+        profitMonth: number;
+        revenueLifetime: number;
+      }>();
+      const contactIds = contacts.map((c: { id: string }) => c.id);
+      if (contactIds.length > 0) {
+        const rows = await prisma.$queryRaw<Array<{
+          contact_id: string;
+          days_since_last_order: number | null;
+          revenue_ytd: bigint;
+          profit_ytd: bigint;
+          revenue_month: bigint;
+          profit_month: bigint;
+          revenue_lifetime: bigint;
+        }>>(Prisma.sql`
+          SELECT
+            c.id AS contact_id,
+            CASE
+              WHEN c.last_order_date IS NULL THEN NULL
+              ELSE EXTRACT(DAY FROM NOW() - c.last_order_date)::int
+            END AS days_since_last_order,
+            COALESCE(SUM(o.total_amount) FILTER (
+              WHERE o.order_date >= DATE_TRUNC('year', NOW())
+                AND o.status IN ('confirmed','shipped','completed')
+            ), 0)::bigint AS revenue_ytd,
+            COALESCE(SUM(oi.line_total - COALESCE(oi.cost_value, 0)) FILTER (
+              WHERE o.order_date >= DATE_TRUNC('year', NOW())
+                AND o.status IN ('confirmed','shipped','completed')
+                AND oi.cost_value IS NOT NULL
+            ), 0)::bigint AS profit_ytd,
+            COALESCE(SUM(o.total_amount) FILTER (
+              WHERE o.order_date >= DATE_TRUNC('month', NOW())
+                AND o.status IN ('confirmed','shipped','completed')
+            ), 0)::bigint AS revenue_month,
+            COALESCE(SUM(oi.line_total - COALESCE(oi.cost_value, 0)) FILTER (
+              WHERE o.order_date >= DATE_TRUNC('month', NOW())
+                AND o.status IN ('confirmed','shipped','completed')
+                AND oi.cost_value IS NOT NULL
+            ), 0)::bigint AS profit_month,
+            COALESCE(SUM(o.total_amount) FILTER (
+              WHERE o.status IN ('confirmed','shipped','completed')
+            ), 0)::bigint AS revenue_lifetime
+          FROM contacts c
+          LEFT JOIN orders o ON o.contact_id = c.id
+          LEFT JOIN order_items oi ON oi.order_id = o.id
+          WHERE c.id IN (${Prisma.join(contactIds)})
+          GROUP BY c.id
+        `);
+        type MetricRow = {
+          contact_id: string;
+          days_since_last_order: number | null;
+          revenue_ytd: bigint;
+          profit_ytd: bigint;
+          revenue_month: bigint;
+          profit_month: bigint;
+          revenue_lifetime: bigint;
+        };
+        metricsMap = new Map(
+          rows.map((r: MetricRow) => [
+            r.contact_id,
+            {
+              daysSinceLastOrder: r.days_since_last_order,
+              revenueYtd: Number(r.revenue_ytd),
+              profitYtd: Number(r.profit_ytd),
+              revenueMonth: Number(r.revenue_month),
+              profitMonth: Number(r.profit_month),
+              revenueLifetime: Number(r.revenue_lifetime),
+            },
+          ]),
+        );
+      }
+
+      const enriched = contacts.map((c: { id: string }) => ({
+        ...c,
+        daysSinceLastOrder: metricsMap.get(c.id)?.daysSinceLastOrder ?? null,
+        revenueYtd: metricsMap.get(c.id)?.revenueYtd ?? 0,
+        profitYtd: metricsMap.get(c.id)?.profitYtd ?? 0,
+        revenueMonth: metricsMap.get(c.id)?.revenueMonth ?? 0,
+        profitMonth: metricsMap.get(c.id)?.profitMonth ?? 0,
+        revenueLifetime: metricsMap.get(c.id)?.revenueLifetime ?? 0,
+      }));
+
+      return {
+        contacts: enriched,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        summary: {
+          total,
+          active: summaryActive,
+          needCare: summaryNeedCare,
+        },
+      };
     } catch (err) {
       logger.error('[contacts] List error:', err);
       return reply.status(500).send({ error: 'Failed to fetch contacts' });

@@ -67,6 +67,19 @@
         @update:model-value="emit('search')"
       />
     </v-col>
+
+    <!-- Days inactive bucket -->
+    <v-col cols="12" sm="3">
+      <v-select
+        v-model="filters.daysInactiveBucket"
+        :items="DAYS_INACTIVE_OPTIONS"
+        item-title="text"
+        item-value="value"
+        label="Số ngày chưa đặt"
+        hide-details
+        @update:model-value="emit('search')"
+      />
+    </v-col>
   </v-row>
 </template>
 
@@ -77,6 +90,7 @@ import {
   CUSTOMER_TYPE_OPTIONS,
   STAGE_OPTIONS,
   POLICY_TIER_OPTIONS,
+  DAYS_INACTIVE_OPTIONS,
 } from '@/composables/use-contacts';
 
 defineProps<{ filters: ContactFilters }>();

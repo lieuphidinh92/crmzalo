@@ -242,31 +242,51 @@ export async function getPersonalKpi(
   const [thisMonth, lastMonth, newClosed, pipelineAgg, compliance] =
     await Promise.all([
       // DS resale tháng này — mọi order from "đại lý cũ" (created before
-      // monthStart) assigned to me.
+      // monthStart) assigned to me. Sale attribution: order.assignedSaleId
+      // (ưu tiên), fallback về contact.assignedUserId cho MISA-import cũ.
       prisma.order.aggregate({
         where: {
           orgId,
-          contact: { assignedUserId: userId, createdAt: { lt: monthStart } },
-          OR: [
-            { orderDate: { gte: monthStart } },
-            { orderDate: null, createdAt: { gte: monthStart } },
+          status: { not: 'cancelled' },
+          contact: { createdAt: { lt: monthStart } },
+          AND: [
+            {
+              OR: [
+                { assignedSaleId: userId },
+                { assignedSaleId: null, contact: { assignedUserId: userId } },
+              ],
+            },
+            {
+              OR: [
+                { orderDate: { gte: monthStart } },
+                { orderDate: null, createdAt: { gte: monthStart } },
+              ],
+            },
           ],
         },
         _sum: { totalAmount: true },
       }),
-      // Tháng trước
+      // Tháng trước — cùng logic sale attribution
       prisma.order.aggregate({
         where: {
           orgId,
-          contact: {
-            assignedUserId: userId,
-            createdAt: { lt: lastMonthStart },
-          },
-          OR: [
-            { orderDate: { gte: lastMonthStart, lt: monthStart } },
+          status: { not: 'cancelled' },
+          contact: { createdAt: { lt: lastMonthStart } },
+          AND: [
             {
-              orderDate: null,
-              createdAt: { gte: lastMonthStart, lt: monthStart },
+              OR: [
+                { assignedSaleId: userId },
+                { assignedSaleId: null, contact: { assignedUserId: userId } },
+              ],
+            },
+            {
+              OR: [
+                { orderDate: { gte: lastMonthStart, lt: monthStart } },
+                {
+                  orderDate: null,
+                  createdAt: { gte: lastMonthStart, lt: monthStart },
+                },
+              ],
             },
           ],
         },

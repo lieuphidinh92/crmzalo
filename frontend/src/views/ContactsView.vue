@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- Toolbar -->
-    <div class="d-flex align-center mb-4 flex-wrap gap-2">
+    <div class="d-flex align-center mb-1 flex-wrap gap-2">
       <h1 class="text-h5 mr-4">Khách hàng</h1>
       <v-spacer />
       <ContactColumnPicker
@@ -13,21 +13,31 @@
         Thêm KH
       </v-btn>
     </div>
+    <div class="page-subtitle mb-3">
+      Tổng <strong>{{ summary.total }}</strong> KH ·
+      <span class="text-success">{{ summary.active }}</span> active ·
+      <span class="text-warning">{{ summary.needCare }}</span> cần chăm
+    </div>
 
     <!-- Filters -->
     <ContactFilters :filters="filters" @search="onFilterChange" />
 
     <!-- Data table -->
-    <v-data-table
+    <v-data-table-server
       :headers="visibleHeaders"
       :items="contacts"
       :loading="loading"
       :items-per-page="pagination.limit"
       :items-length="total"
+      :page="pagination.page"
+      :items-per-page-options="ITEMS_PER_PAGE_OPTIONS"
+      :sort-by="vuetifySortBy"
       item-value="id"
       hover
       @click:row="onRowClick"
       @update:page="onPageChange"
+      @update:items-per-page="onLimitChange"
+      @update:sort-by="onSortChange"
     >
       <!-- Avatar -->
       <template #item.avatarUrl="{ item }">
@@ -145,7 +155,59 @@
       <template #item.assignedUser="{ item }">
         <span class="text-body-2">{{ item.assignedUser?.fullName ?? '—' }}</span>
       </template>
-    </v-data-table>
+
+      <!-- Days since last order — color badge by bucket -->
+      <template #item.daysSinceLastOrder="{ item }">
+        <v-chip
+          v-if="item.daysSinceLastOrder !== null && item.daysSinceLastOrder !== undefined"
+          size="small"
+          variant="flat"
+          :color="daysInactiveColor(item.daysSinceLastOrder)"
+          class="font-mono"
+        >
+          {{ item.daysSinceLastOrder }} ngày
+        </v-chip>
+        <span v-else class="text-grey">—</span>
+      </template>
+
+      <!-- Computed money columns -->
+      <template #item.revenueYtd="{ item }">
+        <span v-if="item.revenueYtd && item.revenueYtd > 0" class="money-pos">
+          {{ formatVNDShort(item.revenueYtd) }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+      <template #item.profitYtd="{ item }">
+        <span
+          v-if="item.profitYtd !== null && item.profitYtd !== undefined && item.profitYtd !== 0"
+          :class="item.profitYtd > 0 ? 'money-pos' : 'money-neg'"
+        >
+          {{ formatVNDShort(item.profitYtd) }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+      <template #item.revenueMonth="{ item }">
+        <span v-if="item.revenueMonth && item.revenueMonth > 0" class="money-pos">
+          {{ formatVNDShort(item.revenueMonth) }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+      <template #item.profitMonth="{ item }">
+        <span
+          v-if="item.profitMonth !== null && item.profitMonth !== undefined && item.profitMonth !== 0"
+          :class="item.profitMonth > 0 ? 'money-pos' : 'money-neg'"
+        >
+          {{ formatVNDShort(item.profitMonth) }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+      <template #item.revenueLifetime="{ item }">
+        <span v-if="item.revenueLifetime && item.revenueLifetime > 0" class="money-pos">
+          {{ formatVNDShort(item.revenueLifetime) }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+    </v-data-table-server>
 
     <!-- Insight slide-over panel -->
     <ContactInsightPanel
@@ -187,39 +249,60 @@ import {
   POLICY_TIER_OPTIONS,
   type Contact,
 } from '@/composables/use-contacts';
+import { formatVNDShort } from '@/composables/use-overview-report';
 import { useAuthStore } from '@/stores/auth';
 
 const {
   contacts,
   total,
+  summary,
   loading,
   filters,
   pagination,
+  sort,
   fetchContacts,
   fetchContact,
   fetchContactConversations,
 } = useContacts();
 
+const ITEMS_PER_PAGE_OPTIONS = [
+  { value: 20, title: '20' },
+  { value: 50, title: '50' },
+  { value: 100, title: '100' },
+  { value: 200, title: '200' },
+  { value: -1, title: 'Tất cả' },
+];
+
 const router = useRouter();
 const authStore = useAuthStore();
 
 // ── Column visibility (persisted per-user) ────────────────────────────────
+// Default columns prioritise the "Who needs my attention?" workflow:
+// id/photo + name + phone for contact, customer type + sale for context,
+// then days-inactive + revenue/profit YTD as the actionable signals.
+// Stage/province/notes/etc are optional via the "Cột hiển thị" picker.
 const columnDefs: ColumnDef[] = [
   { key: 'avatarUrl', title: 'Ảnh', alwaysVisible: true, defaultVisible: true },
   { key: 'fullName', title: 'Tên', alwaysVisible: true, defaultVisible: true },
   { key: 'phone', title: 'SĐT', alwaysVisible: true, defaultVisible: true },
   { key: 'customerType', title: 'Loại KH', defaultVisible: true },
-  { key: 'stage', title: 'Stage', defaultVisible: true },
   { key: 'assignedUser', title: 'Sale', defaultVisible: true },
-  { key: 'nextContactDate', title: 'Liên hệ tiếp theo', defaultVisible: true },
+  { key: 'daysSinceLastOrder', title: 'Số ngày chưa đặt', defaultVisible: true },
+  { key: 'revenueYtd', title: 'Doanh số năm', defaultVisible: true },
+  { key: 'profitYtd', title: 'Lợi nhuận năm', defaultVisible: true },
+  // Optional columns ────────────────────────────────────────────
+  { key: 'stage', title: 'Stage', defaultVisible: false },
   { key: 'province', title: 'Tỉnh thành', defaultVisible: false },
+  { key: 'nextContactDate', title: 'Liên hệ tiếp theo', defaultVisible: false },
+  { key: 'revenueMonth', title: 'Doanh số tháng', defaultVisible: false },
+  { key: 'profitMonth', title: 'Lợi nhuận tháng', defaultVisible: false },
+  { key: 'revenueLifetime', title: 'Doanh số lifetime', defaultVisible: false },
   { key: 'policyTier', title: 'Chính sách', defaultVisible: false },
+  { key: 'source', title: 'Nguồn', defaultVisible: false },
   { key: 'currentSupplier', title: 'NCC hiện tại', defaultVisible: false },
-  { key: 'monthlyRevenueEstimate', title: 'Doanh số/tháng', defaultVisible: false },
   { key: 'debtAmount', title: 'Công nợ', defaultVisible: false },
   { key: 'lastOrderDate', title: 'Đơn gần nhất', defaultVisible: false },
   { key: 'rewardPoints', title: 'Điểm thưởng', defaultVisible: false },
-  { key: 'source', title: 'Nguồn', defaultVisible: false },
   { key: 'firstContactDate', title: 'Ngày tiếp nhận', defaultVisible: false },
 ];
 
@@ -260,17 +343,29 @@ watch(
   { deep: true },
 );
 
+const SORTABLE_KEYS = new Set([
+  'fullName',
+  'nextContactDate',
+  'lastOrderDate',
+  'firstContactDate',
+  'daysSinceLastOrder',
+]);
+
 const visibleHeaders = computed(() =>
   columnDefs
     .filter((c) => visibleColumns.value.includes(c.key))
     .map((c) => ({
       title: c.title,
       key: c.key,
-      sortable: ['fullName', 'nextContactDate', 'lastOrderDate', 'firstContactDate'].includes(
-        c.key,
-      ),
+      sortable: SORTABLE_KEYS.has(c.key),
       width: c.key === 'avatarUrl' ? '48px' : undefined,
     })),
+);
+
+// Vuetify v-data-table-server emits sort-by as Array<{key, order}>; we
+// keep the composable's flat shape and bridge here.
+const vuetifySortBy = computed(() =>
+  sort.orderBy ? [{ key: sort.orderBy, order: sort.order }] : [],
 );
 
 // ── Slide-over panel state ────────────────────────────────────────────────
@@ -334,6 +429,33 @@ function onFilterChange() {
 function onPageChange(page: number) {
   pagination.page = page;
   fetchContacts();
+}
+
+function onLimitChange(limit: number) {
+  pagination.limit = limit;
+  pagination.page = 1;
+  fetchContacts();
+}
+
+function onSortChange(sortArr: Array<{ key: string; order: 'asc' | 'desc' }>) {
+  if (!sortArr || sortArr.length === 0) {
+    sort.orderBy = '';
+    sort.order = 'desc';
+  } else {
+    sort.orderBy = sortArr[0].key;
+    sort.order = sortArr[0].order ?? 'desc';
+  }
+  pagination.page = 1;
+  fetchContacts();
+}
+
+/** Map daysSinceLastOrder to the bucket color used in the badge.
+ *  Boundaries mirror DAYS_BUCKET_* on the backend so labels stay aligned. */
+function daysInactiveColor(days: number): string {
+  if (days < 30) return 'success';
+  if (days <= 60) return 'warning';
+  if (days <= 90) return 'orange-darken-1';
+  return 'error';
 }
 
 function openCreate() {
@@ -439,5 +561,26 @@ onMounted(() => fetchContacts());
 .contact-name-link:hover {
   color: var(--brand-amber-500);
   text-decoration: underline;
+}
+
+.page-subtitle {
+  font-size: 0.85rem;
+  color: rgb(148, 163, 184);
+}
+
+.font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.money-pos {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: rgb(16, 185, 129);
+  font-weight: 600;
+}
+
+.money-neg {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: rgb(239, 68, 68);
+  font-weight: 600;
 }
 </style>
