@@ -1,0 +1,195 @@
+# SESSION HANDOFF — Module Giá Vốn FIFO
+
+> Tạo ngày 08/05/2026. Đọc đầu mỗi session FIFO 3.5x trước khi code.
+> Lifecycle: file này được cập nhật cuối mỗi sub-session để ghi tiến độ.
+
+---
+
+## 🎯 Mục tiêu module
+
+CRM hiện tính `line_cost` per line item dùng `cost_price` snapshot tại thời điểm tạo line. Vấn đề: cùng 1 SKU nhập nhiều lô giá khác nhau (240k, 245k, 250k) — cost trên đơn không phản ánh đúng lô nào thực sự xuất.
+
+Module này:
+1. **Nhập hàng** vào kho theo lô (`import_orders` → tạo `inventory_batches`).
+2. **Xuất hàng** theo FIFO (lô cũ trừ trước, có thể chia 1 line ra nhiều lô) khi đơn → packing.
+3. **Trace audit** mỗi line item dùng từ lô nào (`order_item_batches`).
+4. **5 cảnh báo** kho/HSD/giá.
+
+---
+
+## ✅ Đã có sẵn (commit `a3f4aa1` — Session 3 trước, 7/5/2026)
+
+### Schema Prisma đã có
+- `InventoryBatch` (inventory_batches): `id, orgId, productId, warehouseId, batchCode, manufactureDate, expiryDate, importQuantity, currentQuantity, importCost, status (active/expired/recalled), notes, createdById, importedAt`. **Unique** `(orgId, productId, batchCode)`. Relations: `OrderItem[]`, `OrderGift[]`, `InventoryMovement[]`.
+- `InventoryMovement` (inventory_movements): audit log write-only — `type (import/export/adjust/return), quantity (signed), referenceType, referenceId, note, createdById`.
+- `OrderGift`: `batchId?` — gift dạng product trừ kho theo lô.
+- `Supplier` (suppliers): đã có model.
+- `Warehouse`: đã có (ref qua `InventoryBatch.warehouseId`).
+
+### Backend đã có
+- [`backend/src/modules/inventory/batch-routes.ts`](../backend/src/modules/inventory/batch-routes.ts) — full CRUD batch + adjust delta + recall + audit log endpoint.
+- [`backend/src/modules/inventory/inventory-reports.ts`](../backend/src/modules/inventory/inventory-reports.ts) — `/inventory/summary` (4 KPI), `/by-brand`, `/low-stock`.
+- `syncProductTotalStock` helper: re-aggregate sau mọi mutation.
+
+### Frontend đã có
+- [`frontend/src/views/InventoryView.vue`](../frontend/src/views/InventoryView.vue) — 3 tabs (Lô hàng / Audit log / Brand report).
+- [`frontend/src/components/inventory/`](../frontend/src/components/inventory/): `BatchFormDialog.vue`, `BatchAdjustDialog.vue`, `BatchAuditLogPanel.vue`.
+- [`frontend/src/composables/use-inventory.ts`](../frontend/src/composables/use-inventory.ts).
+
+### Cơ chế trừ kho hiện tại
+Code: [`backend/src/modules/orders/order-transitions.ts:97-170`](../backend/src/modules/orders/order-transitions.ts#L97-L170).
+
+Khi order chuyển sang `packing`:
+1. Validate **mỗi line item PHẢI có `batchId`** (sale chọn manual). Nếu thiếu → 400 "X sản phẩm chưa chọn lô".
+2. Validate `batch.currentQuantity >= need` cho từng lô.
+3. Trong `$transaction`: gọi `deductStockForOrder()` → decrement `currentQuantity` + insert `inventory_movements` (type=export, quantity âm).
+4. Khi cancel-after-packing: `restoreStockForOrder()` increment ngược.
+
+→ **FIFO mới sẽ override flow này**: bỏ require chọn batch manual, auto-FIFO chia 1 line ra nhiều lô.
+
+---
+
+## ❌ Còn thiếu (phạm vi 4 sub-sessions)
+
+### Schema mới
+- `ImportOrder` (import_orders): `id, orgId, importCode (auto NK-YYYYMM-001), supplierId, importDate, nccInvoiceNo, totalAmount, totalQuantity, status (draft/confirmed), notes, attachments (jsonb), createdById, createdAt, confirmedAt, updatedAt`.
+- `ImportOrderItem` (import_order_items): `id, importOrderId, productId, batchCode, quantity, unitCost, manufactureDate, expiryDate, lineTotal, notes`.
+- `OrderItemBatch` (order_item_batches) — **CORE FIFO TRACE**: `id, orderItemId, batchId, quantityUsed, costAtTime, createdAt`. 1 OrderItem có thể có nhiều record này (chia lô).
+- Cập nhật `InventoryBatch`: thêm `importOrderId?` (FK → ImportOrder, nullable cho data legacy), `supplierId?` (FK → Supplier, nullable).
+- Cập nhật `Order`: thêm `legacyCost: Boolean @default(false)`. True = đơn cũ trước FIFO (giữ snapshot unit_cost), false = đơn mới có FIFO trace.
+
+### Backend
+- `imports-routes.ts`: 8 endpoints (CRUD + confirm + upload-excel + delete-draft).
+- `fifo-service.ts`: `processFIFO(orderId, tx)`, `reverseFIFO(orderId, tx)` — phải transactional.
+- Hook FIFO vào `order-transitions.ts` packing transition: nếu `legacyCost=false` → gọi `processFIFO` thay vì validate `batchId` manual.
+- 5 cảnh báo: tồn thấp / HSD <90d / HSD hết → auto status=expired / cost > giá bán / giá tăng >20%.
+- Filter cost fields trong API response theo `request.user.role` (member không thấy `costPrice`, `unitCost`, `lineCost`, `profit`).
+
+### Frontend
+- `views/ImportsListView.vue`: list + stats cards + filter.
+- `views/ImportFormView.vue`: tạo/sửa đơn nhập với line items + Excel upload + preview validate.
+- `views/ImportDetailView.vue`: detail + confirm action.
+- `composables/use-imports.ts`.
+- `components/imports/ItemPickerDialog.vue`, `ExcelUploadDialog.vue`.
+- Sidebar: thêm menu "Nhập hàng" (/imports) trong nhóm "Bán hàng" — visible chỉ owner/admin.
+- ProductDetailView: thêm modal "Xem chi tiết các lô" + cost min/max/avg 6 tháng.
+
+### Seed
+- 2 đơn nhập Manhae (1 tháng 4, 1 tháng 5) tạo lô L2604-A và L2605-A.
+- 1 đơn nhập Bioisland.
+
+---
+
+## 🔑 Quyết định CEO (đã chốt 08/05/2026)
+
+| # | Câu hỏi | Quyết định |
+|---|---|---|
+| Q1 | Phân quyền `sale_leader`? | **Bỏ qua sale_leader.** Chỉ 3 cấp `owner / admin / member` (consistent CLAUDE.md). owner+admin: full quyền cost. member: KHÔNG thấy cost ở mọi API. |
+| Q2 | Add `Order.legacyCost: Boolean`? | **OK.** Default `false`. Đơn cũ migrate set `true` để skip FIFO. |
+| Q3 | Order hiện có cơ chế trừ kho? | **Có** (xem section "Cơ chế trừ kho hiện tại" ở trên). FIFO sẽ thay phần `packing` transition. |
+| Q4 | Dừng session, save handoff, mở session mới với 3.5A? | **OK.** File này = handoff. |
+| Q5 | FIFO override sale-pick-batch (đơn mới)? | **(a) FIFO làm hết** — xem section bên dưới. |
+
+### Quyết định technical bổ sung (CEO chốt 08/05/2026)
+| # | Câu hỏi | Quyết định |
+|---|---|---|
+| Q5 | FIFO override sale-pick-batch? | **(a) FIFO làm hết.** Bỏ pick batch UI khi sale tạo order line. Sale không cần biết lô — chỉ chọn SP + qty. Khi packing, FIFO tự chọn lô cũ nhất, có thể chia 1 line ra nhiều lô. Implication cho 3.5B: bỏ validate `batchId` ở packing transition cho `legacyCost=false`; bỏ `batchId` field trên OrderItemDialog (frontend); UI ProductPicker chỉ pick SP + qty + đơn giá. Đơn legacy (`legacyCost=true`) vẫn dùng flow batchId-manual cũ để tránh đụng data. |
+
+---
+
+## 📦 Plan 4 sub-sessions
+
+### Session 3.5A — Schema + Backend `/imports` + Seed
+**Scope** (~600 LOC):
+- Schema: thêm `ImportOrder`, `ImportOrderItem`, `OrderItemBatch`. Cập nhật `InventoryBatch` (+importOrderId, +supplierId nullable). Cập nhật `Order` (+legacyCost). `prisma db push` + `prisma generate`.
+- Backfill: tất cả `Order` hiện có set `legacyCost = true` (đơn pre-FIFO).
+- Backend `imports-routes.ts`: 7 endpoints (list/detail/create/update/delete-draft/confirm/upload-excel parse).
+- `confirm` endpoint: tạo `inventory_batches` từ `import_order_items`, insert `inventory_movements` type=import, sync `product.totalStock`, cập nhật `product.costPrice` = weighted avg active batches.
+- Seed: 2 đơn nhập Manhae (NK-202604-001 = 50 hộp MH_01 @240k lô L2604-A, NK-202605-001 = 30 hộp MH_01 @245k lô L2605-A) + 1 đơn Bioisland.
+- Test curl: tạo đơn nhập → confirm → verify batches + movements + product.costPrice.
+
+**Deliverable**: backend ready, có data test cho FIFO. Frontend chưa có.
+
+### Session 3.5B — FIFO Logic core (CRITICAL)
+**Scope** (~400 LOC, nhưng test rất kỹ):
+- `fifo-service.ts`:
+  - `processFIFO(orderId, tx)`: cho mỗi `OrderItem`, lấy `inventory_batches` `where { productId, status='active', currentQuantity > 0 }` `ORDER BY importedAt ASC, id ASC`. Validate đủ tồn (sum). Trừ FIFO chia line ra nhiều lô. Insert `OrderItemBatch` records. Update `OrderItem.unitCost` = weighted avg, `lineCost` = totalCost, `profit` = lineTotal - lineCost. Insert `inventory_movements` type=export per batch.
+  - `reverseFIFO(orderId, tx)`: đảo ngược — cộng lại `currentQuantity`, insert `inventory_movements` type=return, xoá `OrderItemBatch` records (hoặc giữ lại với reverse flag — chốt sau).
+- Hook vào `order-transitions.ts`:
+  - Khi packing: nếu `order.legacyCost = false` → gọi `processFIFO(order.id, tx)` thay vì validate `batchId` manual.
+  - Khi rollback packing: gọi `reverseFIFO`.
+- Test scenarios curl + SQL:
+  1. Đơn 1 line, đủ tồn từ 1 lô → trừ đúng 1 lô.
+  2. Đơn 1 line, đủ tồn nhưng chia 2 lô (vd cần 60, lô A còn 30 → lô B trừ 30). `OrderItemBatch` 2 records, weighted avg đúng.
+  3. Đơn 1 line, KHÔNG đủ tồn → throw + rollback transaction.
+  4. Đơn pack rồi cancel → reverseFIFO, batches cộng lại đủ.
+  5. Race condition: 2 đơn cùng pack 1 SKU vừa đủ → 1 thành công, 1 fail. (Cần test với 2 connection cùng lúc — Prisma `$transaction` SERIALIZABLE.)
+  6. Lô expired không được FIFO trừ.
+
+**Deliverable**: FIFO hoạt động đúng. Đơn cũ legacy vẫn pack với batch manual như cũ.
+
+### Session 3.5C — Frontend `/imports` + ImportsListView/Form/Detail
+**Scope** (~1200 LOC):
+- `composables/use-imports.ts`.
+- `views/ImportsListView.vue`: header + 3 stats cards + filter + table.
+- `views/ImportFormView.vue`: section thông tin + section line items (modal pick SP + qty + giá nhập + batch code + HSD) + tóm tắt + lưu nháp / confirm. Excel upload với preview validate.
+- `views/ImportDetailView.vue`: read-only nếu confirmed, edit nếu draft.
+- Router: thêm 3 routes /imports, /imports/new, /imports/:id.
+- Sidebar: thêm menu "Nhập hàng" trong nhóm Bán hàng (filter visible theo role owner/admin).
+- ProductDetailView: thêm modal "Xem chi tiết các lô" + cost min/max/avg 6 tháng.
+
+**Deliverable**: end-to-end tạo đơn nhập từ UI.
+
+### Session 3.5D — Cảnh báo + Permission cost + Update Module SP + Roadmap B
+**Scope** (~800 LOC):
+- 5 cảnh báo:
+  1. Tồn thấp: dashboard banner + inventory badge + cron daily.
+  2. HSD <90d: badge vàng SP/batch.
+  3. HSD hết: cron auto status=expired, FIFO skip.
+  4. Cost > giá bán: warning khi confirm import.
+  5. Giá nhập tăng >20%: warning khi confirm import.
+- Permission audit: scan mọi API trả `costPrice`/`unitCost`/`lineCost`/`profit` — strip cho member.
+- ProductDetailView: cost_price subtitle "Giá vốn TB tính từ FIFO".
+- Update CLAUDE.md: thêm section "ROADMAP MODULE GIÁ VỐN — PHẦN B (chưa làm)" với checkboxes Rebate NCC + Dashboard NCC + Phân bổ thưởng + Tỷ giá ngoại tệ.
+- Update LESSONS_LEARNED.md.
+
+**Deliverable**: Module Giá Vốn FIFO complete (Phần A).
+
+---
+
+## ⚠️ Rủi ro chính
+
+1. **FIFO bug = sai TẤT CẢ báo cáo lợi nhuận**. Phải transactional, race-condition-safe, validate đủ tồn TRƯỚC khi trừ. Test scenario "1 đơn 3 lô" + "cancel rollback" must pass.
+2. **Legacy data**: 387 đơn hiện có (theo commit `11882cd` MISA import). Phải backfill `legacyCost=true` để FIFO không đụng.
+3. **Permission leak**: nếu quên filter cost fields ở 1 endpoint nào đó → member đọc được cost. Phải scan toàn bộ.
+4. **Excel upload**: validate kỹ (SKU exist, qty>0, HSD>importDate). Test edge cases.
+
+## 🚦 Tiến độ sub-sessions
+
+- [x] **3.5A** — Schema + Backend imports + seed (commit pending)
+- [ ] **3.5B** — FIFO core logic
+- [ ] **3.5C** — Frontend imports
+- [ ] **3.5D** — Cảnh báo + permission + roadmap B
+
+### 3.5A done (08/05/2026)
+- Schema: `ImportOrder`, `ImportOrderItem`, `OrderItemBatch` thêm mới. `InventoryBatch` thêm `importOrderId?`, `supplierId?`. `Order` thêm `legacyCost: Boolean @default(false)`. Bỏ FK `InventoryMovement.referenceId → orders.id` (giờ polymorphic — orders / import_orders / manual_adjust). `db push` xong, không cần migration files (project dùng `db push`).
+- Backfill: `UPDATE orders SET legacy_cost = true` cho 399 đơn pre-FIFO. Khi FIFO 3.5B hook vào packing transition: chỉ run cho `legacyCost=false` (đơn mới).
+- API `/api/v1/imports`: 7 endpoints — list/detail/create/update/delete-draft/confirm/parse-excel. Phân quyền `requireRole('owner', 'admin')` ở mọi endpoint.
+- `confirm` logic: idempotent qua status check inside transaction (CONCURRENT_CONFIRM throw → 409). Tạo `inventory_batches` + `inventory_movements` type=import, sau đó sync `product.totalStock` + `product.costPrice` (weighted avg) ngoài transaction.
+- Seed: 3 đơn confirmed — NK-202604-001 (50 hộp MH_01 @240k lô L2604-A), NK-202605-001 (30 hộp MH_01 @245k lô L2605-A), NK-202605-002 (20 hộp BIO_01 @350k lô L2605-B). Sau seed: MH_01 totalStock=80, costPrice=241,875 = (50×240+30×245)/80 ✅. Idempotent qua `importCode` check + batch-collision check.
+- Test 8 case PASS: list, member 403, create draft, update items, confirm, batch+product+movement đúng, double-confirm 400, delete confirmed 400.
+- Excel parse endpoint dùng `exceljs` (đã có sẵn trong package.json). Test multipart upload defer cho 3.5C khi có frontend dialog.
+
+### 3.5A files
+- `backend/prisma/schema.prisma` (edit)
+- `backend/src/modules/imports/imports-routes.ts` (mới, ~640 LOC)
+- `backend/src/modules/imports/imports-seed.ts` (mới, ~225 LOC)
+- `backend/src/app.ts` (edit, +2 lines)
+- `backend/src/modules/inventory/batch-routes.ts` (edit — bỏ `order` relation, replace bằng manual lookup polymorphic)
+
+### Lưu ý cho 3.5B
+- Default warehouse helper đã có ở `imports-routes.ts:getDefaultWarehouseId(orgId)`. Có thể tách ra shared helper khi 3.5B cần.
+- `InventoryMovement.order` relation đã bị xoá → mọi code dùng `movement.order` phải làm manual lookup giống `batch-routes.ts` đã làm. (Hiện chỉ 1 caller là batch-routes — đã fix.)
+- FIFO 3.5B sẽ dùng `referenceType='order'` cho movements type=export khi đơn pack — consistent với cũ.
+
+Mỗi session xong cập nhật check ☑ ở đây + commit message tương ứng.

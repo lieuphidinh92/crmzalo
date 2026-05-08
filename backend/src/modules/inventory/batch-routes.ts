@@ -540,7 +540,6 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
           where,
           include: {
             batch: { select: { id: true, batchCode: true, productId: true } },
-            order: { select: { id: true, orderCode: true } },
           },
           orderBy: { createdAt: 'desc' },
           skip: (pageNum - 1) * limitNum,
@@ -549,7 +548,9 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
         prisma.inventoryMovement.count({ where }),
       ]);
 
-      // Hydrate product info via separate query (avoids deep include cost)
+      // Hydrate product/user info, plus polymorphic reference lookups
+      // for order vs import_order — referenceId is no longer a Prisma
+      // FK (movements can point at either parent type).
       const productIds = Array.from(new Set(movements.map((m: any) => m.productId)));
       const userIds = Array.from(
         new Set(
@@ -558,19 +559,53 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
             .filter((id: any): id is string => Boolean(id)),
         ),
       );
-      const [products, users] = await Promise.all([
+      const orderIds = Array.from(
+        new Set(
+          movements
+            .filter((m: any) => m.referenceType === 'order' && m.referenceId)
+            .map((m: any) => m.referenceId as string),
+        ),
+      );
+      const importOrderIds = Array.from(
+        new Set(
+          movements
+            .filter((m: any) => m.referenceType === 'import_order' && m.referenceId)
+            .map((m: any) => m.referenceId as string),
+        ),
+      );
+      const [products, users, orders, imports] = await Promise.all([
         prisma.product.findMany({ where: { id: { in: productIds } }, select: { id: true, sku: true, name: true } }),
         prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, fullName: true } }),
+        orderIds.length
+          ? prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, orderCode: true } })
+          : Promise.resolve([] as Array<{ id: string; orderCode: string }>),
+        importOrderIds.length
+          ? prisma.importOrder.findMany({ where: { id: { in: importOrderIds } }, select: { id: true, importCode: true } })
+          : Promise.resolve([] as Array<{ id: string; importCode: string }>),
       ]);
       const productMap = new Map<string, { id: string; sku: string; name: string }>(
         products.map((p: any) => [p.id, p]),
       );
       const userMap = new Map<string, string>(users.map((u: any) => [u.id, u.fullName]));
+      const orderMap = new Map<string, { id: string; orderCode: string }>(
+        orders.map((o: any) => [o.id, o]),
+      );
+      const importMap = new Map<string, { id: string; importCode: string }>(
+        imports.map((i: any) => [i.id, i]),
+      );
 
       const enriched = movements.map((m: any) => ({
         ...m,
         product: productMap.get(m.productId) ?? null,
         createdByName: m.createdById ? userMap.get(m.createdById) ?? null : null,
+        order:
+          m.referenceType === 'order' && m.referenceId
+            ? orderMap.get(m.referenceId) ?? null
+            : null,
+        importOrder:
+          m.referenceType === 'import_order' && m.referenceId
+            ? importMap.get(m.referenceId) ?? null
+            : null,
       }));
 
       return { movements: enriched, total, page: pageNum, limit: limitNum };

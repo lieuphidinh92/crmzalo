@@ -13,17 +13,17 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  teams         Team[]
-  users         User[]
-  zaloAccounts  ZaloAccount[]
-  contacts      Contact[]
-  conversations Conversation[]
-  appointments  Appointment[]
-  jobs          Job[]
-  activityLogs  ActivityLog[]
-  dailyStats    DailyMessageStat[]
-  settings      AppSetting[]
-  orders        Order[]
+  teams               Team[]
+  users               User[]
+  zaloAccounts        ZaloAccount[]
+  contacts            Contact[]
+  conversations       Conversation[]
+  appointments        Appointment[]
+  jobs                Job[]
+  activityLogs        ActivityLog[]
+  dailyStats          DailyMessageStat[]
+  settings            AppSetting[]
+  orders              Order[]
   quickReplyTemplates QuickReplyTemplate[]
   tasks               Task[]
   recurringTaskRules  RecurringTaskRule[]
@@ -35,6 +35,7 @@ model Organization {
   warehouses          Warehouse[]
   inventoryBatches    InventoryBatch[]
   inventoryMovements  InventoryMovement[]
+  importOrders        ImportOrder[]
 
   @@map("organizations")
 }
@@ -122,54 +123,54 @@ model ZaloAccountAccess {
 
 // Customer / contact record (B2B sales — TPCN wholesale)
 model Contact {
-  id                String    @id @default(uuid())
-  orgId             String    @map("org_id")
-  zaloUid           String?   @map("zalo_uid")
-  phone             String?
-  fullName          String?   @map("full_name")
-  facebookId        String?   @map("facebook_id")
-  pancakeConversationId String? @map("pancake_conversation_id")
-  misaCustomerCode  String?   @map("misa_customer_code")
-  avatarUrl         String?   @map("avatar_url")
-  source            String?   // FB, TT, GT, CN, zalo, gioi_thieu, khac
-  sourceDate        DateTime? @map("source_date")
-  firstContactDate  DateTime? @map("first_contact_date")
-  assignedUserId    String?   @map("assigned_user_id")
-  notes             String?
-  tags              Json      @default("[]")
-  metadata          Json      @default("{}")
+  id                    String    @id @default(uuid())
+  orgId                 String    @map("org_id")
+  zaloUid               String?   @map("zalo_uid")
+  phone                 String?
+  fullName              String?   @map("full_name")
+  facebookId            String?   @map("facebook_id")
+  pancakeConversationId String?   @map("pancake_conversation_id")
+  misaCustomerCode      String?   @map("misa_customer_code")
+  avatarUrl             String?   @map("avatar_url")
+  source                String? // FB, TT, GT, CN, zalo, gioi_thieu, khac
+  sourceDate            DateTime? @map("source_date")
+  firstContactDate      DateTime? @map("first_contact_date")
+  assignedUserId        String?   @map("assigned_user_id")
+  notes                 String?
+  tags                  Json      @default("[]")
+  metadata              Json      @default("{}")
 
   // === B2B sales fields (added for ngheduocsi.vn refactor) ====================
   // All fields nullable / default-empty so existing rows don't break.
   storeName              String?   @map("store_name")
   province               String?
   address                String?
-  customerType           String?   @map("customer_type")              // nha_thuoc | si_online | duoc_si | cua_hang_me_be
-  scale                  String?                                       // nho | vua | lon
+  customerType           String?   @map("customer_type") // nha_thuoc | si_online | duoc_si | cua_hang_me_be
+  scale                  String? // nho | vua | lon
   currentProducts        Json      @default("[]") @map("current_products")
   currentSupplier        String?   @map("current_supplier")
   monthlyRevenueEstimate String?   @map("monthly_revenue_estimate")
   avgOrderQuantity       String?   @map("avg_order_quantity")
-  stage                  String?                                       // tiep_can | da_bao_gia | dang_thu_hang | dai_ly_chinh_thuc | ngung
+  stage                  String? // tiep_can | da_bao_gia | dang_thu_hang | dai_ly_chinh_thuc | ngung
   stuckReason            String?   @map("stuck_reason")
-  policyTier             String?   @map("policy_tier")                 // ctv | dai_ly_cap_1 | dai_ly_cap_2
+  policyTier             String?   @map("policy_tier") // ctv | dai_ly_cap_1 | dai_ly_cap_2
   debtAmount             Decimal?  @map("debt_amount") @db.Decimal(15, 2)
   lastOrderDate          DateTime? @map("last_order_date")
   nextContactDate        DateTime? @map("next_contact_date")
   internalNote           String?   @map("internal_note")
   rewardPoints           Int       @default(0) @map("reward_points")
-  aiInsight              Json?     @map("ai_insight")                  // structured Claude output
+  aiInsight              Json?     @map("ai_insight") // structured Claude output
   aiInsightUpdatedAt     DateTime? @map("ai_insight_updated_at")
   // Pipeline / opportunity tracking ------------------------------------
   potentialValue         Decimal?  @map("potential_value") @db.Decimal(15, 2)
   stageUpdatedAt         DateTime? @map("stage_updated_at")
   // ===========================================================================
 
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  org          Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  assignedUser User?          @relation("AssignedContacts", fields: [assignedUserId], references: [id])
+  org           Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignedUser  User?          @relation("AssignedContacts", fields: [assignedUserId], references: [id])
   conversations Conversation[]
   appointments  Appointment[]
   orders        Order[]
@@ -189,9 +190,9 @@ model Contact {
 model WebhookLog {
   id           String   @id @default(uuid())
   orgId        String?  @map("org_id")
-  source       String   // pancake | future-source
+  source       String // pancake | future-source
   payload      Json     @default("{}")
-  status       String   // received | success | failed | duplicate | unauthorized
+  status       String // received | success | failed | duplicate | unauthorized
   errorMessage String?  @map("error_message")
   createdAt    DateTime @default(now()) @map("created_at")
 
@@ -227,7 +228,7 @@ model SaleScoreConfig {
   id          String   @id @default(uuid())
   orgId       String   @map("org_id")
   metricKey   String   @map("metric_key") // resale_revenue | active_rate | new_agents | conversion_rate | retention_90d | compliance_score
-  weight      Decimal  @db.Decimal(5, 2)  // % out of 100 (e.g. 25.00)
+  weight      Decimal  @db.Decimal(5, 2) // % out of 100 (e.g. 25.00)
   targetValue Decimal? @map("target_value") @db.Decimal(15, 2) // optional absolute target (informational)
   updatedBy   String?  @map("updated_by")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -237,15 +238,15 @@ model SaleScoreConfig {
 }
 
 model StageHistory {
-  id            String   @id @default(uuid())
-  contactId     String   @map("contact_id")
-  fromStage     String?  @map("from_stage") // null on first entry
-  toStage       String   @map("to_stage")
-  changedAt     DateTime @default(now()) @map("changed_at")
-  changedByUserId String? @map("changed_by_user_id")
-  reason        String?
+  id              String   @id @default(uuid())
+  contactId       String   @map("contact_id")
+  fromStage       String?  @map("from_stage") // null on first entry
+  toStage         String   @map("to_stage")
+  changedAt       DateTime @default(now()) @map("changed_at")
+  changedByUserId String?  @map("changed_by_user_id")
+  reason          String?
 
-  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([contactId, changedAt])
   @@map("stage_history")
@@ -306,7 +307,7 @@ model Appointment {
   assignedUserId  String?  @map("assigned_user_id")
   appointmentDate DateTime @map("appointment_date")
   appointmentTime String?  @map("appointment_time")
-  type            String?  // tai_kham, kham_moi, online
+  type            String? // tai_kham, kham_moi, online
   status          String   @default("scheduled") // scheduled, completed, cancelled, no_show
   notes           String?
   reminderSent    Boolean  @default(false) @map("reminder_sent")
@@ -326,7 +327,7 @@ model Job {
   orgId        String    @map("org_id")
   name         String
   jobType      String    @map("job_type") // qc, classify, reminder, stats
-  schedule     String?   // cron expression
+  schedule     String? // cron expression
   config       Json      @default("{}")
   rulesContent String?   @map("rules_content")
   status       String    @default("active") // active, paused
@@ -469,55 +470,61 @@ model Order {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   // ── Session 2 wholesale-order extension ───────────────────────────
-  assignedSaleId       String?  @map("assigned_sale_id")
-  mktOwnerId           String?  @map("mkt_owner_id")
-  source               String?  // facebook | zalo | gioi_thieu | khac
-  shippingMethod       String?  @map("shipping_method") // pickup_at_warehouse | cod | prepaid
-  shippingProvider     String?  @map("shipping_provider")
-  trackingCode         String?  @map("tracking_code")
-  shippingFee          Decimal  @default(0) @map("shipping_fee") @db.Decimal(15, 2)
-  deliveryAddress      String?  @map("delivery_address")
+  assignedSaleId   String?   @map("assigned_sale_id")
+  mktOwnerId       String?   @map("mkt_owner_id")
+  source           String? // facebook | zalo | gioi_thieu | khac
+  shippingMethod   String?   @map("shipping_method") // pickup_at_warehouse | cod | prepaid
+  shippingProvider String?   @map("shipping_provider")
+  trackingCode     String?   @map("tracking_code")
+  shippingFee      Decimal   @default(0) @map("shipping_fee") @db.Decimal(15, 2)
+  deliveryAddress  String?   @map("delivery_address")
   // Snapshots of the cart total (auto-computed in service):
   //   subtotalAmount  = SUM(line_total)
   //   discountAmount  = the resolved discount in VND (already applied)
   //   totalAmountValue = subtotal - discount + shipping_fee
   //   debtAmountValue  = total - paid (auto)
-  subtotalAmount       Decimal? @map("subtotal_amount") @db.Decimal(15, 2)
-  discountType         String?  @map("discount_type") // percent | fixed
-  discountValue        Decimal  @default(0) @map("discount_value") @db.Decimal(15, 2)
-  discountAmount       Decimal  @default(0) @map("discount_amount") @db.Decimal(15, 2)
-  totalAmountValue     Decimal? @map("total_amount_value") @db.Decimal(15, 2)
-  paidAmount           Decimal  @default(0) @map("paid_amount") @db.Decimal(15, 2)
-  debtAmountValue      Decimal  @default(0) @map("debt_amount_value") @db.Decimal(15, 2)
-  paymentMethod        String?  @map("payment_method") // bank_transfer | cod | cash | credit
-  debtDueDate          DateTime? @map("debt_due_date") @db.Date
+  subtotalAmount   Decimal?  @map("subtotal_amount") @db.Decimal(15, 2)
+  discountType     String?   @map("discount_type") // percent | fixed
+  discountValue    Decimal   @default(0) @map("discount_value") @db.Decimal(15, 2)
+  discountAmount   Decimal   @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  totalAmountValue Decimal?  @map("total_amount_value") @db.Decimal(15, 2)
+  paidAmount       Decimal   @default(0) @map("paid_amount") @db.Decimal(15, 2)
+  debtAmountValue  Decimal   @default(0) @map("debt_amount_value") @db.Decimal(15, 2)
+  paymentMethod    String?   @map("payment_method") // bank_transfer | cod | cash | credit
+  debtDueDate      DateTime? @map("debt_due_date") @db.Date
 
-  internalNote         String?  @map("internal_note")
-  customerNote         String?  @map("customer_note")
-  cancelReason         String?  @map("cancel_reason")
+  internalNote String? @map("internal_note")
+  customerNote String? @map("customer_note")
+  cancelReason String? @map("cancel_reason")
 
   // VAT placeholder for Easy Invoice integration (Session 2B)
-  vatInvoiceId         String?  @map("vat_invoice_id")
-  vatInvoiceStatus     String   @default("not_issued") @map("vat_invoice_status")
-  vatInvoiceUrl        String?  @map("vat_invoice_url")
+  vatInvoiceId     String? @map("vat_invoice_id")
+  vatInvoiceStatus String  @default("not_issued") @map("vat_invoice_status")
+  vatInvoiceUrl    String? @map("vat_invoice_url")
 
   // Stage timestamps
-  confirmedAt          DateTime? @map("confirmed_at")
-  packedAt             DateTime? @map("packed_at")
-  shippedAt            DateTime? @map("shipped_at")
-  completedAt          DateTime? @map("completed_at")
-  cancelledAt          DateTime? @map("cancelled_at")
+  confirmedAt DateTime? @map("confirmed_at")
+  packedAt    DateTime? @map("packed_at")
+  shippedAt   DateTime? @map("shipped_at")
+  completedAt DateTime? @map("completed_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  // Pre-FIFO orders carry per-line cost snapshots from MISA imports or
+  // earlier sessions; their `unit_cost`/`line_cost` must NOT be touched
+  // by the FIFO module. Defaults to false on new orders so the packing
+  // transition runs the FIFO allocator instead of requiring a manual
+  // batch pick.
+  legacyCost Boolean @default(false) @map("legacy_cost")
   // ──────────────────────────────────────────────────────────────────
 
-  org          Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  createdBy    User          @relation("CreatedOrders", fields: [createdByUserId], references: [id])
-  assignedSale User?         @relation("AssignedSaleOrders", fields: [assignedSaleId], references: [id])
-  mktOwner     User?         @relation("MktOwnerOrders", fields: [mktOwnerId], references: [id])
-  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  org          Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact      Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy    User                @relation("CreatedOrders", fields: [createdByUserId], references: [id])
+  assignedSale User?               @relation("AssignedSaleOrders", fields: [assignedSaleId], references: [id])
+  mktOwner     User?               @relation("MktOwnerOrders", fields: [mktOwnerId], references: [id])
+  conversation Conversation?       @relation(fields: [conversationId], references: [id])
   items        OrderItem[]
   gifts        OrderGift[]
-  movements    InventoryMovement[]
 
   @@unique([orgId, orderCode])
   @@index([orgId, orderDate])
@@ -533,41 +540,44 @@ model Order {
 // powers product-level analytics (top SKU, brand mix, repurchase per SKU).
 // `costValue` is sensitive (giá vốn) — only owner role may read it via API.
 model OrderItem {
-  id            String  @id @default(uuid())
-  orderId       String  @map("order_id")
-  sku           String                                       // MH_01, BIO_07
-  productName   String  @map("product_name")
-  unit          String?                                      // Hộp / Lọ / Bộ
+  id            String   @id @default(uuid())
+  orderId       String   @map("order_id")
+  sku           String // MH_01, BIO_07
+  productName   String   @map("product_name")
+  unit          String? // Hộp / Lọ / Bộ
   quantity      Float
-  unitPrice     Float   @map("unit_price")
-  discountValue Float   @default(0) @map("discount_value")
-  lineTotal     Float   @map("line_total")
-  costValue     Float?  @map("cost_value")                   // owner-only
-  returnQty     Float   @default(0) @map("return_qty")
-  returnValue   Float   @default(0) @map("return_value")
+  unitPrice     Float    @map("unit_price")
+  discountValue Float    @default(0) @map("discount_value")
+  lineTotal     Float    @map("line_total")
+  costValue     Float?   @map("cost_value") // owner-only
+  returnQty     Float    @default(0) @map("return_qty")
+  returnValue   Float    @default(0) @map("return_value")
   createdAt     DateTime @default(now()) @map("created_at")
 
   // ── Session 2 wholesale-order extension ───────────────────────────
   // Link to the Product table (Session 1). Nullable because legacy MISA
   // imports populated only `sku` text.
-  productId     String?  @map("product_id")
+  productId   String?  @map("product_id")
   // Which lot this line was picked from. Nullable for legacy rows / for
   // gift items that don't deduct stock from a specific batch.
-  batchId       String?  @map("batch_id")
+  batchId     String?  @map("batch_id")
   // Which `product_prices` tier the unit_price came from. Snapshot —
   // editing the price tier later does not retroactively change the
   // order. Nullable for legacy rows / manual overrides.
-  priceTierId   String?  @map("price_tier_id")
+  priceTierId String?  @map("price_tier_id")
   // Derived: `line_total - line_cost`. Owner/admin only.
-  unitCost      Decimal? @map("unit_cost") @db.Decimal(15, 2)
-  lineCost      Decimal? @map("line_cost") @db.Decimal(15, 2)
-  profit        Decimal? @db.Decimal(15, 2)
+  unitCost    Decimal? @map("unit_cost") @db.Decimal(15, 2)
+  lineCost    Decimal? @map("line_cost") @db.Decimal(15, 2)
+  profit      Decimal? @db.Decimal(15, 2)
   // ──────────────────────────────────────────────────────────────────
 
-  order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product?     @relation(fields: [productId], references: [id])
-  batch   InventoryBatch? @relation(fields: [batchId], references: [id])
-  tier    ProductPrice?   @relation(fields: [priceTierId], references: [id])
+  order      Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product?         @relation(fields: [productId], references: [id])
+  batch      InventoryBatch?  @relation(fields: [batchId], references: [id])
+  tier       ProductPrice?    @relation(fields: [priceTierId], references: [id])
+  // FIFO trace — one OrderItem can draw from multiple batches when a
+  // single line spans more than one lot in the warehouse.
+  fifoUsages OrderItemBatch[]
 
   @@index([orderId])
   @@index([sku])
@@ -601,22 +611,27 @@ model Warehouse {
 // cancel-after-packing or returns. `importQuantity` is the original
 // amount when the lot was received (immutable after creation).
 model InventoryBatch {
-  id              String   @id @default(uuid())
-  orgId           String   @map("org_id")
-  productId       String   @map("product_id")
-  warehouseId     String   @map("warehouse_id")
-  batchCode       String   @map("batch_code")
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  productId       String    @map("product_id")
+  warehouseId     String    @map("warehouse_id")
+  batchCode       String    @map("batch_code")
   manufactureDate DateTime? @map("manufacture_date") @db.Date
   expiryDate      DateTime? @map("expiry_date") @db.Date
-  importQuantity  Int      @map("import_quantity")
-  currentQuantity Int      @map("current_quantity")
-  importCost      Decimal? @map("import_cost") @db.Decimal(15, 2)
-  status          String   @default("active") // active | expired | recalled
-  importedAt      DateTime @default(now()) @map("imported_at")
-  createdById     String?  @map("created_by")
+  importQuantity  Int       @map("import_quantity")
+  currentQuantity Int       @map("current_quantity")
+  importCost      Decimal?  @map("import_cost") @db.Decimal(15, 2)
+  status          String    @default("active") // active | expired | recalled
+  importedAt      DateTime  @default(now()) @map("imported_at")
+  createdById     String?   @map("created_by")
   notes           String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  // Provenance — lots created by the FIFO module link back to the import
+  // order + supplier. Both nullable to keep legacy batches (created
+  // pre-FIFO via the inventory dashboard) valid without a backfill.
+  importOrderId   String?   @map("import_order_id")
+  supplierId      String?   @map("supplier_id")
 
   org         Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   product     Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -624,10 +639,14 @@ model InventoryBatch {
   orderItems  OrderItem[]
   orderGifts  OrderGift[]
   movements   InventoryMovement[]
+  importOrder ImportOrder?        @relation(fields: [importOrderId], references: [id])
+  supplier    Supplier?           @relation(fields: [supplierId], references: [id])
+  fifoUsages  OrderItemBatch[]
 
   @@unique([orgId, productId, batchCode])
   @@index([orgId, productId, status])
   @@index([orgId, expiryDate])
+  @@index([importOrderId])
   @@map("inventory_batches")
 }
 
@@ -662,20 +681,23 @@ model InventoryMovement {
   orgId         String   @map("org_id")
   productId     String   @map("product_id")
   batchId       String   @map("batch_id")
-  type          String   // import | export | adjust | return
-  quantity      Int      // signed; negative for export
-  referenceType String?  @map("reference_type") // order | manual_adjust | import
+  type          String // import | export | adjust | return
+  quantity      Int // signed; negative for export
+  // Polymorphic reference — `referenceType` determines which table
+  // `referenceId` points at (orders, import_orders, ...). No FK so the
+  // same column can carry IDs from different parents.
+  referenceType String?  @map("reference_type") // order | import_order | manual_adjust
   referenceId   String?  @map("reference_id")
   note          String?
   createdById   String?  @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  org      Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  batch    InventoryBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  order    Order?          @relation(fields: [referenceId], references: [id])
+  org   Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  batch InventoryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
   @@index([orgId, productId, createdAt])
   @@index([batchId, createdAt])
+  @@index([referenceType, referenceId])
   @@map("inventory_movements")
 }
 
@@ -686,7 +708,7 @@ model InventoryMovement {
 model QuickReplyTemplate {
   id        String   @id @default(uuid())
   orgId     String   @map("org_id")
-  key       String   // welcome | pricing | reward | legal | media
+  key       String // welcome | pricing | reward | legal | media
   type      String   @default("text") // text | link | image | combined
   content   String   @default("")
   mediaUrl  String?  @map("media_url")
@@ -706,8 +728,8 @@ model TaskCategory {
   id          String  @id @default(uuid())
   key         String  @unique // NEW_LEAD, DAILY_POST, BIRTHDAY, ...
   name        String
-  icon        String  // emoji
-  color       String  // colour token (red / blue / pink / ...)
+  icon        String // emoji
+  color       String // colour token (red / blue / pink / ...)
   description String?
   sortOrder   Int     @default(0) @map("sort_order")
 
@@ -757,16 +779,16 @@ model Task {
 }
 
 model RecurringTaskRule {
-  id              String  @id @default(uuid())
-  orgId           String  @map("org_id")
-  categoryId      String  @map("category_id")
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  categoryId      String   @map("category_id")
   name            String
   description     String?
-  cronExpression  String  @map("cron_expression") // 'M H DOM MON DOW'
-  appliesToRole   String  @default("all") @map("applies_to_role") // sale | csk | leader | all
-  defaultQuantity Int     @default(1) @map("default_quantity")
-  active          Boolean @default(true)
-  createdBy       String? @map("created_by")
+  cronExpression  String   @map("cron_expression") // 'M H DOM MON DOW'
+  appliesToRole   String   @default("all") @map("applies_to_role") // sale | csk | leader | all
+  defaultQuantity Int      @default(1) @map("default_quantity")
+  active          Boolean  @default(true)
+  createdBy       String?  @map("created_by")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -778,14 +800,14 @@ model RecurringTaskRule {
 }
 
 model AutoTaskRule {
-  id               String  @id @default(uuid())
-  orgId            String  @map("org_id")
-  categoryId       String  @map("category_id")
-  triggerType      String  @map("trigger_type") // new_lead | birthday | inactive_chat | inactive_order | upsell_eligible
-  triggerCondition Json    @default("{}") @map("trigger_condition")
-  dueInHours       Int     @default(24) @map("due_in_hours")
-  messageTemplate  String  @map("message_template")
-  active           Boolean @default(true)
+  id               String   @id @default(uuid())
+  orgId            String   @map("org_id")
+  categoryId       String   @map("category_id")
+  triggerType      String   @map("trigger_type") // new_lead | birthday | inactive_chat | inactive_order | upsell_eligible
+  triggerCondition Json     @default("{}") @map("trigger_condition")
+  dueInHours       Int      @default(24) @map("due_in_hours")
+  messageTemplate  String   @map("message_template")
+  active           Boolean  @default(true)
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
@@ -829,11 +851,96 @@ model Supplier {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  brands Brand[]
+  org              Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  brands           Brand[]
+  importOrders     ImportOrder[]
+  inventoryBatches InventoryBatch[]
 
   @@index([orgId, active])
   @@map("suppliers")
+}
+
+// ── FIFO module (Session 3.5) ─────────────────────────────────────────
+// One header row per goods-receipt voucher. Drafts are editable; once
+// confirmed the rows in `import_order_items` materialise into one
+// `inventory_batches` per product line, and `inventory_movements` rows
+// of type=import get appended for the audit trail. `confirmedAt` flips
+// from null → now() exactly once.
+model ImportOrder {
+  id            String    @id @default(uuid())
+  orgId         String    @map("org_id")
+  importCode    String    @map("import_code") // NK-YYYYMM-NNN
+  supplierId    String?   @map("supplier_id")
+  importDate    DateTime  @default(now()) @map("import_date") @db.Date
+  nccInvoiceNo  String?   @map("ncc_invoice_no")
+  totalAmount   Decimal   @default(0) @map("total_amount") @db.Decimal(15, 2)
+  totalQuantity Int       @default(0) @map("total_quantity")
+  status        String    @default("draft") // draft | confirmed
+  notes         String?
+  attachments   Json      @default("[]") // [{name, url, type}]
+  createdById   String?   @map("created_by")
+  confirmedAt   DateTime? @map("confirmed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  org      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  supplier Supplier?         @relation(fields: [supplierId], references: [id])
+  items    ImportOrderItem[]
+  batches  InventoryBatch[]
+
+  @@unique([orgId, importCode])
+  @@index([orgId, importDate])
+  @@index([orgId, supplierId])
+  @@index([orgId, status])
+  @@map("import_orders")
+}
+
+// One row per (import_order, product, lot). Confirming the parent
+// import order copies these into `inventory_batches`. `batchCode` is
+// scoped per (orgId, productId) — uniqueness is enforced on the batch
+// table, not here, so a draft can carry duplicates that are caught at
+// confirm time.
+model ImportOrderItem {
+  id              String    @id @default(uuid())
+  importOrderId   String    @map("import_order_id")
+  productId       String    @map("product_id")
+  batchCode       String    @map("batch_code")
+  quantity        Int
+  unitCost        Decimal   @map("unit_cost") @db.Decimal(15, 2)
+  manufactureDate DateTime? @map("manufacture_date") @db.Date
+  expiryDate      DateTime? @map("expiry_date") @db.Date
+  lineTotal       Decimal   @map("line_total") @db.Decimal(15, 2)
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  importOrder ImportOrder @relation(fields: [importOrderId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id])
+
+  @@index([importOrderId])
+  @@index([productId])
+  @@map("import_order_items")
+}
+
+// FIFO trace. Written by the FIFO allocator (Session 3.5B) when a new
+// (`legacyCost=false`) order moves to packing. One OrderItem can have
+// multiple rows here when the requested quantity spans more than one
+// active lot. `costAtTime` snapshots the batch's `importCost` at
+// allocation so margin reports stay correct even if we adjust the
+// batch's import_cost later.
+model OrderItemBatch {
+  id           String   @id @default(uuid())
+  orderItemId  String   @map("order_item_id")
+  batchId      String   @map("batch_id")
+  quantityUsed Int      @map("quantity_used")
+  costAtTime   Decimal  @map("cost_at_time") @db.Decimal(15, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  orderItem OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  batch     InventoryBatch @relation(fields: [batchId], references: [id])
+
+  @@index([orderItemId])
+  @@index([batchId])
+  @@map("order_item_batches")
 }
 
 model Brand {
@@ -884,12 +991,13 @@ model Product {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  org        Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  brand      Brand?           @relation(fields: [brandId], references: [id])
-  prices     ProductPrice[]
-  batches    InventoryBatch[]
-  orderItems OrderItem[]
-  orderGifts OrderGift[]
+  org              Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  brand            Brand?            @relation(fields: [brandId], references: [id])
+  prices           ProductPrice[]
+  batches          InventoryBatch[]
+  orderItems       OrderItem[]
+  orderGifts       OrderGift[]
+  importOrderItems ImportOrderItem[]
 
   @@unique([orgId, sku])
   @@index([orgId, status])
