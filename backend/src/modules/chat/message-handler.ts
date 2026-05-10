@@ -143,10 +143,21 @@ async function findOrCreateConversation(
 
   const existing = await prisma.conversation.findFirst({
     where: { zaloAccountId: msg.accountId, externalThreadId },
-    select: { id: true },
+    select: { id: true, title: true },
   });
 
-  if (existing) return existing;
+  if (existing) {
+    // Refresh group title if Zalo gave us a new one (group renamed) or
+    // if we never had one. 1-1 user chats use contact.fullName so we
+    // skip them.
+    if (msg.threadType === 'group' && msg.groupName && msg.groupName !== existing.title) {
+      await prisma.conversation.update({
+        where: { id: existing.id },
+        data: { title: msg.groupName },
+      });
+    }
+    return { id: existing.id };
+  }
 
   return prisma.conversation.create({
     data: {
@@ -155,6 +166,7 @@ async function findOrCreateConversation(
       zaloAccountId: msg.accountId,
       contactId: msg.threadType === 'user' ? contactId : contactId,
       threadType: msg.threadType,
+      title: msg.threadType === 'group' ? msg.groupName ?? null : null,
       externalThreadId,
       lastMessageAt: new Date(msg.timestamp),
       unreadCount: msg.isSelf ? 0 : 1,

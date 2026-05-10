@@ -17,7 +17,7 @@
           <v-icon v-else icon="mdi-account" />
         </v-avatar>
         <div class="flex-grow-1">
-          <div class="font-weight-medium">{{ conversation.contact?.fullName || 'Unknown' }}</div>
+          <div class="font-weight-medium">{{ conversation.threadType === 'group' ? (conversation.title || conversation.contact?.fullName || 'Nhóm') : (conversation.contact?.fullName || 'Unknown') }}</div>
           <div class="text-caption text-grey">{{ conversation.zaloAccount?.displayName || 'Zalo' }}</div>
         </div>
         <v-btn

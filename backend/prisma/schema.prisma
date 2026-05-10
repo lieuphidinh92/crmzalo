@@ -260,6 +260,11 @@ model Conversation {
   zaloAccountId    String    @map("zalo_account_id")
   contactId        String?   @map("contact_id")
   threadType       String    @default("user") // user, group
+  // Display name for group threads. NULL for 1-1 user conversations
+  // (those use the linked contact's fullName instead). Populated by
+  // the listener from `getGroupInfo()` and refreshed when the Zalo
+  // group is renamed.
+  title            String?
   externalThreadId String?   @map("external_thread_id")
   lastMessageAt    DateTime? @map("last_message_at")
   unreadCount      Int       @default(0) @map("unread_count")

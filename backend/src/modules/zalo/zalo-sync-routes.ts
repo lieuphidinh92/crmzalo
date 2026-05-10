@@ -134,4 +134,62 @@ export async function zaloSyncRoutes(app: FastifyInstance) {
       }
     },
   );
+
+  // ── Backfill group titles from Zalo ─────────────────────────────────
+  // One-shot admin tool: for every group conversation in the org whose
+  // `title` is NULL, fetch the group's display name via the connected
+  // Zalo account API and persist it. Groups whose owning Zalo account is
+  // not currently connected are skipped — caller can re-run after the
+  // account reconnects. Idempotent: groups that already have a title
+  // are filtered out by the WHERE clause.
+  app.post(
+    '/api/v1/admin/backfill-group-titles',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request, reply) => {
+      const user = request.user!;
+      const groups = await prisma.conversation.findMany({
+        where: { orgId: user.orgId, threadType: 'group', title: null },
+        select: { id: true, externalThreadId: true, zaloAccountId: true },
+      });
+
+      const stats = { total: groups.length, updated: 0, skipped: 0, errors: 0 };
+      const skipReasons: Record<string, number> = {};
+
+      for (const g of groups) {
+        if (!g.externalThreadId) {
+          stats.skipped++;
+          skipReasons['no_external_thread_id'] = (skipReasons['no_external_thread_id'] ?? 0) + 1;
+          continue;
+        }
+        const inst = zaloPool.getInstance(g.zaloAccountId);
+        if (!inst?.api?.getGroupInfo) {
+          stats.skipped++;
+          skipReasons['account_not_connected'] = (skipReasons['account_not_connected'] ?? 0) + 1;
+          continue;
+        }
+        try {
+          const result = await inst.api.getGroupInfo(g.externalThreadId);
+          const name = result?.gridInfoMap?.[g.externalThreadId]?.name || '';
+          if (!name) {
+            stats.skipped++;
+            skipReasons['empty_name'] = (skipReasons['empty_name'] ?? 0) + 1;
+            continue;
+          }
+          await prisma.conversation.update({
+            where: { id: g.id },
+            data: { title: name },
+          });
+          stats.updated++;
+        } catch (err) {
+          stats.errors++;
+          logger.warn(`[backfill-group-titles] ${g.id} failed:`, err);
+        }
+      }
+
+      logger.info(
+        `[backfill-group-titles] org=${user.orgId} total=${stats.total} updated=${stats.updated} skipped=${stats.skipped} errors=${stats.errors}`,
+      );
+      return { ...stats, skipReasons };
+    },
+  );
 }

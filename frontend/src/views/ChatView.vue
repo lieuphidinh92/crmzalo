@@ -40,7 +40,7 @@
           <v-icon>mdi-chevron-left</v-icon>
         </v-btn>
         <span class="text-body-2 ml-1 text-truncate">
-          {{ selectedConv?.contact?.fullName ?? 'Cuộc trò chuyện' }}
+          {{ selectedConv?.threadType === 'group' ? (selectedConv?.title || selectedConv?.contact?.fullName || 'Nhóm') : (selectedConv?.contact?.fullName ?? 'Cuộc trò chuyện') }}
         </span>
       </div>
       <MessageThread

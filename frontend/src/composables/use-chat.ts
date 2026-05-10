@@ -19,6 +19,7 @@ interface ConversationMessage {
 export interface Conversation {
   id: string;
   threadType: 'user' | 'group';
+  title: string | null;
   contact: Contact | null;
   zaloAccount: ZaloAccount | null;
   lastMessageAt: string | null;

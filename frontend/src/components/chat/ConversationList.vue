@@ -49,7 +49,7 @@
 
         <v-list-item-title class="d-flex align-center">
           <span class="text-truncate" :class="{ 'font-weight-bold': conv.unreadCount > 0 }">
-            {{ conv.threadType === 'group' ? (conv.contact?.fullName || 'Nhóm') : (conv.contact?.fullName || 'Unknown') }}
+            {{ conv.threadType === 'group' ? (conv.title || conv.contact?.fullName || 'Nhóm') : (conv.contact?.fullName || 'Unknown') }}
           </span>
           <v-chip v-if="conv.threadType === 'group'" size="x-small" color="info" variant="tonal" class="ml-1">Nhóm</v-chip>
           <v-spacer />
