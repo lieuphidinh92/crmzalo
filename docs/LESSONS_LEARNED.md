@@ -169,3 +169,51 @@ default-own = Admin, nên 5/6 đơn của Đạt bị tính lệch sang Admin.
 5. **Cache không phải scapegoat đầu tiên.** Cache 5min với key chứa
    `from+to+saleId+orgId` → cache miss đúng khi đổi range. Nếu data
    sai khớp với DB query trực tiếp → không phải cache, là logic.
+
+---
+
+## 19/05/2026 — Re-import MISA 01-18/5 (loại nháp, áp giá vốn mới)
+
+**Bối cảnh**: anh Philip phát hiện DB lệch MISA → yêu cầu xoá 113 đơn 1-18/5 + import lại 121 đơn sạch từ Sổ chi tiết, với bảng giá vốn mới áp 1/5/2026.
+
+**Bài học rút ra**:
+
+1. **MISA có đơn nháp lệch số liệu — đối chiếu 2 file trước khi tin**.
+   File "Bán hàng" gồm CẢ đơn nháp; File "Sổ chi tiết bán hàng" CHỈ có
+   đơn thật. Diff `Set(BanHang.MaCT) - Set(SCT.MaCT)` = list nháp.
+   Ngày 1-18/5 có 1 đơn nháp duy nhất (XK5832 Nga Lâm 7.065.000đ).
+   → Workflow chuẩn: kế toán phải gửi anh BOTH file, hoặc anh tự
+   export 2 file và Claude diff để phát hiện nháp.
+
+2. **Cost registry TS file dễ drift với products.cost_price (DB)**.
+   Em từng maintain `sku-cost-registry.ts` cho daily imports — sau
+   2 tuần đã lệch với DB ở 7/16 SKU (MH_04, MH_07, BIO_01, BIO_02,
+   BIO_06, BIO_07, NEU_01, NEU_07). Anh quyết định: dùng `products.
+   cost_price` (DB) làm single source of truth, registry TS chỉ là
+   convenience helper. Mỗi khi cost đổi → update DB trước, registry
+   theo sau (hoặc bỏ registry hẳn).
+
+3. **VAT inconsistency giữa total_amount vs line_total**.
+   Đơn XK5858 có VAT 105.556đ: anh chốt `total_amount = 1.425.000`
+   (gross) nhưng `line_total = 1.319.444` (net). Khi tính margin
+   bằng `SUM(profit)/SUM(line_total)` thì kết quả "đúng" (theo net,
+   không tính VAT). Khi cộng `SUM(total_amount)` thì có 105.556đ
+   "extra" so với SCT MISA. Cần ghi chú rõ trong report 2 con số
+   này khác nhau ở đâu, đừng để CEO confuse.
+
+4. **Khi user nói "biên LN kỳ vọng 30-50%" mà thực tế 11%**.
+   Không phải lỗi script — verify SKU/cost/qty đúng theo MISA, rồi
+   báo rõ root cause (MH_03 margin 12%, BIO_06/07 lỗ với cost mới)
+   để CEO quyết: chấp nhận margin thực, đàm phán cost, hay đổi giá
+   bán. Đừng tự "fudge" số để khớp expectation.
+
+5. **Convert Excel → JSON intermediate giúp script TS sạch**.
+   Backend chưa có `xlsx` package — thay vì npm install, dùng
+   Python openpyxl → JSON ở `/tmp/`, TS script đọc JSON. Vừa
+   tránh dependency mới, vừa dễ debug (JSON readable, có thể
+   pipe vào jq để verify trước khi --apply).
+
+6. **Idempotent script bằng `existingOrderCodes` set**. Re-import
+   script check `prisma.order.findMany({ orderCode: { in: codes }})`
+   trước khi create. Re-chạy --apply = no-op. An toàn cho CEO
+   re-run khi nghi ngờ.
