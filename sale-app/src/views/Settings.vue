@@ -21,6 +21,13 @@ const cfg = ref({
   last_backfill_at: null,
 });
 
+// ── Thông tin chuyển khoản ──
+const payInfo = ref({ bankName: '', accountNumber: '', accountHolder: '', note: '' });
+const payInfoLoading = ref(false);
+const payInfoSaving = ref(false);
+const payInfoError = ref('');
+const payInfoSuccess = ref('');
+
 // Preview: how a sample SP with cost 100k would price out under current settings.
 const previewBase = ref(100_000);
 const preview = computed(() => {
@@ -93,7 +100,57 @@ async function runBackfill() {
   }
 }
 
-onMounted(load);
+async function loadPayInfo() {
+  payInfoLoading.value = true;
+  payInfoError.value = '';
+  try {
+    const { data } = await api.get('/sale-app/payment-info');
+    payInfo.value = {
+      bankName: data?.bankName || '',
+      accountNumber: data?.accountNumber || '',
+      accountHolder: data?.accountHolder || '',
+      note: data?.note || '',
+    };
+  } catch (err) {
+    payInfoError.value = err.response?.data?.error || 'Lỗi tải thông tin chuyển khoản';
+  } finally {
+    payInfoLoading.value = false;
+  }
+}
+
+async function savePayInfo() {
+  payInfoSaving.value = true;
+  payInfoError.value = '';
+  payInfoSuccess.value = '';
+  try {
+    const { data } = await api.put('/sale-app/payment-info', {
+      bankName: payInfo.value.bankName,
+      accountNumber: payInfo.value.accountNumber,
+      accountHolder: payInfo.value.accountHolder,
+      note: payInfo.value.note,
+    });
+    payInfo.value = {
+      bankName: data?.bankName || '',
+      accountNumber: data?.accountNumber || '',
+      accountHolder: data?.accountHolder || '',
+      note: data?.note || '',
+    };
+    payInfoSuccess.value = 'Đã lưu thông tin chuyển khoản';
+    setTimeout(() => (payInfoSuccess.value = ''), 3000);
+  } catch (err) {
+    payInfoError.value =
+      err.response?.status === 403
+        ? 'Chỉ admin mới được chỉnh sửa'
+        : err.response?.data?.error || 'Lỗi lưu thông tin chuyển khoản';
+  } finally {
+    payInfoSaving.value = false;
+  }
+}
+
+onMounted(() => {
+  load();
+  loadPayInfo();
+});
 </script>
 
 <template>
@@ -103,11 +160,11 @@ onMounted(load);
       <p class="text-sm text-ink-secondary mt-0.5">Cấu hình cho Sale App</p>
     </div>
 
-    <div v-if="!isAdmin" class="bg-amber-50 border border-amber-200 text-amber-800 rounded-card p-5">
-      Chỉ admin / chủ doanh nghiệp mới truy cập được phần này.
+    <div v-if="!isAdmin" class="bg-amber-50 border border-amber-200 text-amber-800 rounded-card p-5 mb-4">
+      Chỉ admin / chủ doanh nghiệp mới truy cập được phần cấu hình giá tier.
     </div>
 
-    <div v-else class="bg-white border border-line-200 rounded-card p-5 shadow-card">
+    <div v-if="isAdmin" class="bg-white border border-line-200 rounded-card p-5 shadow-card">
       <div class="mb-4">
         <h2 class="text-base font-semibold text-ink-primary">Giá tier tự động</h2>
         <p class="text-xs text-ink-secondary mt-0.5">
@@ -249,6 +306,91 @@ onMounted(load);
           <div v-if="lastResult.sample_touched_skus?.length" class="mt-2 text-[11px] text-ink-secondary">
             Mẫu SKU: {{ lastResult.sample_touched_skus.join(', ') }}
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Thông tin chuyển khoản -->
+    <div class="bg-white border border-line-200 rounded-card p-5 shadow-card mt-4">
+      <div class="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold text-ink-primary">Thông tin chuyển khoản</h2>
+          <p class="text-xs text-ink-secondary mt-0.5">
+            Hiển thị trong tin nhắn Zalo và phiếu đơn gửi khách.
+          </p>
+        </div>
+        <span
+          v-if="!isAdmin"
+          class="text-[11px] px-2 py-1 rounded bg-amber-50 text-amber-700 border border-amber-200 shrink-0"
+        >
+          Chỉ admin chỉnh sửa
+        </span>
+      </div>
+
+      <div v-if="payInfoLoading" class="text-sm text-ink-secondary py-6 text-center">
+        Đang tải...
+      </div>
+
+      <div v-else class="space-y-4">
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-ink-primary mb-1.5">Tên ngân hàng</label>
+            <input
+              v-model="payInfo.bankName"
+              :disabled="!isAdmin"
+              type="text"
+              placeholder="VD: Vietcombank"
+              class="w-full h-11 px-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none disabled:bg-surface-50 disabled:text-ink-secondary"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-ink-primary mb-1.5">Số tài khoản</label>
+            <input
+              v-model="payInfo.accountNumber"
+              :disabled="!isAdmin"
+              type="text"
+              inputmode="numeric"
+              placeholder="VD: 0123456789"
+              class="w-full h-11 px-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none disabled:bg-surface-50 disabled:text-ink-secondary"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-ink-primary mb-1.5">Chủ tài khoản</label>
+            <input
+              v-model="payInfo.accountHolder"
+              :disabled="!isAdmin"
+              type="text"
+              placeholder="VD: CONG TY TNHH HALOVN"
+              class="w-full h-11 px-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none disabled:bg-surface-50 disabled:text-ink-secondary"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-ink-primary mb-1.5">Ghi chú</label>
+            <input
+              v-model="payInfo.note"
+              :disabled="!isAdmin"
+              type="text"
+              placeholder="VD: Nội dung CK ghi mã đơn"
+              class="w-full h-11 px-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none disabled:bg-surface-50 disabled:text-ink-secondary"
+            />
+          </div>
+        </div>
+
+        <div v-if="payInfoError" class="bg-red-50 border border-red-200 text-red-700 rounded-input px-3 py-2 text-sm">
+          {{ payInfoError }}
+        </div>
+        <div v-if="payInfoSuccess" class="bg-green-50 border border-green-200 text-green-700 rounded-input px-3 py-2 text-sm">
+          {{ payInfoSuccess }}
+        </div>
+
+        <div v-if="isAdmin" class="flex gap-2 pt-1">
+          <button
+            @click="savePayInfo"
+            :disabled="payInfoSaving"
+            class="h-11 px-5 rounded-btn bg-royal-700 hover:bg-royal-800 text-white font-semibold disabled:opacity-50"
+          >
+            {{ payInfoSaving ? 'Đang lưu...' : 'Lưu' }}
+          </button>
         </div>
       </div>
     </div>

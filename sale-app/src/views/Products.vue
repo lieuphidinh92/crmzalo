@@ -149,6 +149,7 @@ function addToCart(product) {
     name: product.name,
     unit: product.unit,
     stock: product.stock,
+    nearest_expiry: product.nearest_expiry,
     price: product.wholesale_price,
     priceTierId: product.wholesale_price_tier_id,
     priceTierName: product.wholesale_tier,

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import html2canvas from 'html2canvas';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
 import {
@@ -8,6 +9,7 @@ import {
   statusLabel,
   statusColor,
   formatDateTimeVN,
+  formatDateVN,
 } from '../composables/useFormat';
 
 const route = useRoute();
@@ -17,6 +19,22 @@ const pos = usePOSStore();
 const order = ref(null);
 const loading = ref(true);
 const errorMsg = ref('');
+
+// ── Thông tin chuyển khoản (load từ backend, không chặn render) ──
+const paymentInfo = ref({ bankName: '', accountNumber: '', accountHolder: '', note: '' });
+
+// ── Gửi Zalo / Tải ảnh phiếu ──
+const COMPANY_NAME = 'Ngheduocsi.vn';
+const receiptEl = ref(null);
+const generatingImage = ref(false);
+const shareMsg = ref('');
+let shareMsgTimer = null;
+
+function flashShareMsg(text) {
+  shareMsg.value = text;
+  if (shareMsgTimer) clearTimeout(shareMsgTimer);
+  shareMsgTimer = setTimeout(() => (shareMsg.value = ''), 3000);
+}
 
 // ── Đặt lại đơn ──
 const reordering = ref(false);
@@ -59,8 +77,107 @@ const debt = computed(() => Number(order.value?.debtAmountValue ?? 0));
 const canPay = computed(() => order.value && !isCancelled.value);
 const canCancel = computed(() => order.value && !isCancelled.value && !isCompleted.value);
 
+const orderTotal = computed(() => Number(order.value?.totalAmountValue ?? order.value?.totalAmount ?? 0));
+const paid = computed(() => Number(order.value?.paidAmount ?? 0));
+const orderCode = computed(() => order.value?.orderCode || order.value?.order_code || '');
+const orderDateVN = computed(() => formatDateVN(order.value?.orderDate || order.value?.createdAt));
+
+// Đích Zalo: ưu tiên zaloUid, fallback số điện thoại (chỉ giữ chữ số)
+const zaloTarget = computed(() => {
+  const c = order.value?.contact;
+  if (!c) return '';
+  return c.zaloUid || (c.phone || '').replace(/\D/g, '');
+});
+const hasBankInfo = computed(
+  () => !!(paymentInfo.value.bankName || paymentInfo.value.accountNumber),
+);
+
 function num(v) {
   return Number(v) || 0;
+}
+
+async function loadPaymentInfo() {
+  try {
+    const { data } = await api.get('/sale-app/payment-info');
+    paymentInfo.value = {
+      bankName: data?.bankName || '',
+      accountNumber: data?.accountNumber || '',
+      accountHolder: data?.accountHolder || '',
+      note: data?.note || '',
+    };
+  } catch {
+    // Không chặn render nếu lỗi
+  }
+}
+
+// Build nội dung tin nhắn tiếng Việt cho đơn
+function buildOrderMessage() {
+  const o = order.value;
+  if (!o) return '';
+  const lines = [];
+  lines.push(COMPANY_NAME);
+  lines.push(`Mã đơn: ${orderCode.value}`);
+  lines.push(`Ngày đặt: ${orderDateVN.value}`);
+  lines.push(`Khách hàng: ${o.contact?.fullName || '—'}`);
+  lines.push('');
+  lines.push('Chi tiết đơn:');
+  (o.items || []).forEach((it) => {
+    lines.push(`- ${it.productName} x${num(it.quantity)} = ${formatVND(it.lineTotal)}`);
+  });
+  lines.push('');
+  lines.push(`Tổng tiền: ${formatVND(orderTotal.value)}`);
+  if (paid.value > 0 || debt.value > 0) {
+    lines.push(`Đã thanh toán: ${formatVND(paid.value)}`);
+    lines.push(`Còn nợ: ${formatVND(debt.value)}`);
+  }
+  if (hasBankInfo.value) {
+    lines.push('');
+    lines.push(
+      `Chuyển khoản: ${paymentInfo.value.bankName} - ${paymentInfo.value.accountNumber} - ${paymentInfo.value.accountHolder}`,
+    );
+    if (paymentInfo.value.note) lines.push(paymentInfo.value.note);
+  }
+  return lines.join('\n');
+}
+
+async function sendViaZalo() {
+  if (!order.value || !zaloTarget.value) return;
+  const text = buildOrderMessage();
+  // Copy clipboard làm fallback (Zalo có thể không tự điền tin)
+  try {
+    await navigator.clipboard.writeText(text);
+    flashShareMsg('Đã sao chép nội dung đơn');
+  } catch {
+    flashShareMsg('Đang mở Zalo...');
+  }
+  const url = `https://zalo.me/${zaloTarget.value}?message=${encodeURIComponent(text)}`;
+  window.open(url, '_blank', 'noopener');
+}
+
+async function downloadReceipt() {
+  if (!order.value || generatingImage.value) return;
+  generatingImage.value = true;
+  try {
+    // Chờ DOM cập nhật khối phiếu (v-if vừa bật khi loading)
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    const el = receiptEl.value;
+    if (!el) throw new Error('no-el');
+    const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('no-blob');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `phieu-don-${orderCode.value || 'don-hang'}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    flashShareMsg('Đã tải ảnh phiếu đơn');
+  } catch {
+    flashShareMsg('Không tạo được ảnh phiếu, vui lòng thử lại');
+  } finally {
+    generatingImage.value = false;
+  }
 }
 
 async function load() {
@@ -76,7 +193,10 @@ async function load() {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  load();
+  loadPaymentInfo();
+});
 
 async function handleReorder() {
   if (!order.value || reordering.value) return;
@@ -336,6 +456,39 @@ async function submitCancel() {
       {{ reordering ? 'Đang nạp giỏ...' : 'Đặt lại đơn này' }}
     </button>
 
+    <!-- Gửi Zalo / Tải ảnh phiếu -->
+    <div v-if="order" class="flex flex-col sm:flex-row gap-2 mt-2">
+      <button
+        @click="sendViaZalo"
+        :disabled="!zaloTarget"
+        class="flex-1 h-11 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-semibold shadow-pop flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Gửi nội dung đơn qua Zalo"
+      >
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        Gửi qua Zalo
+      </button>
+      <button
+        @click="downloadReceipt"
+        :disabled="generatingImage"
+        class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-semibold hover:bg-surface-50 flex items-center justify-center gap-2 disabled:opacity-50"
+        title="Tải ảnh phiếu đơn (PNG)"
+      >
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        {{ generatingImage ? 'Đang tạo ảnh...' : 'Tải ảnh phiếu' }}
+      </button>
+    </div>
+
+    <div
+      v-if="shareMsg"
+      class="mt-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-3 py-2 text-sm"
+    >
+      {{ shareMsg }}
+    </div>
+
     <!-- Action bar (inline, end of content) -->
     <div
       v-if="order && (canPay || canCancel)"
@@ -431,6 +584,88 @@ async function submitCancel() {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- KHỐI PHIẾU ĐƠN (ẩn ngoài màn hình, dùng cho html2canvas) -->
+    <div
+      v-if="order"
+      aria-hidden="true"
+      style="position: absolute; left: -9999px; top: 0; pointer-events: none;"
+    >
+      <div
+        ref="receiptEl"
+        style="width: 420px; background: #ffffff; color: #1a1a1a; font-family: Arial, 'Helvetica Neue', sans-serif; padding: 24px; box-sizing: border-box;"
+      >
+        <!-- Header -->
+        <div style="text-align: center; border-bottom: 2px solid #1d4ed8; padding-bottom: 12px; margin-bottom: 12px;">
+          <div style="font-size: 18px; font-weight: 700; letter-spacing: 0.5px; color: #1a1a1a;">PHIẾU ĐƠN HÀNG</div>
+          <div style="font-size: 13px; font-weight: 600; color: #1d4ed8; margin-top: 2px;">{{ COMPANY_NAME }}</div>
+        </div>
+
+        <!-- Mã đơn + ngày -->
+        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+          <span style="color: #555;">Mã đơn:</span>
+          <span style="font-weight: 600; color: #1a1a1a;">{{ orderCode }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 10px;">
+          <span style="color: #555;">Ngày đặt:</span>
+          <span style="color: #1a1a1a;">{{ orderDateVN }}</span>
+        </div>
+
+        <!-- Khách hàng -->
+        <div style="background: #f5f7fa; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+          <div style="font-size: 13px; font-weight: 600; color: #1a1a1a;">{{ order.contact?.fullName || '—' }}</div>
+          <div v-if="order.contact?.storeName" style="font-size: 11px; color: #555; margin-top: 2px;">{{ order.contact.storeName }}</div>
+          <div v-if="order.contact?.phone" style="font-size: 11px; color: #555; margin-top: 2px;">SĐT: {{ order.contact.phone }}</div>
+        </div>
+
+        <!-- Bảng sản phẩm -->
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 12px;">
+          <thead>
+            <tr style="background: #1d4ed8; color: #ffffff;">
+              <th style="text-align: left; padding: 6px 8px; font-weight: 600;">Sản phẩm</th>
+              <th style="text-align: center; padding: 6px 4px; font-weight: 600;">SL</th>
+              <th style="text-align: right; padding: 6px 4px; font-weight: 600;">Đơn giá</th>
+              <th style="text-align: right; padding: 6px 8px; font-weight: 600;">Thành tiền</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(it, idx) in order.items" :key="idx" style="border-bottom: 1px solid #e5e7eb;">
+              <td style="text-align: left; padding: 6px 8px; color: #1a1a1a;">{{ it.productName }}</td>
+              <td style="text-align: center; padding: 6px 4px; color: #1a1a1a;">{{ num(it.quantity) }}</td>
+              <td style="text-align: right; padding: 6px 4px; color: #555;">{{ formatVND(it.unitPrice) }}</td>
+              <td style="text-align: right; padding: 6px 8px; color: #1a1a1a; font-weight: 500;">{{ formatVND(it.lineTotal) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Tổng tiền -->
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #1a1a1a; padding-top: 8px; font-size: 14px;">
+          <span style="font-weight: 700; color: #1a1a1a;">TỔNG TIỀN</span>
+          <span style="font-weight: 700; color: #1d4ed8;">{{ formatVND(orderTotal) }}</span>
+        </div>
+        <div v-if="paid > 0 || debt > 0" style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 6px;">
+          <span style="color: #555;">Đã thanh toán:</span>
+          <span style="color: #047857; font-weight: 600;">{{ formatVND(paid) }}</span>
+        </div>
+        <div v-if="paid > 0 || debt > 0" style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px;">
+          <span style="color: #555;">Còn nợ:</span>
+          <span style="color: #dc2626; font-weight: 700;">{{ formatVND(debt) }}</span>
+        </div>
+
+        <!-- Thông tin chuyển khoản -->
+        <div v-if="hasBankInfo" style="margin-top: 14px; background: #f5f7fa; border: 1px dashed #1d4ed8; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 11px; font-weight: 700; color: #1d4ed8; margin-bottom: 4px;">THÔNG TIN CHUYỂN KHOẢN</div>
+          <div v-if="paymentInfo.bankName" style="font-size: 12px; color: #1a1a1a;">Ngân hàng: {{ paymentInfo.bankName }}</div>
+          <div v-if="paymentInfo.accountNumber" style="font-size: 12px; color: #1a1a1a;">Số TK: {{ paymentInfo.accountNumber }}</div>
+          <div v-if="paymentInfo.accountHolder" style="font-size: 12px; color: #1a1a1a;">Chủ TK: {{ paymentInfo.accountHolder }}</div>
+          <div v-if="paymentInfo.note" style="font-size: 11px; color: #555; margin-top: 4px;">{{ paymentInfo.note }}</div>
+        </div>
+
+        <div style="text-align: center; font-size: 10px; color: #999; margin-top: 16px;">
+          Cảm ơn quý khách đã đặt hàng cùng {{ COMPANY_NAME }}
+        </div>
       </div>
     </div>
   </div>

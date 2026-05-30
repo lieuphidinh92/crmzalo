@@ -375,6 +375,72 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // ── GET /api/v1/sale-app/payment-info (any logged-in user) ────────────
+  // Company bank transfer info shown when sending an order over Zalo.
+  // Stored as JSON in AppSetting.valuePlain (settingKey 'company_payment_info').
+  // Missing fields / missing row → empty strings.
+  app.get(
+    '/api/v1/sale-app/payment-info',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const row = await prisma.appSetting.findUnique({
+          where: { orgId_settingKey: { orgId: user.orgId, settingKey: 'company_payment_info' } },
+        });
+        let parsed: Record<string, unknown> = {};
+        if (row?.valuePlain) {
+          try {
+            parsed = JSON.parse(row.valuePlain);
+          } catch {
+            parsed = {};
+          }
+        }
+        return {
+          bankName: typeof parsed.bankName === 'string' ? parsed.bankName : '',
+          accountNumber: typeof parsed.accountNumber === 'string' ? parsed.accountNumber : '',
+          accountHolder: typeof parsed.accountHolder === 'string' ? parsed.accountHolder : '',
+          note: typeof parsed.note === 'string' ? parsed.note : '',
+        };
+      } catch (err) {
+        logger.error('[sale-app] payment-info GET error:', err);
+        return reply.status(500).send({ error: 'Lỗi tải thông tin chuyển khoản' });
+      }
+    },
+  );
+
+  // ── PUT /api/v1/sale-app/payment-info (admin) ─────────────────────────
+  app.put(
+    '/api/v1/sale-app/payment-info',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const body = (request.body ?? {}) as {
+          bankName?: string;
+          accountNumber?: string;
+          accountHolder?: string;
+          note?: string;
+        };
+        const info = {
+          bankName: typeof body.bankName === 'string' ? body.bankName.trim() : '',
+          accountNumber: typeof body.accountNumber === 'string' ? body.accountNumber.trim() : '',
+          accountHolder: typeof body.accountHolder === 'string' ? body.accountHolder.trim() : '',
+          note: typeof body.note === 'string' ? body.note.trim() : '',
+        };
+        const valuePlain = JSON.stringify(info);
+        await prisma.appSetting.upsert({
+          where: { orgId_settingKey: { orgId: user.orgId, settingKey: 'company_payment_info' } },
+          update: { valuePlain },
+          create: { orgId: user.orgId, settingKey: 'company_payment_info', valuePlain },
+        });
+        return info;
+      } catch (err) {
+        logger.error('[sale-app] payment-info PUT error:', err);
+        return reply.status(500).send({ error: 'Lỗi lưu thông tin chuyển khoản' });
+      }
+    },
+  );
+
   // ── POST /api/v1/sale-app/_backfill-tier-prices (admin) ───────────────
   // Idempotent — only inserts ProductPrice rows for tiers that DO NOT yet
   // exist on each active product. Existing prices are NEVER overwritten.

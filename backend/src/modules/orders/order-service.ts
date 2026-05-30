@@ -173,6 +173,7 @@ export const ORDER_FULL_INCLUDE = {
       id: true,
       fullName: true,
       phone: true,
+      zaloUid: true,
       storeName: true,
       province: true,
       address: true,

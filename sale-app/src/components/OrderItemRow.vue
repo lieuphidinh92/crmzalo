@@ -1,10 +1,13 @@
 <script setup>
-import { formatVND } from '../composables/useFormat';
+import { computed } from 'vue';
+import { formatVND, formatDateVN } from '../composables/useFormat';
 
 const props = defineProps({
   item: { type: Object, required: true },
 });
 const emit = defineEmits(['update-qty', 'remove']);
+
+const EXPIRY_WARN_DAYS = 90;
 
 function dec() {
   if (props.item.quantity > 1) emit('update-qty', props.item.quantity - 1);
@@ -16,6 +19,33 @@ function onInput(e) {
   const val = parseInt(e.target.value);
   if (!isNaN(val) && val >= 1) emit('update-qty', val);
 }
+
+// HẾT HÀNG: tồn = 0
+const isOutOfStock = computed(() => props.item.stock === 0);
+
+// VƯỢT TỒN: còn hàng nhưng số lượng > tồn
+const isOverStock = computed(
+  () =>
+    props.item.stock !== undefined &&
+    props.item.stock > 0 &&
+    props.item.quantity > props.item.stock,
+);
+
+// Số ngày tới HSD lô gần nhất (tính theo client, làm tròn ngày).
+const daysToExpiry = computed(() => {
+  if (!props.item.nearestExpiry) return null;
+  const exp = new Date(props.item.nearestExpiry);
+  if (isNaN(exp.getTime())) return null;
+  const now = new Date();
+  const a = Date.UTC(exp.getFullYear(), exp.getMonth(), exp.getDate());
+  const b = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((a - b) / 86400000);
+});
+
+const isExpired = computed(() => daysToExpiry.value !== null && daysToExpiry.value < 0);
+const isNearExpiry = computed(
+  () => daysToExpiry.value !== null && daysToExpiry.value >= 0 && daysToExpiry.value <= EXPIRY_WARN_DAYS,
+);
 </script>
 
 <template>
@@ -51,8 +81,25 @@ function onInput(e) {
       </div>
     </div>
 
-    <div v-if="item.stock !== undefined && item.quantity > item.stock" class="mt-2 text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1">
-      ⚠ Vượt tồn kho (còn {{ item.stock }})
+    <!-- Tồn thực để sale đối chiếu -->
+    <div v-if="item.stock !== undefined" class="mt-2 text-[11px] text-ink-secondary">
+      Tồn: {{ item.stock }}<template v-if="item.unit"> {{ item.unit }}</template>
+    </div>
+
+    <!-- Cảnh báo mềm (có thể hiện đồng thời nhiều badge) -->
+    <div v-if="isOutOfStock || isOverStock || isNearExpiry || isExpired" class="mt-1.5 flex flex-wrap gap-1.5">
+      <span v-if="isOutOfStock" class="text-[11px] text-red-700 bg-red-50 rounded px-2 py-1">
+        ⛔ Hết hàng
+      </span>
+      <span v-if="isOverStock" class="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1">
+        ⚠ Vượt tồn (còn {{ item.stock }})
+      </span>
+      <span v-if="isExpired" class="text-[11px] text-red-700 bg-red-50 rounded px-2 py-1">
+        ⛔ Hết hạn {{ formatDateVN(item.nearestExpiry) }}
+      </span>
+      <span v-else-if="isNearExpiry" class="text-[11px] text-orange-700 bg-orange-50 rounded px-2 py-1">
+        ⏳ Cận date {{ formatDateVN(item.nearestExpiry) }}
+      </span>
     </div>
   </div>
 </template>

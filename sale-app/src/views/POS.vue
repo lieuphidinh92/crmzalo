@@ -27,6 +27,48 @@ const canSubmit = computed(
   () => pos.selectedCustomer && pos.items.length > 0 && !pos.submitting,
 );
 
+const EXPIRY_WARN_DAYS = 90;
+
+function daysToExpiry(iso) {
+  if (!iso) return null;
+  const exp = new Date(iso);
+  if (isNaN(exp.getTime())) return null;
+  const now = new Date();
+  const a = Date.UTC(exp.getFullYear(), exp.getMonth(), exp.getDate());
+  const b = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((a - b) / 86400000);
+}
+
+// Tóm tắt cảnh báo mềm cho banner phía trên giỏ.
+const cartWarnings = computed(() => {
+  let outOfStock = 0;
+  let overStock = 0;
+  let nearExpiry = 0;
+  let expired = 0;
+  for (const it of pos.items) {
+    if (it.stock === 0) outOfStock++;
+    else if (it.stock !== undefined && it.quantity > it.stock) overStock++;
+    const d = daysToExpiry(it.nearestExpiry);
+    if (d !== null) {
+      if (d < 0) expired++;
+      else if (d <= EXPIRY_WARN_DAYS) nearExpiry++;
+    }
+  }
+  return { outOfStock, overStock, nearExpiry, expired };
+});
+
+const warningParts = computed(() => {
+  const w = cartWarnings.value;
+  const parts = [];
+  if (w.overStock) parts.push(`${w.overStock} SP vượt tồn`);
+  if (w.nearExpiry) parts.push(`${w.nearExpiry} SP cận date`);
+  if (w.expired) parts.push(`${w.expired} SP hết hạn`);
+  if (w.outOfStock) parts.push(`${w.outOfStock} SP hết hàng`);
+  return parts;
+});
+
+const hasWarnings = computed(() => warningParts.value.length > 0);
+
 async function handleSubmit() {
   submitErr.value = '';
   submitMsg.value = '';
@@ -95,7 +137,15 @@ function onCustomerCreated(customer) {
           <div v-if="pos.items.length === 0" class="text-center text-sm text-ink-secondary py-6">
             Chưa có sản phẩm. Bấm vào danh mục bên phải để thêm.
           </div>
-          <div v-else class="space-y-2">
+          <template v-else>
+            <div
+              v-if="hasWarnings"
+              class="mb-2 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-1.5"
+            >
+              <span class="shrink-0">⚠</span>
+              <span><span class="font-semibold">{{ warningParts.join(' · ') }}</span> — kiểm tra trước khi chốt</span>
+            </div>
+            <div class="space-y-2">
             <OrderItemRow
               v-for="it in pos.items"
               :key="it.productId"
@@ -103,7 +153,8 @@ function onCustomerCreated(customer) {
               @update-qty="pos.updateQuantity(it.productId, $event)"
               @remove="pos.removeProduct(it.productId)"
             />
-          </div>
+            </div>
+          </template>
         </div>
 
         <div class="bg-white border border-line-200 rounded-xl p-3">
