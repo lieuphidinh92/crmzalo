@@ -31,7 +31,23 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
         },
         orderBy: [{ active: 'desc' }, { name: 'asc' }],
       });
-      return { brands };
+
+      // Attach count of ACTIVE products per brand so the UI can show only
+      // brands that still have a sellable product by default (and reveal
+      // the rest on search).
+      const activeCounts = await prisma.product.groupBy({
+        by: ['brandId'],
+        where: { orgId: user.orgId, status: 'active', brandId: { not: null } },
+        _count: { _all: true },
+      });
+      const activeMap = new Map<string, number>(
+        activeCounts.map((r: any) => [r.brandId, r._count._all]),
+      );
+      const brandsWithActive = brands.map((b: any) => ({
+        ...b,
+        activeProductCount: activeMap.get(b.id) ?? 0,
+      }));
+      return { brands: brandsWithActive };
     } catch (err) {
       logger.error('[brands] List error:', err);
       return reply.status(500).send({ error: 'Failed to fetch brands' });

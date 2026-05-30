@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { usePOSStore } from '../stores/pos';
 import { formatVND, statusLabel } from '../composables/useFormat';
@@ -16,6 +16,7 @@ const showNewCustomer = ref(false);
 const showMobileCatalog = ref(false);
 const submitMsg = ref('');
 const submitErr = ref('');
+const errorBox = ref(null);
 
 const isDesktop = ref(window.matchMedia('(min-width: 1024px)').matches);
 window.matchMedia('(min-width: 1024px)').addEventListener('change', (e) => {
@@ -38,7 +39,12 @@ async function handleSubmit() {
       if (confirm(`✅ ${submitMsg.value}\n\nVề trang chủ?`)) router.push('/');
     }, 50);
   } catch (err) {
+    // Backend chặn bán vượt tồn (HTTP 400) trả về { error: '"<tên>" vượt tồn kho
+    // (còn N), chỉ admin được chốt' }. Hiển thị nguyên văn cho người dùng.
     submitErr.value = err.response?.data?.error || err.message || 'Lỗi khi tạo đơn';
+    // Cuộn ô lỗi vào tầm nhìn (mobile: nút submit sticky che mất ô lỗi ở trên).
+    await nextTick();
+    errorBox.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
 
@@ -159,8 +165,13 @@ function onCustomerCreated(customer) {
           </div>
         </div>
 
-        <div v-if="submitErr" class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
-          {{ submitErr }}
+        <div v-if="submitErr" ref="errorBox" class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm flex items-start gap-2">
+          <svg class="w-4 h-4 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="font-medium">{{ submitErr }}</span>
         </div>
 
         <!-- Desktop submit button (mobile uses sticky bottom) -->

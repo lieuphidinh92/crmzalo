@@ -73,6 +73,7 @@ import { overviewReportRoutes } from './modules/reports/overview-routes.js';
 import { saleAppRoutes } from './modules/sale-app/sale-app-routes.js';
 import { debtRoutes } from './modules/sale-app/debt-routes.js';
 import { followUpRoutes } from './modules/sale-app/follow-up-routes.js';
+import { productEditRoutes } from './modules/sale-app/product-edit-routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -181,6 +182,7 @@ async function bootstrap() {
   await app.register(saleAppRoutes);
   await app.register(debtRoutes);
   await app.register(followUpRoutes);
+  await app.register(productEditRoutes);
 
   // Liveness/readiness probe — also checks DB connectivity
   app.get('/health', async () => {

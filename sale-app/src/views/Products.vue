@@ -3,11 +3,18 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
+import { useAuthStore } from '../stores/auth';
 import ProductCard from '../components/ProductCard.vue';
+import ProductTable from '../components/ProductTable.vue';
 import ProductDetailDrawer from '../components/ProductDetailDrawer.vue';
+import BrandFilterSelect from '../components/BrandFilterSelect.vue';
+import ProductImportDialog from '../components/ProductImportDialog.vue';
 
 const router = useRouter();
 const pos = usePOSStore();
+const auth = useAuthStore();
+
+const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
 
 const products = ref([]);
 const total = ref(0);
@@ -28,6 +35,46 @@ const tier = computed(() => pos.selectedCustomer?.policyTier || pos.selectedTier
 
 const detailId = ref(null);
 let debounceTimer = null;
+
+const viewMode = ref(localStorage.getItem('productViewMode') || 'grid');
+watch(viewMode, (v) => {
+  localStorage.setItem('productViewMode', v);
+});
+
+// Excel export / bulk import (admin only)
+const exporting = ref(false);
+const exportError = ref('');
+const showImport = ref(false);
+
+async function exportExcel() {
+  if (exporting.value) return;
+  exporting.value = true;
+  exportError.value = '';
+  try {
+    const { data } = await api.get('/products/export', { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([data]));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'san-pham.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    exportError.value = err.response?.status === 403 ? 'Bạn không có quyền xuất file.' : 'Xuất Excel thất bại, thử lại.';
+  } finally {
+    exporting.value = false;
+  }
+}
+
+// When media/docs are edited in the drawer, refresh the list so thumbnails stay in sync.
+function onProductUpdated(updated) {
+  if (!updated?.id) return;
+  const item = products.value.find((p) => p.id === updated.id);
+  if (item && 'mainImageUrl' in updated) {
+    item.mainImageUrl = updated.mainImageUrl;
+  }
+}
 
 const filterChips = [
   { key: '', label: 'Tất cả' },
@@ -141,17 +188,66 @@ const pageNumbers = computed(() => {
           {{ total.toLocaleString('vi-VN') }} SP · bảng giá {{ tier === 'ctv' ? 'CTV' : tier === 'dai_ly_cap_1' ? 'Đại lý cấp 1' : 'Đại lý cấp 2 (VIP)' }}
         </p>
       </div>
-      <button
-        v-if="pos.items.length"
-        @click="goToCart"
-        class="relative h-10 px-4 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-2"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
-          <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
-        </svg>
-        Giỏ ({{ pos.itemCount }})
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          v-if="isAdmin"
+          @click="exportExcel"
+          :disabled="exporting"
+          class="h-10 px-3 lg:px-4 rounded-btn border border-line-300 hover:border-royal-700 text-ink-primary text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Xuất danh sách sản phẩm ra Excel"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span class="hidden sm:inline">{{ exporting ? 'Đang xuất...' : 'Xuất Excel' }}</span>
+          <span class="sm:hidden">{{ exporting ? '...' : 'Xuất' }}</span>
+        </button>
+        <button
+          v-if="isAdmin"
+          @click="showImport = true"
+          class="h-10 px-3 lg:px-4 rounded-btn border border-line-300 hover:border-royal-700 text-ink-primary text-sm font-semibold flex items-center gap-2"
+          title="Nhập sản phẩm hàng loạt từ Excel"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span class="hidden sm:inline">Nhập Excel</span>
+          <span class="sm:hidden">Nhập</span>
+        </button>
+        <button
+          v-if="isAdmin"
+          @click="router.push('/products/brands')"
+          class="h-10 px-3 lg:px-4 rounded-btn border border-line-300 hover:border-royal-700 text-ink-primary text-sm font-semibold flex items-center gap-2"
+          title="Quản lý NCC / Thương hiệu"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+            <line x1="7" y1="7" x2="7.01" y2="7"/>
+          </svg>
+          <span class="hidden sm:inline">NCC / Thương hiệu</span>
+          <span class="sm:hidden">NCC</span>
+        </button>
+        <button
+          v-if="pos.items.length"
+          @click="goToCart"
+          class="relative h-10 px-4 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-2"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+            <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
+          </svg>
+          Giỏ ({{ pos.itemCount }})
+        </button>
+      </div>
+    </div>
+
+    <!-- Export error (light) -->
+    <div v-if="exportError" class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+      {{ exportError }}
     </div>
 
     <!-- Search + Sort + Brand row -->
@@ -169,21 +265,52 @@ const pageNumbers = computed(() => {
             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
         </div>
-        <select
-          v-model="brandId"
-          class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
-        >
-          <option value="">Tất cả thương hiệu</option>
-          <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.name }}</option>
-        </select>
-        <select
-          v-model="sort"
-          class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
-        >
-          <option v-for="opt in sortOptions" :key="opt.value" :value="opt.value">
-            Sắp xếp: {{ opt.label }}
-          </option>
-        </select>
+        <BrandFilterSelect v-model="brandId" :brands="brands" />
+        <div class="flex gap-2">
+          <select
+            v-model="sort"
+            class="flex-1 h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+          >
+            <option v-for="opt in sortOptions" :key="opt.value" :value="opt.value">
+              Sắp xếp: {{ opt.label }}
+            </option>
+          </select>
+          <!-- View mode toggle -->
+          <div class="flex h-10 rounded-input border border-line-300 overflow-hidden shrink-0">
+            <button
+              type="button"
+              @click="viewMode = 'grid'"
+              class="w-10 flex items-center justify-center transition"
+              :class="viewMode === 'grid' ? 'bg-royal-700 text-white' : 'bg-white text-ink-secondary hover:text-royal-700'"
+              title="Xem dạng lưới"
+              aria-label="Xem dạng lưới"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+              </svg>
+            </button>
+            <button
+              type="button"
+              @click="viewMode = 'list'"
+              class="w-10 flex items-center justify-center transition border-l border-line-300"
+              :class="viewMode === 'list' ? 'bg-royal-700 text-white' : 'bg-white text-ink-secondary hover:text-royal-700'"
+              title="Xem dạng dòng"
+              aria-label="Xem dạng dòng"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="8" y1="6" x2="21" y2="6"/>
+                <line x1="8" y1="12" x2="21" y2="12"/>
+                <line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/>
+                <line x1="3" y1="12" x2="3.01" y2="12"/>
+                <line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Filter chips -->
@@ -204,9 +331,12 @@ const pageNumbers = computed(() => {
       </div>
     </div>
 
-    <!-- Grid -->
-    <div v-if="loading" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+    <!-- Loading skeleton -->
+    <div v-if="loading && viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
       <div v-for="i in 10" :key="i" class="bg-white border border-line-200 rounded-card aspect-[3/5] animate-pulse"></div>
+    </div>
+    <div v-else-if="loading" class="bg-white border border-line-200 rounded-card shadow-card p-3 space-y-2.5">
+      <div v-for="i in 10" :key="i" class="h-10 bg-surface-soft animate-pulse rounded"></div>
     </div>
 
     <div v-else-if="errorMsg" class="bg-red-50 border border-red-200 text-red-700 rounded-card p-4 text-sm">
@@ -225,7 +355,7 @@ const pageNumbers = computed(() => {
     </div>
 
     <div v-else>
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+      <div v-if="viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         <ProductCard
           v-for="(p, idx) in products"
           :key="p.id"
@@ -235,6 +365,15 @@ const pageNumbers = computed(() => {
           @add="addToCart"
         />
       </div>
+
+      <ProductTable
+        v-else
+        :products="products"
+        :page="page"
+        :limit="limit"
+        @open="detailId = $event.id"
+        @add="addToCart"
+      />
 
       <!-- Pagination -->
       <div v-if="totalPages > 1" class="mt-6 flex items-center justify-center gap-1.5">
@@ -271,6 +410,14 @@ const pageNumbers = computed(() => {
       :tier="tier"
       @close="detailId = null"
       @add="addToCart"
+      @updated="onProductUpdated"
+    />
+
+    <!-- Bulk import dialog (admin) -->
+    <ProductImportDialog
+      v-if="showImport"
+      @close="showImport = false"
+      @done="load"
     />
   </div>
 </template>

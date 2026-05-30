@@ -997,6 +997,11 @@ model Product {
   mainImageUrl       String?  @map("main_image_url")
   galleryUrls        Json     @default("[]") @map("gallery_urls")
   status             String   @default("active") // active | discontinued | coming_soon
+  // Free-text rich description shown in product detail (editable by sale)
+  description        String?
+  // When false (default), members cannot create an order that exceeds
+  // available stock for this product; owner/admin can override.
+  allowOversell      Boolean  @default(false) @map("allow_oversell")
   // TPCN info
   mainUse            String?  @map("main_use")
   targetAudience     String?  @map("target_audience")

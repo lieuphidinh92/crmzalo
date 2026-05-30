@@ -1201,6 +1201,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         rows.sort((a: any, b: any) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
       }
 
+      // "Đại lý cấp 1" reference price — independent of the selected tier.
+      const normalTierName = TIER_NAME_MAP.dai_ly_cap_1;
+
       const items = rows.map((p: any) => {
         const wholesalePick =
           p.prices.find((pr: any) => pr.tierName === tierName) ||
@@ -1208,6 +1211,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           p.prices[0] ||
           null;
         const retailPick = p.prices.find((pr: any) => /lẻ|le|retail/i.test(pr.tierName ?? ''));
+        const normalPick = p.prices.find((pr: any) => pr.tierName === normalTierName);
         const wholesale = wholesalePick ? toNumber(wholesalePick.price) : 0;
         const retail = retailPick ? toNumber(retailPick.price) : 0;
         const profit = retail > wholesale ? retail - wholesale : 0;
@@ -1225,10 +1229,13 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           wholesale_price: wholesale,
           wholesale_tier: wholesalePick?.tierName ?? null,
           wholesale_price_tier_id: wholesalePick?.id ?? null,
+          wholesale_normal_price: normalPick ? Math.round(toNumber(normalPick.price)) : 0,
           retail_price: retail,
           estimated_profit: profit,
           nearest_expiry: nearestExpiry,
           created_at: p.createdAt,
+          revenue_30d: 0,
+          quantity_30d: 0,
         };
       });
 
@@ -1244,6 +1251,43 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       if (filter === 'low-stock' || filter === 'bestseller') {
         totalReturn = sorted.length;
         pageItems = sorted.slice(skip, skip + take);
+      }
+
+      // ── 30-day sales (revenue + quantity), scope-aware, single groupBy ──
+      // Only for the products actually on this page (after pagination), so
+      // there's no N+1 and we don't aggregate rows we won't return.
+      const pageProductIds = pageItems.map((it) => it.id);
+      if (pageProductIds.length) {
+        const since = new Date(Date.now() - 30 * 86400_000);
+        const salesOrderWhere: any = {
+          orgId: user.orgId,
+          status: { in: COUNTABLE_STATUSES },
+          orderDate: { gte: since },
+        };
+        if (user.role === 'member') {
+          salesOrderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+        }
+        const salesGrouped: any[] = await prisma.orderItem.groupBy({
+          by: ['productId'],
+          where: { order: salesOrderWhere, productId: { in: pageProductIds } },
+          _sum: { lineTotal: true, quantity: true },
+        });
+        const salesMap = new Map<string, { revenue: number; quantity: number }>();
+        for (const g of salesGrouped) {
+          if (g.productId) {
+            salesMap.set(g.productId, {
+              revenue: Math.round(toNumber(g._sum.lineTotal)),
+              quantity: g._sum.quantity ?? 0,
+            });
+          }
+        }
+        for (const it of pageItems) {
+          const agg = salesMap.get(it.id);
+          if (agg) {
+            it.revenue_30d = agg.revenue;
+            it.quantity_30d = agg.quantity;
+          }
+        }
       }
 
       return {
@@ -1271,9 +1315,10 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         where: { id, orgId: user.orgId },
         select: {
           id: true, sku: true, name: true, unit: true, packageSize: true,
-          mainImageUrl: true, galleryUrls: true, status: true,
+          mainImageUrl: true, galleryUrls: true, marketingDocs: true, status: true,
           mainUse: true, targetAudience: true, usageMethod: true,
           shelfLifeMonths: true, registrationNumber: true,
+          description: true, allowOversell: true,
           totalStock: true, warningStock: true, createdAt: true,
           brand: { select: { id: true, name: true } },
           prices: {
@@ -1314,9 +1359,20 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       }
       const recent30d: any = await prisma.orderItem.aggregate({
         where: { order: orderWhere, productId: p.id },
-        _sum: { quantity: true },
+        _sum: { quantity: true, lineTotal: true },
         _count: { id: true },
       });
+      const revenue30d = Math.round(toNumber(recent30d._sum.lineTotal));
+
+      // Marketing docs — backfill `category: null` for legacy docs.
+      const marketingDocs = (Array.isArray(p.marketingDocs) ? p.marketingDocs : []).map((d: any) => ({
+        id: d?.id ?? null,
+        type: d?.type ?? null,
+        category: d?.category ?? null,
+        name: d?.name ?? null,
+        driveUrl: d?.driveUrl ?? null,
+        createdAt: d?.createdAt ?? null,
+      }));
 
       return {
         product: {
@@ -1327,6 +1383,10 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           package_size: p.packageSize,
           mainImageUrl: p.mainImageUrl,
           galleryUrls: p.galleryUrls,
+          marketingDocs,
+          description: p.description,
+          allow_oversell: p.allowOversell,
+          revenue_30d: revenue30d,
           brand: p.brand,
           stock: p.totalStock,
           warning_stock: p.warningStock,
@@ -1679,7 +1739,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const productIds = body.items.map((it) => it.productId);
       const products = await prisma.product.findMany({
         where: { id: { in: productIds }, orgId: user.orgId },
-        select: { id: true, sku: true, name: true, unit: true, costPrice: true },
+        select: { id: true, sku: true, name: true, unit: true, costPrice: true, totalStock: true, allowOversell: true },
       });
       const productMap = new Map<string, any>(products.map((p: any) => [p.id, p]));
       for (const it of body.items) {
@@ -1691,6 +1751,16 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         }
         if (it.unitPrice === undefined || it.unitPrice < 0) {
           return reply.status(400).send({ error: 'Đơn giá phải ≥ 0' });
+        }
+        const product = productMap.get(it.productId)!;
+        if (
+          product.allowOversell === false &&
+          it.quantity > product.totalStock &&
+          user.role === 'member'
+        ) {
+          return reply.status(400).send({
+            error: `"${product.name}" vượt tồn kho (còn ${product.totalStock}), chỉ admin được chốt`,
+          });
         }
       }
 

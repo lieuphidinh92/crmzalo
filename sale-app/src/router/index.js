@@ -15,6 +15,7 @@ const routes = [
       { path: '', name: 'home', component: () => import('../views/Home.vue') },
       { path: 'pos', name: 'pos', component: () => import('../views/POS.vue'), alias: '/create-order' },
       { path: 'products', name: 'products', component: () => import('../views/Products.vue') },
+      { path: 'products/brands', name: 'brand-manager', component: () => import('../views/BrandManager.vue') },
       { path: 'orders', name: 'orders', component: () => import('../views/Orders.vue') },
       { path: 'orders/:id', name: 'order-detail', component: () => import('../views/OrderDetail.vue') },
       { path: 'customers', name: 'customers', component: () => import('../views/Customers.vue') },
