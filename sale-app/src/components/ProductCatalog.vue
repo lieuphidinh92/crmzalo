@@ -37,9 +37,9 @@ watch(() => props.tier, loadProducts);
 loadProducts();
 
 function stockBadge(n) {
-  if (n <= 0) return { text: 'Hết hàng', class: 'text-rose-600' };
+  if (n <= 0) return { text: 'Hết hàng', class: 'text-red-600' };
   if (n < 30) return { text: `Tồn: ${n}`, class: 'text-amber-600' };
-  return { text: `Tồn: ${n}`, class: 'text-gray-500' };
+  return { text: `Tồn: ${n}`, class: 'text-ink-secondary' };
 }
 </script>
 
@@ -50,18 +50,18 @@ function stockBadge(n) {
         v-model="query"
         type="search"
         placeholder="Tìm SP theo SKU / tên (F3)"
-        class="w-full h-11 pl-10 pr-3 rounded-xl border border-gray-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none bg-white"
+        class="w-full h-11 pl-10 pr-3 rounded-xl border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white"
       />
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-disabled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
       </svg>
     </div>
 
     <div class="flex-1 overflow-y-auto -mx-1 px-1">
       <div v-if="loading && products.length === 0" class="grid grid-cols-2 gap-2">
-        <div v-for="i in 6" :key="i" class="bg-white border border-gray-200 rounded-xl h-28 animate-pulse"></div>
+        <div v-for="i in 6" :key="i" class="bg-white border border-line-200 rounded-xl h-28 animate-pulse"></div>
       </div>
-      <div v-else-if="products.length === 0" class="text-center text-sm text-gray-500 py-10">
+      <div v-else-if="products.length === 0" class="text-center text-sm text-ink-secondary py-10">
         Không có sản phẩm phù hợp
       </div>
       <div v-else class="grid grid-cols-2 gap-2">
@@ -70,16 +70,16 @@ function stockBadge(n) {
           :key="p.id"
           @click="emit('add', p)"
           type="button"
-          class="bg-white border border-gray-200 hover:border-brand-500 hover:shadow-md rounded-xl p-3 text-left transition group"
+          class="bg-white border border-line-200 hover:border-royal-700 hover:shadow-md rounded-xl p-3 text-left transition group"
         >
-          <div class="font-mono text-[10px] text-gray-500">{{ p.sku }}</div>
-          <div class="font-medium text-sm text-gray-900 line-clamp-2 mt-0.5">{{ p.name }}</div>
+          <div class="font-mono text-[10px] text-ink-secondary">{{ p.sku }}</div>
+          <div class="font-medium text-sm text-ink-primary line-clamp-2 mt-0.5">{{ p.name }}</div>
           <div class="mt-2 flex items-baseline justify-between">
-            <div class="font-bold text-brand-600 text-base">{{ formatVND(p.price) }}</div>
+            <div class="font-bold text-royal-700 text-base">{{ formatVND(p.price) }}</div>
           </div>
           <div class="mt-1 flex items-center justify-between text-[11px]">
             <span :class="stockBadge(p.stock).class">{{ stockBadge(p.stock).text }}</span>
-            <span v-if="p.priceTierName" class="text-gray-400 truncate ml-1">{{ p.priceTierName }}</span>
+            <span v-if="p.priceTierName" class="text-ink-disabled truncate ml-1">{{ p.priceTierName }}</span>
           </div>
         </button>
       </div>

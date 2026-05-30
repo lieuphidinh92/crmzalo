@@ -13,11 +13,11 @@ const tiers = [
 </script>
 
 <template>
-  <div class="bg-orange-50 border border-orange-200 rounded-xl p-3">
+  <div class="bg-royal-50 border border-royal-100 rounded-xl p-3">
     <div class="flex items-start justify-between gap-2">
       <div class="min-w-0 flex-1">
-        <div class="font-semibold text-gray-900 truncate">{{ customer.fullName }}</div>
-        <div class="text-xs text-gray-600 mt-0.5 flex flex-wrap gap-x-2">
+        <div class="font-semibold text-ink-primary truncate">{{ customer.fullName }}</div>
+        <div class="text-xs text-ink-secondary mt-0.5 flex flex-wrap gap-x-2">
           <span v-if="customer.phone">📞 {{ customer.phone }}</span>
           <span v-if="customer.storeName">· {{ customer.storeName }}</span>
           <span v-if="customer.province">· {{ customer.province }}</span>
@@ -25,7 +25,7 @@ const tiers = [
       </div>
       <button
         @click="emit('clear')"
-        class="text-gray-400 hover:text-rose-600 text-sm shrink-0"
+        class="text-ink-disabled hover:text-red-600 text-sm shrink-0"
         title="Bỏ chọn KH"
       >
         ✕
@@ -33,7 +33,7 @@ const tiers = [
     </div>
 
     <div class="mt-3">
-      <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">Bảng giá</div>
+      <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1.5">Bảng giá</div>
       <div class="grid grid-cols-3 gap-2">
         <label
           v-for="t in tiers"
@@ -41,8 +41,8 @@ const tiers = [
           class="flex items-center justify-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-lg border cursor-pointer transition"
           :class="
             tier === t.value
-              ? 'bg-brand-500 text-white border-brand-500'
-              : 'bg-white text-gray-700 border-gray-300 hover:border-brand-500'
+              ? 'bg-royal-700 text-white border-royal-700'
+              : 'bg-white text-ink-primary border-line-300 hover:border-royal-700'
           "
         >
           <input

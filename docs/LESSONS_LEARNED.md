@@ -7,6 +7,48 @@ Format: `[Ngày] - [Vấn đề] - [Cách fix] - [Bài học]`
 
 ---
 
+## 30/05/2026 — Sale Lite Phase 1 build trước khi có UI_SPEC
+
+**Vấn đề**:
+Phase 1 sale-app build xong với theme cam (#F97316) + bottom nav
+4-tab phẳng, dựa trên 1 spec prompt KiotViet generic. Ngay sau commit
+(`89c62fb`), CEO gửi mockup mới + spec UI_SPEC.md chi tiết: navy
+sidebar (#0A2540) + royal-blue CTA (#1E40AF) + 5-tab bottom nav với
+centre "Tạo đơn" FAB. Nghĩa là phần shell của Phase 1 sẽ phải rebuild
+ở Phase 2 trước khi build tiếp Sản phẩm / Đơn hàng / Tồn kho.
+
+**Cách fix**:
+- Giữ Phase 1 (backend endpoints + logic POS đã verified working).
+- Tạo 3 docs cố định hướng cho session sau:
+  - `docs/UI_SPEC.md` (exact text CEO chốt)
+  - `docs/DESIGN_SYSTEM.md` (tokens + components + Tailwind mapping)
+  - `docs/FEATURE_SPEC.md` (per-screen + Phase 1→spec gap analysis ở §8)
+- Memory entry `project_sale_app_direction.md` để load tự động.
+- Phase 2 mở đầu = rebuild shell, KHÔNG xoá Phase 1 logic.
+
+**Bài học**:
+1. **UI spec phải có TRƯỚC khi code Phase đầu**, nhất là cho app
+   greenfield. Em nhảy vào build với 1 mô tả prompt "inspired KiotViet"
+   mà không yêu cầu mockup / token cụ thể → 4h work shell phải redo.
+   Lần sau: nếu greenfield app + không có mockup → DỪNG hỏi CEO
+   "anh có ảnh tham khảo + bảng màu cố định chưa?" trước khi setup
+   Vite/Tailwind.
+2. **Backend logic và UI shell tách rời nhau là ích lợi**. Phase 1
+   backend (5 endpoint sale-app) sống sót qua thay đổi design vì
+   không nhúng vào UI. Pattern: ship API trước, UI sau, redesign UI
+   không cần đụng API. Áp dụng cho mọi PWA / SPA mới.
+3. **Doc không phải overhead — doc là single source of truth**.
+   3 file md (UI_SPEC + DESIGN_SYSTEM + FEATURE_SPEC) cho phép
+   session khác (kể cả model/agent khác) hiểu hướng mà không cần
+   transfer conversation. Memory entry chỉ là index trỏ tới docs;
+   nội dung thật trong docs để git-version + diff được.
+4. **Claude Code không extract được binary của ảnh CEO đính kèm**
+   trong chat. Khi cần asset gốc (mockup, logo), bảo CEO save tay
+   vào path cụ thể, đừng giả định em tự lấy được. Workflow:
+   `Finder → drag file → đường dẫn tuyệt đối`.
+
+---
+
 ## 09/05/2026 — Module Giá Vốn FIFO build xong (Phần A)
 
 **Phạm vi 4 sub-session đã xong**:

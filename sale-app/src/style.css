@@ -9,8 +9,8 @@
 
 html,
 body {
-  background-color: #f9fafb;
-  color: #111827;
+  background-color: #f8fafc;
+  color: #0f172a;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -30,4 +30,11 @@ textarea {
 
 button {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Hide spin buttons on number inputs */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }

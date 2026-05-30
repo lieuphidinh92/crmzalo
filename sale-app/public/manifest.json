@@ -1,11 +1,11 @@
 {
-  "name": "HaloVN Sale Lite",
-  "short_name": "Sale Lite",
-  "description": "App bán hàng nhanh cho team Sale HaloVN",
+  "name": "ngheduocsi.vn Sale",
+  "short_name": "Sale",
+  "description": "Sàn bán sỉ chính hãng — App cho team Sale ngheduocsi.vn",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#F97316",
+  "theme_color": "#1E40AF",
   "background_color": "#FFFFFF",
   "icons": [
     {

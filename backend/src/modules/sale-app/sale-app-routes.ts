@@ -6,6 +6,8 @@
  * are shared with the CRM (same token).
  *
  *  GET  /api/v1/sale-app/home-stats              → today/week/month + 5 recent
+ *  GET  /api/v1/sale-app/top-products            → top selling SKUs this month
+ *  GET  /api/v1/sale-app/low-stock               → products near/at warning threshold
  *  GET  /api/v1/sale-app/customers/search?q=     → contact search (member-scoped)
  *  POST /api/v1/sale-app/customers               → quick-create a new contact
  *  GET  /api/v1/sale-app/products/search?q=&tier= → product catalog with tier price
@@ -141,6 +143,150 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[sale-app] home-stats error:', err);
       return reply.status(500).send({ error: 'Lỗi tải thống kê' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/top-products ─ best-selling SKUs this month ──
+  // Member sees own assigned orders only; admin/owner sees the whole org.
+  // Returns wholesale price (tier-aware) + retail suggested + estimated
+  // profit per unit. Cost fields NEVER leak (no cost_price in payload).
+  app.get('/api/v1/sale-app/top-products', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { limit = '5', tier = 'dai_ly_cap_1' } = request.query as {
+        limit?: string;
+        tier?: string;
+      };
+      const tierName = TIER_NAME_MAP[tier] ?? null;
+      const take = Math.min(20, Math.max(1, parseInt(limit) || 5));
+      const monthStart = startOfMonth(new Date());
+
+      const orderWhere: any = {
+        orgId: user.orgId,
+        status: { in: COUNTABLE_STATUSES },
+        orderDate: { gte: monthStart },
+      };
+      if (user.role === 'member') {
+        orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+      }
+
+      // Aggregate quantity per productId within scope.
+      const grouped: any[] = await prisma.orderItem.groupBy({
+        by: ['productId'],
+        where: { order: orderWhere, productId: { not: null } },
+        _sum: { quantity: true, lineTotal: true },
+        orderBy: { _sum: { quantity: 'desc' } },
+        take,
+      });
+
+      const productIds = grouped.map((g: any) => g.productId).filter(Boolean);
+      const products = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          unit: true,
+          mainImageUrl: true,
+          totalStock: true,
+          brand: { select: { id: true, name: true } },
+          prices: {
+            where: { active: true },
+            select: { id: true, tierName: true, price: true, isDefault: true },
+          },
+        },
+      });
+      const pmap = new Map<string, any>(products.map((p: any) => [p.id, p]));
+
+      const items = grouped.map((g: any) => {
+        const p = pmap.get(g.productId);
+        if (!p) return null;
+        // Wholesale = tier price (fallback default → first).
+        const wholesalePick =
+          (tierName && p.prices.find((pr: any) => pr.tierName === tierName)) ||
+          p.prices.find((pr: any) => pr.isDefault) ||
+          p.prices[0] ||
+          null;
+        // Retail suggested = any tier matching "Lẻ"/"Giá lẻ" (case-insensitive).
+        const retailPick = p.prices.find((pr: any) => /lẻ|le|retail/i.test(pr.tierName ?? ''));
+        const wholesale = wholesalePick ? toNumber(wholesalePick.price) : 0;
+        const retail = retailPick ? toNumber(retailPick.price) : 0;
+        const profit = retail > wholesale ? retail - wholesale : 0;
+        return {
+          id: p.id,
+          sku: p.sku,
+          name: p.name,
+          unit: p.unit,
+          mainImageUrl: p.mainImageUrl,
+          brand: p.brand,
+          stock: p.totalStock,
+          quantitySold: g._sum.quantity ?? 0,
+          wholesale_price: wholesale,
+          wholesale_tier: wholesalePick?.tierName ?? null,
+          retail_price: retail,
+          estimated_profit: profit,
+        };
+      }).filter(Boolean);
+
+      return { products: items };
+    } catch (err) {
+      logger.error('[sale-app] top-products error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải top sản phẩm' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/low-stock ─ products near warning threshold ──
+  app.get('/api/v1/sale-app/low-stock', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { limit = '5' } = request.query as { limit?: string };
+      const take = Math.min(20, Math.max(1, parseInt(limit) || 5));
+
+      // Postgres can't compare two columns inside a Prisma where, so we
+      // fetch a wider window and filter in code. With ~1k products this
+      // is fine; revisit if catalog grows past 10k.
+      const rows = await prisma.product.findMany({
+        where: { orgId: user.orgId, status: 'active' },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          unit: true,
+          mainImageUrl: true,
+          totalStock: true,
+          warningStock: true,
+          brand: { select: { id: true, name: true } },
+        },
+        orderBy: { totalStock: 'asc' },
+        take: 200,
+      });
+
+      const items = rows
+        .filter((p: any) => (p.totalStock ?? 0) <= (p.warningStock ?? 0))
+        .slice(0, take)
+        .map((p: any) => {
+          const stock = p.totalStock ?? 0;
+          const warning = p.warningStock ?? 0;
+          let level: 'out' | 'critical' | 'low' = 'low';
+          if (stock <= 0) level = 'out';
+          else if (warning > 0 && stock <= warning * 0.3) level = 'critical';
+          return {
+            id: p.id,
+            sku: p.sku,
+            name: p.name,
+            unit: p.unit,
+            mainImageUrl: p.mainImageUrl,
+            brand: p.brand,
+            stock,
+            warning_stock: warning,
+            level,
+          };
+        });
+
+      return { products: items };
+    } catch (err) {
+      logger.error('[sale-app] low-stock error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải cảnh báo tồn kho' });
     }
   });
 

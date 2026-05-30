@@ -32,56 +32,102 @@ async function submit() {
 </script>
 
 <template>
-  <div class="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-orange-50 to-white px-4">
-    <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
-      <div class="text-center mb-8">
-        <div class="w-16 h-16 rounded-2xl bg-brand-500 text-white text-3xl font-bold mx-auto flex items-center justify-center mb-4 shadow-lg shadow-orange-200">
-          S
+  <div class="min-h-[100dvh] lg:grid lg:grid-cols-2 bg-surface-50">
+    <!-- Left brand panel (desktop only) -->
+    <div class="hidden lg:flex bg-navy-900 text-white p-12 flex-col justify-between relative overflow-hidden">
+      <div class="absolute -right-20 -top-20 w-72 h-72 rounded-full bg-royal-700/30 blur-3xl"></div>
+      <div class="absolute -left-20 -bottom-20 w-72 h-72 rounded-full bg-amber-500/20 blur-3xl"></div>
+
+      <div class="relative">
+        <div class="flex items-center gap-3 mb-1">
+          <div class="w-11 h-11 rounded-xl bg-royal-700 flex items-center justify-center text-white font-bold">
+            ND
+          </div>
+          <div class="leading-tight">
+            <div class="text-lg font-semibold">ngheduocsi.vn</div>
+            <div class="text-xs text-slate-400">Nền tảng bán sỉ chính hãng</div>
+          </div>
         </div>
-        <h1 class="text-2xl font-bold text-gray-900">HaloVN Sale Lite</h1>
-        <p class="text-sm text-gray-500 mt-1">App bán hàng nhanh cho team Sale</p>
       </div>
 
-      <form @submit.prevent="submit" class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-          <input
-            v-model="email"
-            type="email"
-            autocomplete="username"
-            placeholder="admin@local.dev"
-            class="w-full h-12 px-4 rounded-xl border border-gray-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none transition"
+      <div class="relative">
+        <h2 class="text-3xl font-bold leading-tight mb-3">
+          App bán hàng cho team Sale
+        </h2>
+        <p class="text-slate-300 text-sm leading-relaxed max-w-md">
+          Tạo đơn nhanh, kiểm tra tồn kho, theo dõi công nợ và doanh số —
+          tất cả trong 1 app duy nhất.
+        </p>
+        <div class="mt-6 flex gap-2 flex-wrap">
+          <span class="px-3 py-1.5 rounded-full bg-white/10 text-xs font-medium">⚡ Nhanh</span>
+          <span class="px-3 py-1.5 rounded-full bg-white/10 text-xs font-medium">👍 Đơn giản</span>
+          <span class="px-3 py-1.5 rounded-full bg-white/10 text-xs font-medium">🎯 Hiệu quả</span>
+        </div>
+      </div>
+
+      <div class="relative text-xs text-slate-400">
+        © {{ new Date().getFullYear() }} HaloVN · ngheduocsi.vn
+      </div>
+    </div>
+
+    <!-- Right form panel -->
+    <div class="flex items-center justify-center px-4 py-8 lg:px-12">
+      <div class="w-full max-w-sm">
+        <!-- Mobile brand -->
+        <div class="lg:hidden text-center mb-8">
+          <div class="w-14 h-14 rounded-2xl bg-royal-700 text-white text-lg font-bold mx-auto flex items-center justify-center mb-3 shadow-pop">
+            ND
+          </div>
+          <h1 class="text-xl font-bold text-ink-primary">ngheduocsi.vn</h1>
+          <p class="text-xs text-ink-secondary mt-0.5">Nền tảng bán sỉ chính hãng</p>
+        </div>
+
+        <div class="hidden lg:block mb-8">
+          <h1 class="text-2xl font-bold text-ink-primary">Đăng nhập</h1>
+          <p class="text-sm text-ink-secondary mt-1">Dùng tài khoản nội bộ HaloVN</p>
+        </div>
+
+        <form @submit.prevent="submit" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-ink-primary mb-1.5">Email</label>
+            <input
+              v-model="email"
+              type="email"
+              autocomplete="username"
+              placeholder="ten.ban@halo.com.vn"
+              class="w-full h-12 px-4 rounded-lg border border-line-300 bg-white focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none transition"
+              :disabled="loading"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-ink-primary mb-1.5">Mật khẩu</label>
+            <input
+              v-model="password"
+              type="password"
+              autocomplete="current-password"
+              placeholder="••••••••"
+              class="w-full h-12 px-4 rounded-lg border border-line-300 bg-white focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none transition"
+              :disabled="loading"
+            />
+          </div>
+
+          <div v-if="errorMsg" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {{ errorMsg }}
+          </div>
+
+          <button
+            type="submit"
             :disabled="loading"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1.5">Mật khẩu</label>
-          <input
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            placeholder="••••••••"
-            class="w-full h-12 px-4 rounded-xl border border-gray-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none transition"
-            :disabled="loading"
-          />
-        </div>
+            class="w-full h-12 rounded-lg bg-royal-700 hover:bg-royal-800 text-white font-semibold transition disabled:opacity-50 shadow-pop"
+          >
+            {{ loading ? 'Đang đăng nhập...' : 'Đăng nhập' }}
+          </button>
+        </form>
 
-        <div v-if="errorMsg" class="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-          {{ errorMsg }}
-        </div>
-
-        <button
-          type="submit"
-          :disabled="loading"
-          class="w-full h-12 rounded-xl bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-orange-200"
-        >
-          {{ loading ? 'Đang đăng nhập...' : 'Đăng nhập' }}
-        </button>
-      </form>
-
-      <p class="text-xs text-gray-400 text-center mt-6">
-        Dùng tài khoản CRM của bạn để đăng nhập
-      </p>
+        <p class="text-xs text-ink-secondary text-center mt-6 lg:text-left">
+          Cần hỗ trợ? Gọi 1900 636 925 (T2–T7 · 8:00–17:30)
+        </p>
+      </div>
     </div>
   </div>
 </template>

@@ -13,7 +13,16 @@ const routes = [
     component: () => import('../components/MainLayout.vue'),
     children: [
       { path: '', name: 'home', component: () => import('../views/Home.vue') },
-      { path: 'pos', name: 'pos', component: () => import('../views/POS.vue') },
+      { path: 'pos', name: 'pos', component: () => import('../views/POS.vue'), alias: '/create-order' },
+      // Phase 3+ modules — stubbed for now so the 5-tab nav has no dead links.
+      { path: 'products', name: 'products', component: () => import('../views/ComingSoon.vue') },
+      { path: 'orders', name: 'orders', component: () => import('../views/ComingSoon.vue') },
+      { path: 'customers', name: 'customers', component: () => import('../views/ComingSoon.vue') },
+      { path: 'inventory', name: 'inventory', component: () => import('../views/ComingSoon.vue') },
+      { path: 'promotions', name: 'promotions', component: () => import('../views/ComingSoon.vue') },
+      { path: 'reports', name: 'reports', component: () => import('../views/ComingSoon.vue') },
+      { path: 'settings', name: 'settings', component: () => import('../views/ComingSoon.vue') },
+      { path: 'account', name: 'account', component: () => import('../views/ComingSoon.vue') },
     ],
   },
 ];
