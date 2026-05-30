@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import { api } from '../api/client';
 import { formatVND } from '../composables/useFormat';
 
 const route = useRoute();
@@ -18,10 +19,20 @@ const userRole = computed(() => {
   return 'Sale Team';
 });
 
-// Phase 2 placeholder — real value lives in /sale-app/debt-summary (Phase 3).
-const totalDebt = computed(() => 0);
+const debtSummary = ref(null);
+async function loadDebt() {
+  try {
+    const { data } = await api.get('/sale-app/debt-summary');
+    debtSummary.value = data;
+  } catch {
+    debtSummary.value = null;
+  }
+}
+onMounted(loadDebt);
 
-const navItems = [
+const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+
+const navItems = computed(() => [
   { name: 'home', label: 'Tổng quan', to: '/', icon: 'home' },
   { name: 'products', label: 'Sản phẩm', to: '/products', icon: 'package', soon: true },
   { name: 'create', label: 'Tạo đơn hàng', to: '/pos', icon: 'cart' },
@@ -30,8 +41,8 @@ const navItems = [
   { name: 'inventory', label: 'Tồn kho', to: '/inventory', icon: 'warehouse', soon: true },
   { name: 'promo', label: 'Khuyến mãi', to: '/promotions', icon: 'badge', hot: true, soon: true },
   { name: 'reports', label: 'Báo cáo', to: '/reports', icon: 'chart', soon: true },
-  { name: 'settings', label: 'Cài đặt', to: '/settings', icon: 'cog', soon: true },
-];
+  { name: 'settings', label: 'Cài đặt', to: '/settings', icon: 'cog', soon: !isAdmin.value },
+]);
 
 function isActive(to) {
   if (to === '/') return route.path === '/';
@@ -109,20 +120,21 @@ function go(item) {
       </button>
 
       <!-- Total debt card -->
-      <button
-        class="w-full text-left px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition opacity-60 cursor-not-allowed"
-        :disabled="true"
-        title="Sắp có"
-      >
+      <div class="w-full px-3 py-2.5 rounded-xl bg-white/5">
         <div class="flex items-center justify-between">
           <div class="text-[11px] text-slate-400">Công nợ tổng</div>
-          <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="9 18 15 12 9 6"/>
-          </svg>
+          <span v-if="debtSummary?.overdue_total > 0" class="text-[9px] font-bold uppercase bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded">
+            Quá hạn
+          </span>
         </div>
-        <div class="text-lg font-bold mt-0.5">{{ totalDebt ? formatVND(totalDebt) : '—' }}</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Xem chi tiết</div>
-      </button>
+        <div class="text-lg font-bold mt-0.5 tabular-nums">
+          {{ debtSummary == null ? '—' : formatVND(debtSummary.total) }}
+        </div>
+        <div v-if="debtSummary?.order_count > 0" class="text-[10px] text-slate-500 mt-0.5">
+          {{ debtSummary.order_count }} đơn · {{ debtSummary.contact_count }} KH
+        </div>
+        <div v-else-if="debtSummary" class="text-[10px] text-slate-500 mt-0.5">Không có công nợ</div>
+      </div>
 
       <!-- Support card -->
       <div class="px-3 py-2.5 rounded-xl bg-white/5">

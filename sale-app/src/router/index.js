@@ -21,7 +21,7 @@ const routes = [
       { path: 'inventory', name: 'inventory', component: () => import('../views/ComingSoon.vue') },
       { path: 'promotions', name: 'promotions', component: () => import('../views/ComingSoon.vue') },
       { path: 'reports', name: 'reports', component: () => import('../views/ComingSoon.vue') },
-      { path: 'settings', name: 'settings', component: () => import('../views/ComingSoon.vue') },
+      { path: 'settings', name: 'settings', component: () => import('../views/Settings.vue') },
       { path: 'account', name: 'account', component: () => import('../views/ComingSoon.vue') },
     ],
   },

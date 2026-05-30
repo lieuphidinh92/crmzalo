@@ -8,6 +8,10 @@
  *  GET  /api/v1/sale-app/home-stats              → today/week/month + 5 recent
  *  GET  /api/v1/sale-app/top-products            → top selling SKUs this month
  *  GET  /api/v1/sale-app/low-stock               → products near/at warning threshold
+ *  GET  /api/v1/sale-app/debt-summary            → outstanding debt + overdue count
+ *  GET  /api/v1/sale-app/pricing-config (admin)  → tier pricing rule
+ *  PUT  /api/v1/sale-app/pricing-config (admin)  → update tier pricing rule
+ *  POST /api/v1/sale-app/_backfill-tier-prices   → seed missing ProductPrice tiers
  *  GET  /api/v1/sale-app/customers/search?q=     → contact search (member-scoped)
  *  POST /api/v1/sale-app/customers               → quick-create a new contact
  *  GET  /api/v1/sale-app/products/search?q=&tier= → product catalog with tier price
@@ -18,6 +22,7 @@ import pkg from '@prisma/client';
 const { Prisma } = pkg;
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
+import { requireRole } from '../auth/role-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import {
   generateOrderCode,
@@ -234,6 +239,232 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send({ error: 'Lỗi tải top sản phẩm' });
     }
   });
+
+  // ── GET /api/v1/sale-app/debt-summary ─ outstanding receivables ───────
+  // Member sees debt on their own contacts; admin/owner sees the whole org.
+  // `total` = SUM(debt_amount_value) across orders with debt > 0 and not
+  // cancelled. `overdueTotal` further filters by past debt_due_date.
+  app.get('/api/v1/sale-app/debt-summary', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const baseWhere: any = {
+        orgId: user.orgId,
+        debtAmountValue: { gt: 0 },
+        status: { notIn: ['cancelled'] },
+      };
+      if (user.role === 'member') {
+        baseWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+      }
+      const now = new Date();
+
+      const [openAgg, overdueAgg, contactCount] = await Promise.all([
+        prisma.order.aggregate({
+          where: baseWhere,
+          _sum: { debtAmountValue: true },
+          _count: { id: true },
+        }),
+        prisma.order.aggregate({
+          where: { ...baseWhere, debtDueDate: { lt: now } },
+          _sum: { debtAmountValue: true },
+          _count: { id: true },
+        }),
+        prisma.order.findMany({
+          where: baseWhere,
+          select: { contactId: true },
+          distinct: ['contactId'],
+        }),
+      ]);
+
+      return {
+        total: toNumber(openAgg._sum.debtAmountValue),
+        order_count: openAgg._count.id,
+        overdue_total: toNumber(overdueAgg._sum.debtAmountValue),
+        overdue_order_count: overdueAgg._count.id,
+        contact_count: contactCount.length,
+      };
+    } catch (err) {
+      logger.error('[sale-app] debt-summary error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải tổng công nợ' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/pricing-config (admin) ───────────────────────
+  // Seeds defaults on first GET so the settings page always has a row to
+  // bind against. Matches the pattern used by business-goals + sale-score.
+  app.get(
+    '/api/v1/sale-app/pricing-config',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        let cfg = await prisma.saleAppPricingConfig.findUnique({
+          where: { orgId: user.orgId },
+        });
+        if (!cfg) {
+          cfg = await prisma.saleAppPricingConfig.create({
+            data: { orgId: user.orgId, costMarkupPct: 25, tierDelta: 5000, enableBackfill: false },
+          });
+        }
+        return {
+          cost_markup_pct: toNumber(cfg.costMarkupPct),
+          tier_delta: toNumber(cfg.tierDelta),
+          enable_backfill: cfg.enableBackfill,
+          last_backfill_at: cfg.lastBackfillAt,
+          updated_at: cfg.updatedAt,
+        };
+      } catch (err) {
+        logger.error('[sale-app] pricing-config GET error:', err);
+        return reply.status(500).send({ error: 'Lỗi tải cấu hình giá' });
+      }
+    },
+  );
+
+  // ── PUT /api/v1/sale-app/pricing-config (admin) ───────────────────────
+  app.put(
+    '/api/v1/sale-app/pricing-config',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const body = request.body as {
+          cost_markup_pct?: number;
+          tier_delta?: number;
+          enable_backfill?: boolean;
+        };
+        const data: any = { updatedBy: user.id };
+        if (body.cost_markup_pct !== undefined) {
+          const v = Number(body.cost_markup_pct);
+          if (!Number.isFinite(v) || v < 0 || v > 500) {
+            return reply.status(400).send({ error: 'Markup phải trong 0–500%' });
+          }
+          data.costMarkupPct = v;
+        }
+        if (body.tier_delta !== undefined) {
+          const v = Number(body.tier_delta);
+          if (!Number.isFinite(v) || v < 0 || v > 10_000_000) {
+            return reply.status(400).send({ error: 'Tier delta phải trong 0–10.000.000đ' });
+          }
+          data.tierDelta = v;
+        }
+        if (body.enable_backfill !== undefined) {
+          data.enableBackfill = !!body.enable_backfill;
+        }
+
+        const cfg = await prisma.saleAppPricingConfig.upsert({
+          where: { orgId: user.orgId },
+          update: data,
+          create: { orgId: user.orgId, costMarkupPct: 25, tierDelta: 5000, ...data },
+        });
+        return {
+          cost_markup_pct: toNumber(cfg.costMarkupPct),
+          tier_delta: toNumber(cfg.tierDelta),
+          enable_backfill: cfg.enableBackfill,
+          last_backfill_at: cfg.lastBackfillAt,
+          updated_at: cfg.updatedAt,
+        };
+      } catch (err) {
+        logger.error('[sale-app] pricing-config PUT error:', err);
+        return reply.status(500).send({ error: 'Lỗi lưu cấu hình giá' });
+      }
+    },
+  );
+
+  // ── POST /api/v1/sale-app/_backfill-tier-prices (admin) ───────────────
+  // Idempotent — only inserts ProductPrice rows for tiers that DO NOT yet
+  // exist on each active product. Existing prices are NEVER overwritten.
+  // Refuses to run unless `enable_backfill === true` in pricing-config.
+  app.post(
+    '/api/v1/sale-app/_backfill-tier-prices',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const cfg = await prisma.saleAppPricingConfig.findUnique({ where: { orgId: user.orgId } });
+        if (!cfg) {
+          return reply.status(400).send({ error: 'Chưa cấu hình giá. Mở trang Cài đặt trước.' });
+        }
+        if (!cfg.enableBackfill) {
+          return reply.status(400).send({
+            error: 'Vui lòng bật "Cho phép backfill" trong cài đặt trước khi chạy.',
+          });
+        }
+
+        const markup = toNumber(cfg.costMarkupPct);
+        const delta = toNumber(cfg.tierDelta);
+
+        // Pull every active product with its existing prices in one shot.
+        const products = await prisma.product.findMany({
+          where: { orgId: user.orgId, status: 'active' },
+          select: {
+            id: true,
+            sku: true,
+            costPrice: true,
+            prices: { where: { active: true }, select: { tierName: true } },
+          },
+        });
+
+        const TIERS = [
+          { name: 'Đại lý cấp 2 (VIP)', deltaMul: 0, displayOrder: 1, isDefault: false },
+          { name: 'Đại lý cấp 1',       deltaMul: 1, displayOrder: 2, isDefault: false },
+          { name: 'CTV',                deltaMul: 2, displayOrder: 3, isDefault: true  },
+        ];
+
+        let createdRows = 0;
+        let skippedNoCost = 0;
+        let skippedAlreadyHasTier = 0;
+        const touchedSkus: string[] = [];
+
+        for (const p of products) {
+          if (p.costPrice == null) {
+            skippedNoCost += 1;
+            continue;
+          }
+          const base = Math.round(toNumber(p.costPrice) * (1 + markup / 100));
+          const existing = new Set(p.prices.map((pr: any) => pr.tierName));
+          let touched = false;
+          for (const t of TIERS) {
+            if (existing.has(t.name)) {
+              skippedAlreadyHasTier += 1;
+              continue;
+            }
+            const price = base + delta * t.deltaMul;
+            await prisma.productPrice.create({
+              data: {
+                productId: p.id,
+                tierName: t.name,
+                price,
+                displayOrder: t.displayOrder,
+                isDefault: t.isDefault,
+                active: true,
+              },
+            });
+            createdRows += 1;
+            touched = true;
+          }
+          if (touched) touchedSkus.push(p.sku);
+        }
+
+        await prisma.saleAppPricingConfig.update({
+          where: { orgId: user.orgId },
+          data: { lastBackfillAt: new Date(), updatedBy: user.id },
+        });
+
+        return {
+          ok: true,
+          created_rows: createdRows,
+          touched_products: touchedSkus.length,
+          skipped_no_cost: skippedNoCost,
+          skipped_already_has_tier: skippedAlreadyHasTier,
+          sample_touched_skus: touchedSkus.slice(0, 10),
+          markup_pct: markup,
+          tier_delta: delta,
+        };
+      } catch (err) {
+        logger.error('[sale-app] backfill error:', err);
+        return reply.status(500).send({ error: 'Lỗi chạy backfill' });
+      }
+    },
+  );
 
   // ── GET /api/v1/sale-app/low-stock ─ products near warning threshold ──
   app.get('/api/v1/sale-app/low-stock', async (request: FastifyRequest, reply: FastifyReply) => {

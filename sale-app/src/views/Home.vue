@@ -19,6 +19,7 @@ const errorMsg = ref('');
 const stats = ref(null);
 const topProducts = ref([]);
 const lowStock = ref([]);
+const debtSummary = ref(null);
 
 const userName = computed(() => auth.user?.fullName || auth.user?.email || 'Sale');
 const today = computed(() => {
@@ -35,14 +36,16 @@ async function load() {
   loading.value = true;
   errorMsg.value = '';
   try {
-    const [s, tp, ls] = await Promise.all([
+    const [s, tp, ls, ds] = await Promise.all([
       api.get('/sale-app/home-stats'),
       api.get('/sale-app/top-products', { params: { limit: 5 } }).catch(() => ({ data: { products: [] } })),
       api.get('/sale-app/low-stock', { params: { limit: 4 } }).catch(() => ({ data: { products: [] } })),
+      api.get('/sale-app/debt-summary').catch(() => ({ data: null })),
     ]);
     stats.value = s.data;
     topProducts.value = tp.data.products || [];
     lowStock.value = ls.data.products || [];
+    debtSummary.value = ds.data;
   } catch (err) {
     errorMsg.value = err.response?.data?.error || 'Không tải được dữ liệu';
   } finally {
@@ -125,8 +128,9 @@ function levelBadge(l) {
         />
         <KpiCard
           label="Công nợ hiện tại"
-          value="—"
-          action="Xem chi tiết"
+          :value="debtSummary == null ? '—' : formatVND(debtSummary.total)"
+          :trendLabel="debtSummary?.overdue_order_count > 0 ? `${debtSummary.overdue_order_count} đơn quá hạn` : (debtSummary?.order_count > 0 ? `${debtSummary.order_count} đơn còn nợ` : '')"
+          :trendUp="debtSummary?.overdue_order_count > 0 ? false : null"
           icon="dollar-circle"
           iconColor="red"
         />
@@ -199,7 +203,14 @@ function levelBadge(l) {
               </div>
               <div class="text-xs font-medium text-ink-primary line-clamp-2 leading-snug">{{ p.name }}</div>
               <div class="text-[10px] text-ink-secondary mt-1">Đã bán: {{ p.quantitySold }} {{ p.unit }}</div>
-              <div class="text-sm font-bold text-royal-700 mt-1">{{ formatVND(p.wholesale_price) }}</div>
+              <div v-if="p.wholesale_price > 0" class="text-sm font-bold text-royal-700 mt-1">
+                {{ formatVND(p.wholesale_price) }}
+              </div>
+              <div v-else class="mt-1">
+                <span class="inline-block text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-600">
+                  Liên hệ giá
+                </span>
+              </div>
               <div v-if="p.estimated_profit > 0" class="text-[10px] text-green-700">
                 Lãi dự kiến: {{ formatVND(p.estimated_profit) }}
               </div>

@@ -237,6 +237,26 @@ model SaleScoreConfig {
   @@map("sale_score_config")
 }
 
+// Org-scoped pricing rule for the sale-app tier backfill job. One row per
+// org, seeded with defaults on first GET. Drives the formula:
+//   base = cost_price * (1 + costMarkupPct/100)   ← Đại lý cấp 2 (VIP)
+//   Cấp 1 = base + tierDelta
+//   CTV   = base + 2 * tierDelta
+// `enableBackfill` is a safety flag; the backfill endpoint refuses to
+// touch the DB unless an admin has flipped this to true at least once.
+model SaleAppPricingConfig {
+  id              String   @id @default(uuid())
+  orgId           String   @unique @map("org_id")
+  costMarkupPct   Decimal  @default(25) @map("cost_markup_pct") @db.Decimal(6, 2)
+  tierDelta       Decimal  @default(5000) @map("tier_delta") @db.Decimal(15, 2)
+  enableBackfill  Boolean  @default(false) @map("enable_backfill")
+  lastBackfillAt  DateTime? @map("last_backfill_at")
+  updatedBy       String?  @map("updated_by")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("sale_app_pricing_config")
+}
+
 model StageHistory {
   id              String   @id @default(uuid())
   contactId       String   @map("contact_id")
