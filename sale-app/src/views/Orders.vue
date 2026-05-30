@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api/client';
+import { usePOSStore } from '../stores/pos';
 import {
   formatVND,
   statusLabel,
@@ -11,6 +12,9 @@ import {
 } from '../composables/useFormat';
 
 const router = useRouter();
+const pos = usePOSStore();
+
+const reorderingId = ref(null);
 
 const orders = ref([]);
 const total = ref(0);
@@ -97,6 +101,31 @@ function totalOf(o) {
 
 function openOrder(o) {
   router.push(`/orders/${o.id}`);
+}
+
+// Đặt lại đơn: lấy full detail (items + contact) rồi nạp giỏ POS với giá
+// hiện tại, giữ số lượng cũ. SP ngừng bán bị bỏ qua + cảnh báo.
+async function reorder(o) {
+  if (reorderingId.value) return;
+  reorderingId.value = o.id;
+  try {
+    const { data: full } = await api.get(`/orders/${o.id}`);
+    const { added, skipped } = await pos.loadCartFromOrder(full);
+    if (added === 0) {
+      alert('Tất cả sản phẩm trong đơn cũ đã ngừng bán hoặc không còn giá. Không có gì để đặt lại.');
+      return;
+    }
+    if (skipped.length > 0) {
+      alert(
+        `Đã nạp ${added} sản phẩm vào đơn mới.\n\nBỏ qua ${skipped.length} SP đã ngừng bán / hết giá:\n• ${skipped.join('\n• ')}`,
+      );
+    }
+    router.push('/pos');
+  } catch (err) {
+    alert(err.response?.data?.error || err.message || 'Lỗi khi đặt lại đơn');
+  } finally {
+    reorderingId.value = null;
+  }
 }
 
 const pageNumbers = computed(() => {
@@ -198,11 +227,14 @@ const pageNumbers = computed(() => {
 
     <!-- List -->
     <div v-else class="space-y-2">
-      <button
+      <div
         v-for="o in orders"
         :key="o.id"
         @click="openOrder(o)"
-        class="w-full bg-white border border-line-200 rounded-card p-3.5 shadow-card hover:border-royal-700 transition text-left flex items-center gap-3"
+        role="button"
+        tabindex="0"
+        @keydown.enter="openOrder(o)"
+        class="w-full cursor-pointer bg-white border border-line-200 rounded-card p-3.5 shadow-card hover:border-royal-700 transition text-left flex items-center gap-3"
       >
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
@@ -233,10 +265,28 @@ const pageNumbers = computed(() => {
             Nợ {{ formatVND(o.debtAmountValue) }}
           </div>
         </div>
+        <button
+          @click.stop="reorder(o)"
+          :disabled="reorderingId === o.id"
+          title="Đặt lại đơn này"
+          class="shrink-0 h-8 w-8 flex items-center justify-center rounded-lg border border-line-300 text-royal-700 hover:border-royal-700 hover:bg-royal-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <svg
+            class="w-4 h-4"
+            :class="reorderingId === o.id ? 'animate-spin' : ''"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+          </svg>
+        </button>
         <svg class="w-4 h-4 text-ink-disabled shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="9 18 15 12 9 6" />
         </svg>
-      </button>
+      </div>
 
       <!-- Pagination -->
       <div v-if="totalPages > 1" class="pt-4 flex items-center justify-center gap-1.5">

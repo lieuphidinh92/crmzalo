@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
+import { usePOSStore } from '../stores/pos';
 import {
   formatVND,
   statusLabel,
@@ -11,10 +12,14 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+const pos = usePOSStore();
 
 const order = ref(null);
 const loading = ref(true);
 const errorMsg = ref('');
+
+// ── Đặt lại đơn ──
+const reordering = ref(false);
 
 // ── Payment dialog ──
 const showPay = ref(false);
@@ -72,6 +77,28 @@ async function load() {
 }
 
 onMounted(load);
+
+async function handleReorder() {
+  if (!order.value || reordering.value) return;
+  reordering.value = true;
+  try {
+    const { added, skipped } = await pos.loadCartFromOrder(order.value);
+    if (added === 0) {
+      alert('Tất cả sản phẩm trong đơn cũ đã ngừng bán hoặc không còn giá. Không có gì để đặt lại.');
+      return;
+    }
+    if (skipped.length > 0) {
+      alert(
+        `Đã nạp ${added} sản phẩm vào đơn mới.\n\nBỏ qua ${skipped.length} SP đã ngừng bán / hết giá:\n• ${skipped.join('\n• ')}`,
+      );
+    }
+    router.push('/pos');
+  } catch (err) {
+    alert(err.response?.data?.error || err.message || 'Lỗi khi đặt lại đơn');
+  } finally {
+    reordering.value = false;
+  }
+}
 
 function openPay() {
   payAmount.value = debt.value > 0 ? String(Math.round(debt.value)) : '';
@@ -294,6 +321,20 @@ async function submitCancel() {
         </div>
       </div>
     </template>
+
+    <!-- Đặt lại đơn này (luôn hiện khi đã tải đơn) -->
+    <button
+      v-if="order"
+      @click="handleReorder"
+      :disabled="reordering"
+      class="w-full h-12 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold shadow-pop flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed mb-2"
+    >
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+      </svg>
+      {{ reordering ? 'Đang nạp giỏ...' : 'Đặt lại đơn này' }}
+    </button>
 
     <!-- Action bar (inline, end of content) -->
     <div

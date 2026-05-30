@@ -55,6 +55,81 @@ export const usePOSStore = defineStore('pos', () => {
     items.value = items.value.filter((x) => x.productId !== productId);
   }
 
+  /**
+   * Đặt lại đơn cũ: nạp toàn bộ SP của đơn cũ vào giỏ POS.
+   * - GIỮ số lượng cũ, NHƯNG lấy GIÁ HIỆN TẠI (theo tier của KH) — không
+   *   dùng giá đã chốt trong đơn cũ.
+   * - Nạp lại khách hàng của đơn cũ (nếu có) để tier giá khớp.
+   * - SP nay ngừng bán / hết giá hiện tại → bỏ qua, gom vào `skipped`.
+   *
+   * Giá hiện tại lấy từ cùng endpoint mà ProductCatalog dùng:
+   *   GET /sale-app/products/search?q=<sku>&tier=<tier>
+   * → bảo đảm giá nhất quán với luồng thêm SP thủ công.
+   *
+   * @param {Object} order  Order detail trả về từ GET /orders/:id
+   * @returns {Promise<{ added: number, skipped: string[] }>}
+   */
+  async function loadCartFromOrder(order) {
+    reset();
+
+    // 1) Nạp khách hàng (đặt trước để selectedTier khớp policyTier của KH)
+    if (order?.contact?.id) {
+      selectCustomer(order.contact);
+    }
+    const tier = selectedTier.value;
+
+    const orderItems = Array.isArray(order?.items) ? order.items : [];
+    const skipped = [];
+    const nextItems = [];
+
+    // 2) Với mỗi SP: tra giá hiện tại theo SKU + tier. SKU là khoá đáng tin
+    //    nhất (đơn MISA cũ có thể thiếu productId).
+    for (const it of orderItems) {
+      const sku = (it.sku || it.product?.sku || '').trim();
+      const displayName = it.productName || it.product?.name || sku || 'SP không tên';
+      const oldQty = Math.max(1, Math.floor(Number(it.quantity) || 0) || 1);
+
+      if (!sku) {
+        skipped.push(displayName);
+        continue;
+      }
+
+      let current = null;
+      try {
+        const { data } = await api.get('/sale-app/products/search', {
+          params: { q: sku, tier },
+        });
+        const products = data.products || [];
+        // Khớp đúng SKU (search có thể trả nhiều SP gần đúng).
+        current =
+          products.find((p) => (p.sku || '').trim().toLowerCase() === sku.toLowerCase()) || null;
+      } catch {
+        current = null;
+      }
+
+      // SP ngừng bán (không còn active → không trả về) hoặc hết giá hiện tại.
+      if (!current || !current.price || current.price <= 0 || !current.priceTierId) {
+        skipped.push(displayName);
+        continue;
+      }
+
+      nextItems.push({
+        productId: current.id,
+        sku: current.sku,
+        name: current.name,
+        unit: current.unit,
+        stock: current.stock,
+        unitPrice: current.price,
+        priceTierId: current.priceTierId,
+        priceTierName: current.priceTierName,
+        quantity: oldQty,
+      });
+    }
+
+    items.value = nextItems;
+    return { added: nextItems.length, skipped };
+  }
+
   function reset() {
     selectedCustomer.value = null;
     selectedTier.value = 'dai_ly_cap_1';
@@ -114,6 +189,7 @@ export const usePOSStore = defineStore('pos', () => {
     removeProduct,
     changeTier,
     reset,
+    loadCartFromOrder,
     submitOrder,
   };
 });

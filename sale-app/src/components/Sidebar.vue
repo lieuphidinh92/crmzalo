@@ -38,6 +38,8 @@ const navItems = computed(() => [
   { name: 'create', label: 'Tạo đơn hàng', to: '/pos', icon: 'cart' },
   { name: 'orders', label: 'Đơn hàng', to: '/orders', icon: 'clipboard', soon: true },
   { name: 'customers', label: 'Khách hàng', to: '/customers', icon: 'users' },
+  { name: 'debt', label: 'Công nợ', to: '/debt', icon: 'wallet' },
+  { name: 'follow-up', label: 'Cần chăm sóc', to: '/follow-up', icon: 'heart' },
   { name: 'inventory', label: 'Tồn kho', to: '/inventory', icon: 'warehouse' },
   { name: 'promo', label: 'Khuyến mãi', to: '/promotions', icon: 'badge', hot: true },
   { name: 'reports', label: 'Báo cáo', to: '/reports', icon: 'chart', soon: true },
@@ -89,6 +91,8 @@ function go(item) {
           <g v-else-if="item.icon === 'cart'"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></g>
           <g v-else-if="item.icon === 'clipboard'"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 12h6M9 16h6"/></g>
           <g v-else-if="item.icon === 'users'"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></g>
+          <g v-else-if="item.icon === 'wallet'"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 000 4h4v-4z"/></g>
+          <g v-else-if="item.icon === 'heart'"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></g>
           <g v-else-if="item.icon === 'warehouse'"><path d="M22 8.35V20a2 2 0 01-2 2H4a2 2 0 01-2-2V8.35a2 2 0 011.26-1.86l8-3.2a2 2 0 011.48 0l8 3.2A2 2 0 0122 8.35z"/><path d="M6 18h12M6 14h12M6 22V10"/></g>
           <g v-else-if="item.icon === 'badge'"><path d="M3.85 8.62a4 4 0 014.78-4.77 4 4 0 016.74 0 4 4 0 014.78 4.78 4 4 0 010 6.74 4 4 0 01-4.77 4.78 4 4 0 01-6.75 0 4 4 0 01-4.78-4.77 4 4 0 010-6.76z"/><path d="M9 12l2 2 4-4"/></g>
           <g v-else-if="item.icon === 'chart'"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></g>
@@ -120,7 +124,11 @@ function go(item) {
       </button>
 
       <!-- Total debt card -->
-      <div class="w-full px-3 py-2.5 rounded-xl bg-white/5">
+      <button
+        type="button"
+        @click="router.push('/debt')"
+        class="w-full text-left px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition"
+      >
         <div class="flex items-center justify-between">
           <div class="text-[11px] text-slate-400">Công nợ tổng</div>
           <span v-if="debtSummary?.overdue_total > 0" class="text-[9px] font-bold uppercase bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded">
@@ -134,7 +142,7 @@ function go(item) {
           {{ debtSummary.order_count }} đơn · {{ debtSummary.contact_count }} KH
         </div>
         <div v-else-if="debtSummary" class="text-[10px] text-slate-500 mt-0.5">Không có công nợ</div>
-      </div>
+      </button>
 
       <!-- Support card -->
       <div class="px-3 py-2.5 rounded-xl bg-white/5">
