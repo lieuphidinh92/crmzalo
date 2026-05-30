@@ -38,8 +38,8 @@ const navItems = computed(() => [
   { name: 'create', label: 'Tạo đơn hàng', to: '/pos', icon: 'cart' },
   { name: 'orders', label: 'Đơn hàng', to: '/orders', icon: 'clipboard', soon: true },
   { name: 'customers', label: 'Khách hàng', to: '/customers', icon: 'users' },
-  { name: 'inventory', label: 'Tồn kho', to: '/inventory', icon: 'warehouse', soon: true },
-  { name: 'promo', label: 'Khuyến mãi', to: '/promotions', icon: 'badge', hot: true, soon: true },
+  { name: 'inventory', label: 'Tồn kho', to: '/inventory', icon: 'warehouse' },
+  { name: 'promo', label: 'Khuyến mãi', to: '/promotions', icon: 'badge', hot: true },
   { name: 'reports', label: 'Báo cáo', to: '/reports', icon: 'chart', soon: true },
   { name: 'settings', label: 'Cài đặt', to: '/settings', icon: 'cog', soon: !isAdmin.value },
 ]);
@@ -104,7 +104,7 @@ function go(item) {
     <div class="border-t border-white/5 px-3 py-3 space-y-2">
       <!-- User profile -->
       <button
-        @click="auth.logout()"
+        @click="router.push('/account')"
         class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition text-left"
       >
         <div class="w-10 h-10 rounded-full bg-royal-700 flex items-center justify-center text-white text-sm font-semibold shrink-0">
