@@ -15,6 +15,8 @@
  *  GET  /api/v1/sale-app/customers/search?q=     → contact search (member-scoped)
  *  POST /api/v1/sale-app/customers               → quick-create a new contact
  *  GET  /api/v1/sale-app/products/search?q=&tier= → product catalog with tier price
+ *  GET  /api/v1/sale-app/products                → paginated list w/ filters+sort
+ *  GET  /api/v1/sale-app/products/:id            → detail incl. tier prices, batches
  *  POST /api/v1/sale-app/orders                  → create order + items in one txn
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -684,6 +686,298 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[sale-app] products/search error:', err);
       return reply.status(500).send({ error: 'Lỗi tìm sản phẩm' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/products ─ paginated catalog w/ filters+sort ─
+  // Mặc định tier = "Đại lý cấp 2 (VIP)" (rẻ nhất). Trả wholesale +
+  // retail + estimated_profit. KHÔNG trả cost_price (sensitive).
+  // Filters: `low-stock` (stock <= warning), `near-expiry` (batch <90d),
+  // `bestseller` (top sold tháng), `promotion` (stub — chưa engine).
+  app.get('/api/v1/sale-app/products', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const {
+        q = '',
+        brand = '',
+        filter = '',
+        sort = 'name',
+        page = '1',
+        limit = '20',
+        tier = 'dai_ly_cap_2',
+      } = request.query as Record<string, string>;
+
+      const tierName = TIER_NAME_MAP[tier] ?? TIER_NAME_MAP.dai_ly_cap_2;
+      const take = Math.min(50, Math.max(1, parseInt(limit) || 20));
+      const skip = (Math.max(1, parseInt(page) || 1) - 1) * take;
+
+      const where: any = { orgId: user.orgId, status: 'active' };
+      if (brand) where.brandId = brand;
+      if (q.trim()) {
+        const term = q.trim();
+        where.OR = [
+          { sku: { contains: term, mode: 'insensitive' } },
+          { name: { contains: term, mode: 'insensitive' } },
+        ];
+      }
+
+      // Filter chips
+      if (filter === 'low-stock') {
+        // Postgres has no two-column comparison in Prisma where; fetch
+        // broader window and filter in code (acceptable at ~1k products).
+        // For larger catalog → switch to $queryRaw with WHERE total_stock <= warning_stock.
+      } else if (filter === 'near-expiry') {
+        const cutoff = new Date(Date.now() + 90 * 86400_000);
+        where.batches = {
+          some: { status: 'active', currentQuantity: { gt: 0 }, expiryDate: { lt: cutoff } },
+        };
+      } else if (filter === 'bestseller') {
+        // Resolved via a separate aggregation below — flag here so we
+        // know to re-sort.
+      } else if (filter === 'promotion') {
+        // Stub for Phase 3.4 — return empty to avoid lying to UI.
+        return { products: [], total: 0, page: parseInt(page) || 1, limit: take };
+      }
+
+      // Bestseller mode: pull top SKUs by month order qty first, then load.
+      let bestsellerOrder: string[] | null = null;
+      if (filter === 'bestseller') {
+        const monthStart = startOfMonth(new Date());
+        const orderWhere: any = {
+          orgId: user.orgId,
+          status: { in: COUNTABLE_STATUSES },
+          orderDate: { gte: monthStart },
+        };
+        if (user.role === 'member') {
+          orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+        }
+        const grouped: any[] = await prisma.orderItem.groupBy({
+          by: ['productId'],
+          where: { order: orderWhere, productId: { not: null } },
+          _sum: { quantity: true },
+          orderBy: { _sum: { quantity: 'desc' } },
+          take: take * 3, // pre-fetch larger window since we still need to apply filters
+        });
+        bestsellerOrder = grouped.map((g: any) => g.productId).filter(Boolean);
+        if (bestsellerOrder.length === 0) {
+          return { products: [], total: 0, page: parseInt(page) || 1, limit: take };
+        }
+        where.id = { in: bestsellerOrder };
+      }
+
+      // Default sort
+      let orderBy: any = { name: 'asc' };
+      if (sort === 'newest') orderBy = { createdAt: 'desc' };
+      else if (sort === 'stock') orderBy = { totalStock: 'desc' };
+      // sort=price handled post-fetch (depends on tier-resolved price)
+
+      const [rowsRaw, totalCount] = await Promise.all([
+        prisma.product.findMany({
+          where,
+          select: {
+            id: true, sku: true, name: true, unit: true, packageSize: true,
+            mainImageUrl: true, totalStock: true, warningStock: true,
+            createdAt: true,
+            brand: { select: { id: true, name: true } },
+            prices: {
+              where: { active: true },
+              select: { id: true, tierName: true, price: true, isDefault: true, displayOrder: true },
+              orderBy: { displayOrder: 'asc' },
+            },
+            batches: {
+              where: { status: 'active', currentQuantity: { gt: 0 } },
+              select: { expiryDate: true },
+              orderBy: { expiryDate: 'asc' },
+              take: 1,
+            },
+          },
+          orderBy,
+          skip: filter === 'low-stock' || filter === 'bestseller' ? 0 : skip,
+          take: filter === 'low-stock' || filter === 'bestseller' ? 200 : take,
+        }),
+        filter === 'low-stock' || filter === 'bestseller'
+          ? Promise.resolve(0)
+          : prisma.product.count({ where }),
+      ]);
+
+      let rows: any[] = rowsRaw;
+
+      // Filter low-stock in code
+      if (filter === 'low-stock') {
+        rows = rows.filter((r: any) => (r.totalStock ?? 0) <= (r.warningStock ?? 0));
+      }
+
+      // Bestseller: preserve API ranking
+      if (filter === 'bestseller' && bestsellerOrder) {
+        const order = new Map<string, number>(bestsellerOrder.map((id, idx) => [id, idx]));
+        rows.sort((a: any, b: any) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
+      }
+
+      const items = rows.map((p: any) => {
+        const wholesalePick =
+          p.prices.find((pr: any) => pr.tierName === tierName) ||
+          p.prices.find((pr: any) => pr.isDefault) ||
+          p.prices[0] ||
+          null;
+        const retailPick = p.prices.find((pr: any) => /lẻ|le|retail/i.test(pr.tierName ?? ''));
+        const wholesale = wholesalePick ? toNumber(wholesalePick.price) : 0;
+        const retail = retailPick ? toNumber(retailPick.price) : 0;
+        const profit = retail > wholesale ? retail - wholesale : 0;
+        const nearestExpiry = p.batches[0]?.expiryDate ?? null;
+        return {
+          id: p.id,
+          sku: p.sku,
+          name: p.name,
+          unit: p.unit,
+          package_size: p.packageSize,
+          mainImageUrl: p.mainImageUrl,
+          brand: p.brand,
+          stock: p.totalStock,
+          warning_stock: p.warningStock,
+          wholesale_price: wholesale,
+          wholesale_tier: wholesalePick?.tierName ?? null,
+          wholesale_price_tier_id: wholesalePick?.id ?? null,
+          retail_price: retail,
+          estimated_profit: profit,
+          nearest_expiry: nearestExpiry,
+          created_at: p.createdAt,
+        };
+      });
+
+      // Sort by tier-resolved price if requested
+      let sorted = items;
+      if (sort === 'price') {
+        sorted = [...items].sort((a, b) => a.wholesale_price - b.wholesale_price);
+      }
+
+      // Manual pagination for low-stock + bestseller modes
+      let pageItems = sorted;
+      let totalReturn = totalCount;
+      if (filter === 'low-stock' || filter === 'bestseller') {
+        totalReturn = sorted.length;
+        pageItems = sorted.slice(skip, skip + take);
+      }
+
+      return {
+        products: pageItems,
+        total: totalReturn,
+        page: parseInt(page) || 1,
+        limit: take,
+        tier_name: tierName,
+      };
+    } catch (err) {
+      logger.error('[sale-app] products list error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải danh mục sản phẩm' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/products/:id ─ detail ────────────────────────
+  app.get('/api/v1/sale-app/products/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { id } = request.params as { id: string };
+      const { tier = 'dai_ly_cap_2' } = request.query as { tier?: string };
+      const tierName = TIER_NAME_MAP[tier] ?? TIER_NAME_MAP.dai_ly_cap_2;
+
+      const p: any = await prisma.product.findFirst({
+        where: { id, orgId: user.orgId },
+        select: {
+          id: true, sku: true, name: true, unit: true, packageSize: true,
+          mainImageUrl: true, galleryUrls: true, status: true,
+          mainUse: true, targetAudience: true, usageMethod: true,
+          shelfLifeMonths: true, registrationNumber: true,
+          totalStock: true, warningStock: true, createdAt: true,
+          brand: { select: { id: true, name: true } },
+          prices: {
+            where: { active: true },
+            select: { id: true, tierName: true, price: true, isDefault: true, displayOrder: true },
+            orderBy: { displayOrder: 'asc' },
+          },
+          batches: {
+            where: { status: 'active' },
+            select: {
+              id: true, batchCode: true, currentQuantity: true,
+              importQuantity: true, expiryDate: true, manufactureDate: true,
+            },
+            orderBy: { expiryDate: 'asc' },
+          },
+        },
+      });
+      if (!p) return reply.status(404).send({ error: 'Sản phẩm không tồn tại' });
+
+      const wholesalePick =
+        p.prices.find((pr: any) => pr.tierName === tierName) ||
+        p.prices.find((pr: any) => pr.isDefault) ||
+        p.prices[0] ||
+        null;
+      const retailPick = p.prices.find((pr: any) => /lẻ|le|retail/i.test(pr.tierName ?? ''));
+      const wholesale = wholesalePick ? toNumber(wholesalePick.price) : 0;
+      const retail = retailPick ? toNumber(retailPick.price) : 0;
+
+      // Count orders last 30 days containing this SP (scope-aware).
+      const since = new Date(Date.now() - 30 * 86400_000);
+      const orderWhere: any = {
+        orgId: user.orgId,
+        status: { in: COUNTABLE_STATUSES },
+        orderDate: { gte: since },
+      };
+      if (user.role === 'member') {
+        orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+      }
+      const recent30d: any = await prisma.orderItem.aggregate({
+        where: { order: orderWhere, productId: p.id },
+        _sum: { quantity: true },
+        _count: { id: true },
+      });
+
+      return {
+        product: {
+          id: p.id,
+          sku: p.sku,
+          name: p.name,
+          unit: p.unit,
+          package_size: p.packageSize,
+          mainImageUrl: p.mainImageUrl,
+          galleryUrls: p.galleryUrls,
+          brand: p.brand,
+          stock: p.totalStock,
+          warning_stock: p.warningStock,
+          shelf_life_months: p.shelfLifeMonths,
+          registration_number: p.registrationNumber,
+          main_use: p.mainUse,
+          target_audience: p.targetAudience,
+          usage_method: p.usageMethod,
+          wholesale_price: wholesale,
+          wholesale_tier: wholesalePick?.tierName ?? null,
+          wholesale_price_tier_id: wholesalePick?.id ?? null,
+          retail_price: retail,
+          estimated_profit: retail > wholesale ? retail - wholesale : 0,
+          tiers: p.prices.map((pr: any) => ({
+            id: pr.id,
+            name: pr.tierName,
+            price: toNumber(pr.price),
+            isDefault: pr.isDefault,
+          })),
+          batches: p.batches.map((b: any) => ({
+            id: b.id,
+            batch_code: b.batchCode,
+            current_quantity: b.currentQuantity,
+            import_quantity: b.importQuantity,
+            expiry_date: b.expiryDate,
+            manufacture_date: b.manufactureDate,
+            days_until_expiry: b.expiryDate
+              ? Math.floor((new Date(b.expiryDate).getTime() - Date.now()) / 86400_000)
+              : null,
+          })),
+          stats: {
+            quantity_sold_30d: recent30d._sum.quantity ?? 0,
+            order_count_30d: recent30d._count.id,
+          },
+        },
+      };
+    } catch (err) {
+      logger.error('[sale-app] products detail error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải chi tiết sản phẩm' });
     }
   });
 
