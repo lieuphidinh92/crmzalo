@@ -17,6 +17,10 @@
  *  GET  /api/v1/sale-app/products/search?q=&tier= → product catalog with tier price
  *  GET  /api/v1/sale-app/products                → paginated list w/ filters+sort
  *  GET  /api/v1/sale-app/products/:id            → detail incl. tier prices, batches
+ *  GET  /api/v1/sale-app/reports/summary         → period KPI + trend vs previous
+ *  GET  /api/v1/sale-app/reports/revenue-trend   → time series for chart
+ *  GET  /api/v1/sale-app/reports/top-customers   → top N customers by revenue
+ *  GET  /api/v1/sale-app/reports/sku-mix         → SKU/brand breakdown by revenue
  *  POST /api/v1/sale-app/orders                  → create order + items in one txn
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -612,6 +616,390 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // ── GET /api/v1/sale-app/customers ─ paginated list w/ filters+sort ───
+  // Member sees only their own contacts; admin/owner sees the whole org.
+  // Debt + revenue are computed from orders (not the stale Contact.debtAmount
+  // column) so the figures match /debt-summary. Filters: `has_debt`,
+  // `tier`, `province`, `customerType`. Sort: recent (lastOrderDate) | name | debt.
+  app.get('/api/v1/sale-app/customers', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const {
+        q = '',
+        tier = '',
+        province = '',
+        customerType = '',
+        filter = '',
+        sort = 'recent',
+        page = '1',
+        limit = '20',
+      } = request.query as Record<string, string>;
+
+      const take = Math.min(50, Math.max(1, parseInt(limit) || 20));
+      const skip = (Math.max(1, parseInt(page) || 1) - 1) * take;
+
+      const where: any = { orgId: user.orgId };
+      if (user.role === 'member') where.assignedUserId = user.id;
+      if (tier) where.policyTier = tier;
+      if (province) where.province = { contains: province, mode: 'insensitive' };
+      if (customerType) where.customerType = customerType;
+      if (q.trim()) {
+        const term = q.trim();
+        where.OR = [
+          { fullName: { contains: term, mode: 'insensitive' } },
+          { phone: { contains: term } },
+          { storeName: { contains: term, mode: 'insensitive' } },
+          { misaCustomerCode: { contains: term, mode: 'insensitive' } },
+        ];
+      }
+
+      // has_debt + sort=debt depend on order aggregates, so pre-resolve the
+      // set of contactIds carrying outstanding debt within this org/scope.
+      let debtByContact: Map<string, { debt: number; revenue: number; orders: number }> | null = null;
+      const needsDebtFilter = filter === 'has_debt';
+      const needsDebtSort = sort === 'debt';
+      if (needsDebtFilter || needsDebtSort) {
+        const orderWhere: any = {
+          orgId: user.orgId,
+          debtAmountValue: { gt: 0 },
+          status: { notIn: ['cancelled'] },
+        };
+        if (user.role === 'member') {
+          orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+        }
+        const grouped: any[] = await prisma.order.groupBy({
+          by: ['contactId'],
+          where: orderWhere,
+          _sum: { debtAmountValue: true },
+        });
+        debtByContact = new Map(
+          grouped
+            .filter((g: any) => g.contactId)
+            .map((g: any) => [g.contactId, { debt: toNumber(g._sum.debtAmountValue), revenue: 0, orders: 0 }]),
+        );
+        if (needsDebtFilter) {
+          where.id = { in: Array.from(debtByContact.keys()) };
+          if (debtByContact.size === 0) {
+            return { customers: [], total: 0, page: parseInt(page) || 1, limit: take };
+          }
+        }
+      }
+
+      let orderBy: any = [{ lastOrderDate: { sort: 'desc', nulls: 'last' } }, { fullName: 'asc' }];
+      if (sort === 'name') orderBy = { fullName: 'asc' };
+      else if (sort === 'newest') orderBy = { createdAt: 'desc' };
+      // sort=debt handled post-fetch below.
+
+      // For debt-sort we can't page in SQL (debt lives in orders), so pull a
+      // wider window and slice in code. Otherwise page normally in SQL.
+      const sqlSkip = needsDebtSort ? 0 : skip;
+      const sqlTake = needsDebtSort ? 200 : take;
+
+      const [rows, total] = await Promise.all([
+        prisma.contact.findMany({
+          where,
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+            storeName: true,
+            province: true,
+            address: true,
+            misaCustomerCode: true,
+            customerType: true,
+            policyTier: true,
+            stage: true,
+            lastOrderDate: true,
+            createdAt: true,
+          },
+          orderBy,
+          skip: sqlSkip,
+          take: sqlTake,
+        }),
+        prisma.contact.count({ where }),
+      ]);
+
+      // Aggregate revenue + debt for the contacts on this page.
+      const pageIds = rows.map((c: any) => c.id);
+      const revByContact = new Map<string, { revenue: number; orders: number }>();
+      if (pageIds.length) {
+        const revWhere: any = {
+          orgId: user.orgId,
+          contactId: { in: pageIds },
+          status: { in: COUNTABLE_STATUSES },
+        };
+        const grouped: any[] = await prisma.order.groupBy({
+          by: ['contactId'],
+          where: revWhere,
+          _sum: { totalAmountValue: true },
+          _count: { id: true },
+        });
+        for (const g of grouped) {
+          if (g.contactId) {
+            revByContact.set(g.contactId, {
+              revenue: toNumber(g._sum.totalAmountValue),
+              orders: g._count.id,
+            });
+          }
+        }
+        // Backfill debt for the page if we didn't already compute it globally.
+        if (!debtByContact) {
+          const debtWhere: any = {
+            orgId: user.orgId,
+            contactId: { in: pageIds },
+            debtAmountValue: { gt: 0 },
+            status: { notIn: ['cancelled'] },
+          };
+          const debtGrouped: any[] = await prisma.order.groupBy({
+            by: ['contactId'],
+            where: debtWhere,
+            _sum: { debtAmountValue: true },
+          });
+          debtByContact = new Map(
+            debtGrouped
+              .filter((g: any) => g.contactId)
+              .map((g: any) => [g.contactId, { debt: toNumber(g._sum.debtAmountValue), revenue: 0, orders: 0 }]),
+          );
+        }
+      }
+
+      let items = rows.map((c: any) => ({
+        id: c.id,
+        full_name: c.fullName,
+        phone: c.phone,
+        store_name: c.storeName,
+        province: c.province,
+        address: c.address,
+        misa_customer_code: c.misaCustomerCode,
+        customer_type: c.customerType,
+        policy_tier: c.policyTier,
+        stage: c.stage,
+        last_order_date: c.lastOrderDate,
+        total_revenue: revByContact.get(c.id)?.revenue ?? 0,
+        order_count: revByContact.get(c.id)?.orders ?? 0,
+        debt: debtByContact?.get(c.id)?.debt ?? 0,
+      }));
+
+      let totalReturn = total;
+      if (needsDebtSort) {
+        items.sort((a: { debt: number }, b: { debt: number }) => b.debt - a.debt);
+        totalReturn = items.length;
+        items = items.slice(skip, skip + take);
+      }
+
+      return {
+        customers: items,
+        total: totalReturn,
+        page: parseInt(page) || 1,
+        limit: take,
+      };
+    } catch (err) {
+      logger.error('[sale-app] customers list error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải danh sách khách hàng' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/customers/:id ─ detail + order history + stats ─
+  // Member can only open contacts they're assigned to.
+  app.get('/api/v1/sale-app/customers/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { id } = request.params as { id: string };
+
+      const where: any = { id, orgId: user.orgId };
+      if (user.role === 'member') where.assignedUserId = user.id;
+
+      const c: any = await prisma.contact.findFirst({
+        where,
+        select: {
+          id: true,
+          fullName: true,
+          phone: true,
+          storeName: true,
+          province: true,
+          address: true,
+          misaCustomerCode: true,
+          customerType: true,
+          scale: true,
+          policyTier: true,
+          stage: true,
+          source: true,
+          notes: true,
+          internalNote: true,
+          rewardPoints: true,
+          lastOrderDate: true,
+          nextContactDate: true,
+          createdAt: true,
+          assignedUser: { select: { id: true, fullName: true } },
+        },
+      });
+      if (!c) return reply.status(404).send({ error: 'Khách hàng không tồn tại' });
+
+      // Order history (most recent 30) — scope already enforced via contactId.
+      const orders: any[] = await prisma.order.findMany({
+        where: { orgId: user.orgId, contactId: id },
+        select: {
+          id: true,
+          orderCode: true,
+          status: true,
+          totalAmount: true,
+          totalAmountValue: true,
+          debtAmountValue: true,
+          orderDate: true,
+          createdAt: true,
+        },
+        orderBy: { orderDate: 'desc' },
+        take: 30,
+      });
+
+      // Stats: revenue (countable only), order count, current debt.
+      const [revAgg, debtAgg] = await Promise.all([
+        prisma.order.aggregate({
+          where: { orgId: user.orgId, contactId: id, status: { in: COUNTABLE_STATUSES } },
+          _sum: { totalAmountValue: true },
+          _count: { id: true },
+        }),
+        prisma.order.aggregate({
+          where: {
+            orgId: user.orgId,
+            contactId: id,
+            debtAmountValue: { gt: 0 },
+            status: { notIn: ['cancelled'] },
+          },
+          _sum: { debtAmountValue: true },
+          _count: { id: true },
+        }),
+      ]);
+
+      const revenue = toNumber(revAgg._sum.totalAmountValue);
+      const orderCount = revAgg._count.id;
+
+      return {
+        customer: {
+          id: c.id,
+          full_name: c.fullName,
+          phone: c.phone,
+          store_name: c.storeName,
+          province: c.province,
+          address: c.address,
+          misa_customer_code: c.misaCustomerCode,
+          customer_type: c.customerType,
+          scale: c.scale,
+          policy_tier: c.policyTier,
+          stage: c.stage,
+          source: c.source,
+          notes: c.notes,
+          internal_note: c.internalNote,
+          reward_points: c.rewardPoints,
+          last_order_date: c.lastOrderDate,
+          next_contact_date: c.nextContactDate,
+          created_at: c.createdAt,
+          assigned_user: c.assignedUser
+            ? { id: c.assignedUser.id, name: c.assignedUser.fullName }
+            : null,
+          stats: {
+            total_revenue: revenue,
+            order_count: orderCount,
+            avg_order_value: orderCount > 0 ? Math.round(revenue / orderCount) : 0,
+            current_debt: toNumber(debtAgg._sum.debtAmountValue),
+            debt_order_count: debtAgg._count.id,
+          },
+          orders: orders.map((o: any) => ({
+            id: o.id,
+            order_code: o.orderCode,
+            status: o.status,
+            total_amount: toNumber(o.totalAmountValue ?? o.totalAmount),
+            debt_amount: toNumber(o.debtAmountValue),
+            order_date: o.orderDate,
+            created_at: o.createdAt,
+          })),
+        },
+      };
+    } catch (err) {
+      logger.error('[sale-app] customers detail error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải chi tiết khách hàng' });
+    }
+  });
+
+  // ── PUT /api/v1/sale-app/customers/:id ─ edit contact info ────────────
+  // Member can only edit contacts they're assigned to. Only the B2B sales
+  // fields exposed in the sale-app UI are editable here; nothing touches
+  // pipeline stage, debt, or assignment.
+  app.put('/api/v1/sale-app/customers/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { id } = request.params as { id: string };
+      const body = request.body as {
+        fullName?: string;
+        phone?: string;
+        storeName?: string;
+        province?: string;
+        address?: string;
+        customerType?: string;
+        policyTier?: string;
+        notes?: string;
+        internalNote?: string;
+      };
+
+      const where: any = { id, orgId: user.orgId };
+      if (user.role === 'member') where.assignedUserId = user.id;
+      const existing = await prisma.contact.findFirst({ where, select: { id: true } });
+      if (!existing) return reply.status(404).send({ error: 'Khách hàng không tồn tại' });
+
+      const data: any = {};
+      if (body.fullName !== undefined) {
+        if (!body.fullName.trim()) return reply.status(400).send({ error: 'Tên khách hàng là bắt buộc' });
+        data.fullName = body.fullName.trim();
+      }
+      if (body.phone !== undefined) {
+        if (!body.phone.trim()) return reply.status(400).send({ error: 'Số điện thoại là bắt buộc' });
+        data.phone = body.phone.trim();
+      }
+      if (body.storeName !== undefined) data.storeName = body.storeName?.trim() || null;
+      if (body.province !== undefined) data.province = body.province?.trim() || null;
+      if (body.address !== undefined) data.address = body.address?.trim() || null;
+      if (body.customerType !== undefined) data.customerType = body.customerType?.trim() || null;
+      if (body.policyTier !== undefined) data.policyTier = body.policyTier?.trim() || null;
+      if (body.notes !== undefined) data.notes = body.notes?.trim() || null;
+      if (body.internalNote !== undefined) data.internalNote = body.internalNote?.trim() || null;
+
+      const updated = await prisma.contact.update({
+        where: { id },
+        data,
+        select: {
+          id: true,
+          fullName: true,
+          phone: true,
+          storeName: true,
+          province: true,
+          address: true,
+          customerType: true,
+          policyTier: true,
+          notes: true,
+          internalNote: true,
+        },
+      });
+
+      return {
+        customer: {
+          id: updated.id,
+          full_name: updated.fullName,
+          phone: updated.phone,
+          store_name: updated.storeName,
+          province: updated.province,
+          address: updated.address,
+          customer_type: updated.customerType,
+          policy_tier: updated.policyTier,
+          notes: updated.notes,
+          internal_note: updated.internalNote,
+        },
+      };
+    } catch (err) {
+      logger.error('[sale-app] customers update error:', err);
+      return reply.status(500).send({ error: 'Lỗi cập nhật khách hàng' });
+    }
+  });
+
   // ── GET /api/v1/sale-app/products/search ──────────────────────────────
   app.get('/api/v1/sale-app/products/search', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -978,6 +1366,283 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[sale-app] products detail error:', err);
       return reply.status(500).send({ error: 'Lỗi tải chi tiết sản phẩm' });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // REPORTS — sale-personal performance views.
+  // Scope: member = own orders only (assignedSaleId OR createdByUserId).
+  //         owner/admin = whole org. Cost fields never leak.
+  // Period chip → [from, to) date range. "Trend" compares to immediately
+  // preceding window of the same length.
+  // ─────────────────────────────────────────────────────────────────────
+
+  function periodRange(period: string): { from: Date; to: Date; prevFrom: Date; prevTo: Date; label: string } {
+    const now = new Date();
+    const today = startOfDay(now);
+    let from: Date, to: Date, label: string;
+    if (period === 'last_month') {
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end = new Date(today.getFullYear(), today.getMonth(), 1);
+      from = start;
+      to = end;
+      label = 'Tháng trước';
+    } else if (period === '90d') {
+      from = new Date(today.getTime() - 90 * 86400_000);
+      to = new Date(today.getTime() + 86400_000);
+      label = '90 ngày';
+    } else if (period === 'ytd') {
+      from = new Date(today.getFullYear(), 0, 1);
+      to = new Date(today.getTime() + 86400_000);
+      label = 'YTD';
+    } else {
+      // default: this_month
+      from = startOfMonth(today);
+      to = new Date(today.getTime() + 86400_000);
+      label = 'Tháng này';
+    }
+    const span = to.getTime() - from.getTime();
+    const prevTo = new Date(from);
+    const prevFrom = new Date(from.getTime() - span);
+    return { from, to, prevFrom, prevTo, label };
+  }
+
+  function scopedOrderWhere(user: { id: string; orgId: string; role: string }) {
+    const base: any = { orgId: user.orgId, status: { in: COUNTABLE_STATUSES } };
+    if (user.role === 'member') {
+      base.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+    }
+    return base;
+  }
+
+  // ── GET /api/v1/sale-app/reports/summary ──────────────────────────────
+  app.get('/api/v1/sale-app/reports/summary', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { period = 'this_month' } = request.query as { period?: string };
+      const { from, to, prevFrom, prevTo, label } = periodRange(period);
+
+      const baseWhere = scopedOrderWhere(user);
+      const curWhere = { ...baseWhere, orderDate: { gte: from, lt: to } };
+      const prevWhere = { ...baseWhere, orderDate: { gte: prevFrom, lt: prevTo } };
+
+      const [cur, prev, curCustomers, prevCustomers] = await Promise.all([
+        prisma.order.aggregate({ where: curWhere, _sum: { totalAmount: true }, _count: { id: true } }),
+        prisma.order.aggregate({ where: prevWhere, _sum: { totalAmount: true }, _count: { id: true } }),
+        prisma.order.findMany({ where: curWhere, select: { contactId: true }, distinct: ['contactId'] }),
+        prisma.order.findMany({ where: prevWhere, select: { contactId: true }, distinct: ['contactId'] }),
+      ]);
+
+      const revenue = Math.round(cur._sum.totalAmount ?? 0);
+      const orderCount = cur._count.id;
+      const avgOrderValue = orderCount > 0 ? Math.round(revenue / orderCount) : 0;
+      const customerCount = curCustomers.length;
+
+      const prevRevenue = Math.round(prev._sum.totalAmount ?? 0);
+      const prevOrderCount = prev._count.id;
+      const prevAvg = prevOrderCount > 0 ? Math.round(prevRevenue / prevOrderCount) : 0;
+      const prevCustomerCount = prevCustomers.length;
+
+      const pct = (cur: number, prev: number): number | null => {
+        if (prev === 0) return cur === 0 ? 0 : null; // null = "N/A" (chia 0)
+        return Math.round(((cur - prev) / prev) * 1000) / 10;
+      };
+
+      return {
+        period: { key: period, label, from, to },
+        kpi: {
+          revenue: { value: revenue, prev: prevRevenue, trend_pct: pct(revenue, prevRevenue) },
+          order_count: { value: orderCount, prev: prevOrderCount, trend_pct: pct(orderCount, prevOrderCount) },
+          avg_order_value: { value: avgOrderValue, prev: prevAvg, trend_pct: pct(avgOrderValue, prevAvg) },
+          active_customers: { value: customerCount, prev: prevCustomerCount, trend_pct: pct(customerCount, prevCustomerCount) },
+        },
+      };
+    } catch (err) {
+      logger.error('[sale-app] reports/summary error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải báo cáo tổng quan' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/reports/revenue-trend ────────────────────────
+  // Aggregates orders into day/week/month buckets. Returns dense series
+  // (zero-filled) so the chart has consistent X-axis.
+  app.get('/api/v1/sale-app/reports/revenue-trend', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { period = 'this_month', groupBy = 'day' } = request.query as { period?: string; groupBy?: string };
+      const { from, to } = periodRange(period);
+
+      const baseWhere = scopedOrderWhere(user);
+      const rows: any[] = await prisma.order.findMany({
+        where: { ...baseWhere, orderDate: { gte: from, lt: to } },
+        select: { orderDate: true, totalAmount: true },
+      });
+
+      // Bucket-by helper.
+      const bucketKey = (d: Date): string => {
+        if (groupBy === 'month') {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+        if (groupBy === 'week') {
+          const monday = startOfWeek(d);
+          return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+        }
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      };
+
+      const buckets = new Map<string, { revenue: number; order_count: number }>();
+      for (const r of rows) {
+        if (!r.orderDate) continue;
+        const k = bucketKey(r.orderDate);
+        const b = buckets.get(k) ?? { revenue: 0, order_count: 0 };
+        b.revenue += Math.round(r.totalAmount ?? 0);
+        b.order_count += 1;
+        buckets.set(k, b);
+      }
+
+      // Build zero-filled series across the period for consistent X-axis.
+      const series: Array<{ bucket: string; revenue: number; order_count: number }> = [];
+      const cursor = new Date(from);
+      while (cursor < to) {
+        const k = bucketKey(cursor);
+        const b = buckets.get(k) ?? { revenue: 0, order_count: 0 };
+        series.push({ bucket: k, ...b });
+        if (groupBy === 'month') {
+          cursor.setMonth(cursor.getMonth() + 1);
+        } else if (groupBy === 'week') {
+          cursor.setDate(cursor.getDate() + 7);
+        } else {
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        // Dedup: skip if same bucket key emitted twice (week boundary)
+        if (series.length > 1 && series[series.length - 1].bucket === series[series.length - 2].bucket) {
+          series.pop();
+        }
+        if (series.length > 400) break; // safety cap
+      }
+
+      return { series, group_by: groupBy };
+    } catch (err) {
+      logger.error('[sale-app] reports/revenue-trend error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải biểu đồ doanh thu' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/reports/top-customers ────────────────────────
+  app.get('/api/v1/sale-app/reports/top-customers', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { period = 'this_month', limit = '10' } = request.query as { period?: string; limit?: string };
+      const take = Math.min(50, Math.max(1, parseInt(limit) || 10));
+      const { from, to } = periodRange(period);
+
+      const baseWhere = scopedOrderWhere(user);
+      const grouped: any[] = await prisma.order.groupBy({
+        by: ['contactId'],
+        where: { ...baseWhere, orderDate: { gte: from, lt: to } },
+        _sum: { totalAmount: true },
+        _count: { id: true },
+        orderBy: { _sum: { totalAmount: 'desc' } },
+        take,
+      });
+
+      if (grouped.length === 0) return { customers: [] };
+
+      const ids = grouped.map((g: any) => g.contactId);
+      const contacts = await prisma.contact.findMany({
+        where: { id: { in: ids } },
+        select: {
+          id: true,
+          fullName: true,
+          storeName: true,
+          phone: true,
+          province: true,
+          customerType: true,
+          policyTier: true,
+          lastOrderDate: true,
+        },
+      });
+      const cmap = new Map<string, any>(contacts.map((c: any) => [c.id, c]));
+
+      const customers = grouped.map((g: any) => {
+        const c = cmap.get(g.contactId);
+        return {
+          id: g.contactId,
+          full_name: c?.fullName ?? '—',
+          store_name: c?.storeName ?? null,
+          phone: c?.phone ?? null,
+          province: c?.province ?? null,
+          customer_type: c?.customerType ?? null,
+          policy_tier: c?.policyTier ?? null,
+          last_order_date: c?.lastOrderDate ?? null,
+          revenue: Math.round(g._sum.totalAmount ?? 0),
+          order_count: g._count.id,
+        };
+      });
+
+      return { customers };
+    } catch (err) {
+      logger.error('[sale-app] reports/top-customers error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải top khách hàng' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/reports/sku-mix ──────────────────────────────
+  // Aggregate line_total by brand (default) or product. Used for "Cơ cấu
+  // doanh số theo brand/SP" horizontal bar widget.
+  app.get('/api/v1/sale-app/reports/sku-mix', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { period = 'this_month', groupBy = 'brand', limit = '10' } = request.query as {
+        period?: string;
+        groupBy?: string;
+        limit?: string;
+      };
+      const take = Math.min(30, Math.max(1, parseInt(limit) || 10));
+      const { from, to } = periodRange(period);
+
+      const orderWhere = scopedOrderWhere(user);
+      // Build items query — only line_total + productId join for brand.
+      const items: any[] = await prisma.orderItem.findMany({
+        where: {
+          productId: { not: null },
+          order: { ...orderWhere, orderDate: { gte: from, lt: to } },
+        },
+        select: {
+          quantity: true,
+          lineTotal: true,
+          product: { select: { id: true, sku: true, name: true, brand: { select: { id: true, name: true } } } },
+        },
+      });
+
+      // Group in code (Prisma groupBy can't join + sum together cleanly).
+      const grouped = new Map<string, { key: string; label: string; revenue: number; quantity: number }>();
+      for (const it of items) {
+        let key: string, label: string;
+        if (groupBy === 'product') {
+          key = it.product?.id ?? 'unknown';
+          label = it.product?.name ?? '—';
+        } else {
+          key = it.product?.brand?.id ?? 'no_brand';
+          label = it.product?.brand?.name ?? 'Chưa gắn brand';
+        }
+        const g = grouped.get(key) ?? { key, label, revenue: 0, quantity: 0 };
+        g.revenue += Math.round(it.lineTotal ?? 0);
+        g.quantity += Number(it.quantity ?? 0);
+        grouped.set(key, g);
+      }
+
+      const arr = Array.from(grouped.values()).sort((a, b) => b.revenue - a.revenue);
+      const total = arr.reduce((s, g) => s + g.revenue, 0);
+      const topItems = arr.slice(0, take).map((g) => ({
+        ...g,
+        share_pct: total > 0 ? Math.round((g.revenue / total) * 1000) / 10 : 0,
+      }));
+
+      return { items: topItems, total_revenue: total, group_by: groupBy };
+    } catch (err) {
+      logger.error('[sale-app] reports/sku-mix error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải cơ cấu doanh số' });
     }
   });
 

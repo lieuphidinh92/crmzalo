@@ -16,8 +16,9 @@ const routes = [
       { path: 'pos', name: 'pos', component: () => import('../views/POS.vue'), alias: '/create-order' },
       // Phase 3+ modules — stubbed for now so the 5-tab nav has no dead links.
       { path: 'products', name: 'products', component: () => import('../views/Products.vue') },
-      { path: 'orders', name: 'orders', component: () => import('../views/ComingSoon.vue') },
-      { path: 'customers', name: 'customers', component: () => import('../views/ComingSoon.vue') },
+      { path: 'orders', name: 'orders', component: () => import('../views/Orders.vue') },
+      { path: 'orders/:id', name: 'order-detail', component: () => import('../views/OrderDetail.vue') },
+      { path: 'customers', name: 'customers', component: () => import('../views/Customers.vue') },
       { path: 'inventory', name: 'inventory', component: () => import('../views/ComingSoon.vue') },
       { path: 'promotions', name: 'promotions', component: () => import('../views/ComingSoon.vue') },
       { path: 'reports', name: 'reports', component: () => import('../views/ComingSoon.vue') },

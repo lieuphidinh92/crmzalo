@@ -60,7 +60,7 @@ const quickActions = [
   { label: 'Báo giá nhanh', sub: 'Tạo báo giá gửi KH', icon: 'doc', soon: true },
   { label: 'Kho hàng', sub: 'Kiểm tra tồn kho', icon: 'warehouse', soon: true },
   { label: 'Khuyến mãi', sub: 'Chương trình hiện có', icon: 'gift', soon: true },
-  { label: 'Khách hàng', sub: 'Tìm và tạo mới', icon: 'users', soon: true },
+  { label: 'Khách hàng', sub: 'Tìm và tạo mới', icon: 'users', to: '/customers' },
   { label: 'Sản phẩm mới', sub: 'SP vừa cập nhật', icon: 'box', soon: true },
 ];
 
