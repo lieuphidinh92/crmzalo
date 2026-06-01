@@ -10,6 +10,7 @@ const form = ref({
   storeName: '',
   province: '',
   policyTier: 'dai_ly_cap_1',
+  creditLimit: '',
 });
 const loading = ref(false);
 const errorMsg = ref('');
@@ -68,6 +69,10 @@ async function submit() {
             <option value="dai_ly_cap_1">Đại lý cấp 1</option>
             <option value="dai_ly_cap_2">Đại lý cấp 2 (VIP)</option>
           </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-ink-primary mb-1">Hạn mức công nợ (đ)</label>
+          <input v-model="form.creditLimit" type="number" min="0" step="1000000" inputmode="numeric" placeholder="Để trống nếu không giới hạn" class="w-full h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none" />
         </div>
 
         <div v-if="errorMsg" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

@@ -677,6 +677,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         province?: string;
         address?: string;
         policyTier?: string;
+        creditLimit?: number | string | null;
       };
 
       if (!body.fullName?.trim()) {
@@ -695,6 +696,10 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           province: body.province?.trim() || null,
           address: body.address?.trim() || null,
           policyTier: body.policyTier?.trim() || null,
+          creditLimit:
+            body.creditLimit == null || body.creditLimit === ''
+              ? null
+              : Math.max(0, Math.round(Number(body.creditLimit))),
           assignedUserId: user.id,
           source: 'sale_app',
           stage: 'tiep_can',
@@ -1035,6 +1040,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         policyTier?: string;
         notes?: string;
         internalNote?: string;
+        creditLimit?: number | string | null;
       };
 
       const where: any = { id, orgId: user.orgId };
@@ -1058,6 +1064,12 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       if (body.policyTier !== undefined) data.policyTier = body.policyTier?.trim() || null;
       if (body.notes !== undefined) data.notes = body.notes?.trim() || null;
       if (body.internalNote !== undefined) data.internalNote = body.internalNote?.trim() || null;
+      if (body.creditLimit !== undefined) {
+        data.creditLimit =
+          body.creditLimit == null || body.creditLimit === ''
+            ? null
+            : Math.max(0, Math.round(Number(body.creditLimit)));
+      }
 
       const updated = await prisma.contact.update({
         where: { id },
@@ -1073,6 +1085,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           policyTier: true,
           notes: true,
           internalNote: true,
+          creditLimit: true,
         },
       });
 
@@ -1088,6 +1101,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           policy_tier: updated.policyTier,
           notes: updated.notes,
           internal_note: updated.internalNote,
+          credit_limit: updated.creditLimit == null ? null : toNumber(updated.creditLimit),
         },
       };
     } catch (err) {

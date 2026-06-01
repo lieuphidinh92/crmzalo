@@ -24,6 +24,15 @@ const canSubmit = computed(
   () => pos.selectedCustomer && pos.items.length > 0 && !pos.submitting,
 );
 
+// Cảnh báo mềm: đơn công nợ làm tổng nợ vượt hạn mức của KH.
+const overCreditLimit = computed(() => {
+  const cd = pos.customerDetail;
+  const limit = cd?.credit_limit;
+  if (!pos.isCredit || limit == null) return null;
+  const projected = (cd?.stats?.current_debt || 0) + pos.totalAmount;
+  return projected > limit ? projected - limit : null;
+});
+
 // Vận chuyển / thanh toán — bản đồ value ↔ nhãn.
 const SHIPPING = [
   { v: 'pickup_at_warehouse', l: 'Tự lấy' },
@@ -166,6 +175,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
         <div class="shrink-0 mt-3 bg-white border border-line-200 rounded-xl p-3 shadow-sm">
           <div v-if="submitErr" class="mb-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {{ submitErr }}
+          </div>
+          <div v-if="overCreditLimit" class="mb-2 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-1.5">
+            <span class="shrink-0">⚠</span>
+            <span>Đơn công nợ này làm KH <span class="font-semibold">vượt hạn mức {{ formatVND(overCreditLimit) }}</span> — cân nhắc trước khi chốt.</span>
           </div>
           <div class="flex items-end justify-between gap-3 mb-3">
             <div class="flex gap-4 text-sm">

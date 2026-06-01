@@ -90,6 +90,7 @@ function startEdit() {
     policyTier: c.policy_tier || '',
     notes: c.notes || '',
     internalNote: c.internal_note || '',
+    creditLimit: c.credit_limit ?? '',
   };
   saveError.value = '';
   editing.value = true;
@@ -246,6 +247,10 @@ function createOrder() {
                       <option v-for="o in TIER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
                     </select>
                   </div>
+                  <div>
+                    <label class="block text-xs font-medium text-ink-primary mb-1">Hạn mức công nợ (đ)</label>
+                    <input v-model="form.creditLimit" type="number" min="0" step="1000000" inputmode="numeric" placeholder="Trống = không giới hạn" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                  </div>
                   <div class="col-span-2">
                     <label class="block text-xs font-medium text-ink-primary mb-1">Ghi chú</label>
                     <textarea v-model="form.notes" rows="2" class="w-full px-3 py-2 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm resize-none"></textarea>
@@ -329,6 +334,17 @@ function createOrder() {
                       <div v-if="customer.stats?.debt_order_count" class="text-[11px] text-ink-secondary mt-0.5">
                         {{ customer.stats.debt_order_count }} đơn còn nợ
                       </div>
+                    </div>
+                    <div class="flex items-center justify-between px-4 py-2.5 rounded-card mb-3 bg-surface-soft text-sm">
+                      <span class="text-ink-secondary">Hạn mức công nợ</span>
+                      <span class="font-semibold text-ink-primary tabular-nums">
+                        {{ customer.credit_limit == null ? 'Chưa đặt' : formatVND(customer.credit_limit) }}
+                        <template v-if="customer.credit_limit != null">
+                          <span class="text-[11px] font-normal" :class="(customer.credit_limit - (customer.stats?.current_debt || 0)) < 0 ? 'text-red-600' : 'text-emerald-600'">
+                            (còn {{ formatVND(customer.credit_limit - (customer.stats?.current_debt || 0)) }})
+                          </span>
+                        </template>
+                      </span>
                     </div>
                     <div v-if="!debtOrders.length" class="text-ink-secondary text-center py-6 text-sm">
                       Không có đơn nào còn nợ 🎉
