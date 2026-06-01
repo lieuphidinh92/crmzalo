@@ -626,6 +626,17 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           customerType: true,
           lastOrderDate: true,
           stage: true,
+          // NV phụ trách cũ → frontend tự điền "Nhân viên sale" theo lịch sử.
+          assignedUserId: true,
+          assignedUser: { select: { id: true, fullName: true } },
+          rewardPoints: true,
+          creditLimit: true,
+          // Hồ sơ xuất HĐ mặc định → frontend tự điền sẵn khi chọn KH.
+          invoiceBuyerType: true,
+          invoiceBuyerName: true,
+          invoiceTaxCode: true,
+          invoiceAddress: true,
+          invoiceEmail: true,
         },
         orderBy: [{ lastOrderDate: { sort: 'desc', nulls: 'last' } }, { fullName: 'asc' }],
         take: 20,
@@ -635,6 +646,23 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[sale-app] customers/search error:', err);
       return reply.status(500).send({ error: 'Lỗi tìm khách hàng' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/staff ─ danh sách nhân viên để chọn NV sale ──
+  // Mọi role xem được toàn đội (để gán đơn cho đúng người phụ trách).
+  app.get('/api/v1/sale-app/staff', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const staff = await prisma.user.findMany({
+        where: { orgId: user.orgId, isActive: true },
+        select: { id: true, fullName: true },
+        orderBy: { fullName: 'asc' },
+      });
+      return { staff };
+    } catch (err) {
+      logger.error('[sale-app] staff list error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải danh sách nhân viên' });
     }
   });
 
@@ -893,6 +921,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           notes: true,
           internalNote: true,
           rewardPoints: true,
+          creditLimit: true,
           lastOrderDate: true,
           nextContactDate: true,
           createdAt: true,
@@ -960,6 +989,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           last_order_date: c.lastOrderDate,
           next_contact_date: c.nextContactDate,
           created_at: c.createdAt,
+          credit_limit: c.creditLimit == null ? null : toNumber(c.creditLimit),
           assigned_user: c.assignedUser
             ? { id: c.assignedUser.id, name: c.assignedUser.fullName }
             : null,
@@ -1787,13 +1817,62 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         }>;
         shippingMethod?: string;
         paymentMethod?: string;
+        shippingFee?: number;
+        paidAmount?: number;
+        debtTermDays?: number;
         note?: string;
         source?: string;
         orderDate?: string;
+        recipientName?: string;
+        recipientPhone?: string;
+        deliveryAddress?: string;
+        needsVatInvoice?: boolean;
+        invoiceBuyerType?: string;
+        invoiceBuyerName?: string;
+        invoiceTaxCode?: string;
+        invoiceAddress?: string;
+        invoiceEmail?: string;
+        saveInvoiceToCustomer?: boolean;
+        assignedSaleId?: string;
+        referrerName?: string;
       };
 
       if (!body.contactId) return reply.status(400).send({ error: 'Vui lòng chọn khách hàng' });
       if (!body.items?.length) return reply.status(400).send({ error: 'Vui lòng chọn ít nhất 1 sản phẩm' });
+
+      // Phí ship / trả trước: số tiền VND, không âm. Mặc định 0.
+      const shippingFee = Math.max(0, Math.round(toNumber(body.shippingFee ?? 0)));
+      const paidAmount = Math.max(0, Math.round(toNumber(body.paidAmount ?? 0)));
+      if (!Number.isFinite(shippingFee)) return reply.status(400).send({ error: 'Phí ship không hợp lệ' });
+      if (!Number.isFinite(paidAmount)) return reply.status(400).send({ error: 'Số tiền trả trước không hợp lệ' });
+
+      // Công nợ: bắt buộc có hạn nợ (số ngày) khi chọn thanh toán "credit".
+      const isCredit = body.paymentMethod === 'credit';
+      const debtTermDays = Math.max(0, Math.floor(toNumber(body.debtTermDays ?? 0)));
+      if (isCredit && debtTermDays <= 0) {
+        return reply.status(400).send({ error: 'Đơn công nợ cần nhập số ngày cho nợ' });
+      }
+
+      // Hóa đơn VAT: giá đã gồm VAT nên KHÔNG tính thêm tiền — chỉ lưu thông tin
+      // người mua để phát hành HĐ. Doanh nghiệp (HKD/Công ty) bắt buộc có MST.
+      const needsVatInvoice = body.needsVatInvoice === true;
+      const str = (v?: string) => (v && v.trim() ? v.trim() : null);
+      const invoice = needsVatInvoice
+        ? {
+            invoiceBuyerType: str(body.invoiceBuyerType),
+            invoiceBuyerName: str(body.invoiceBuyerName),
+            invoiceTaxCode: str(body.invoiceTaxCode),
+            invoiceAddress: str(body.invoiceAddress),
+            invoiceEmail: str(body.invoiceEmail),
+          }
+        : { invoiceBuyerType: null, invoiceBuyerName: null, invoiceTaxCode: null, invoiceAddress: null, invoiceEmail: null };
+      if (
+        needsVatInvoice &&
+        (invoice.invoiceBuyerType === 'cong_ty' || invoice.invoiceBuyerType === 'ho_kinh_doanh') &&
+        !invoice.invoiceTaxCode
+      ) {
+        return reply.status(400).send({ error: 'Hộ kinh doanh / Công ty cần nhập Mã số thuế để xuất hóa đơn' });
+      }
 
       // Verify contact + products belong to this org
       const contact = await prisma.contact.findFirst({
@@ -1801,6 +1880,19 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true, assignedUserId: true, address: true },
       });
       if (!contact) return reply.status(404).send({ error: 'Khách hàng không tồn tại' });
+
+      // Nhân viên sale: ưu tiên lựa chọn từ form (nếu hợp lệ trong org) → NV phụ
+      // trách cũ của KH (lịch sử) → NV đang đăng nhập (khách mới chưa có NV).
+      let assignedSaleId = contact.assignedUserId ?? user.id;
+      if (body.assignedSaleId) {
+        const staff = await prisma.user.findFirst({
+          where: { id: body.assignedSaleId, orgId: user.orgId, isActive: true },
+          select: { id: true },
+        });
+        if (!staff) return reply.status(400).send({ error: 'Nhân viên sale không hợp lệ' });
+        assignedSaleId = staff.id;
+      }
+      const referrerName = str(body.referrerName);
 
       const productIds = body.items.map((it) => it.productId);
       const products = await prisma.product.findMany({
@@ -1818,21 +1910,17 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         if (it.unitPrice === undefined || it.unitPrice < 0) {
           return reply.status(400).send({ error: 'Đơn giá phải ≥ 0' });
         }
-        const product = productMap.get(it.productId)!;
-        if (
-          product.allowOversell === false &&
-          it.quantity > product.totalStock &&
-          user.role === 'member'
-        ) {
-          return reply.status(400).send({
-            error: `"${product.name}" vượt tồn kho (còn ${product.totalStock}), chỉ admin được chốt`,
-          });
-        }
+        // Bán sỉ cho phép bán trước/đặt hàng: mọi vai trò (kể cả sale) đều chốt
+        // được đơn vượt tồn. Giỏ hàng đã cảnh báo "Hết hàng/Vượt tồn" cho sale.
       }
 
       const orderCode = await generateOrderCode(user.orgId);
       const now = new Date();
       const orderDate = body.orderDate ? new Date(body.orderDate) : now;
+      // Hạn trả nợ = ngày đơn + số ngày cho nợ (chỉ áp dụng đơn công nợ).
+      const debtDueDate = isCredit
+        ? new Date(orderDate.getTime() + debtTermDays * 86400000)
+        : null;
 
       // Single transaction: create order shell + all items, then recompute totals.
       const created = await prisma.$transaction(async (tx: any) => {
@@ -1845,17 +1933,24 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             status: 'confirmed',
             orderDate,
             confirmedAt: now,
-            assignedSaleId: contact.assignedUserId ?? user.id,
+            assignedSaleId,
+            referrerName,
             source: body.source ?? 'sale_app',
             shippingMethod: body.shippingMethod ?? null,
             paymentMethod: body.paymentMethod ?? null,
-            deliveryAddress: contact.address ?? null,
+            shippingFee,
+            debtDueDate,
+            deliveryAddress: body.deliveryAddress ?? contact.address ?? null,
+            recipientName: body.recipientName ?? null,
+            recipientPhone: body.recipientPhone ?? null,
+            needsVatInvoice,
+            ...invoice,
             internalNote: body.note ?? null,
             totalAmount: 0,
             subtotalAmount: 0,
             totalAmountValue: 0,
             discountAmount: 0,
-            paidAmount: 0,
+            paidAmount,
           },
         });
 
@@ -1892,6 +1987,14 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         await recomputeOrderTotals(order.id, tx);
         return order;
       });
+
+      // Lưu hồ sơ HĐ làm mặc định cho KH (đơn sau tự điền sẵn) khi sale chọn.
+      if (needsVatInvoice && body.saveInvoiceToCustomer === true) {
+        await prisma.contact.update({
+          where: { id: contact.id },
+          data: { ...invoice },
+        });
+      }
 
       const full = await prisma.order.findUnique({
         where: { id: created.id },

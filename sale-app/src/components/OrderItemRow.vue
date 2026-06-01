@@ -5,7 +5,7 @@ import { formatVND, formatDateVN } from '../composables/useFormat';
 const props = defineProps({
   item: { type: Object, required: true },
 });
-const emit = defineEmits(['update-qty', 'remove']);
+const emit = defineEmits(['update-qty', 'update-price', 'update-discount', 'remove']);
 
 const EXPIRY_WARN_DAYS = 90;
 
@@ -19,6 +19,36 @@ function onInput(e) {
   const val = parseInt(e.target.value);
   if (!isNaN(val) && val >= 1) emit('update-qty', val);
 }
+
+// Phase 2 — sửa đơn giá thương lượng (integer VND >= 0).
+function onPriceInput(e) {
+  const val = parseInt(e.target.value);
+  emit('update-price', isNaN(val) || val < 0 ? 0 : val);
+}
+// Phase 2 — chiết khấu dòng (integer VND >= 0).
+function onDiscountInput(e) {
+  const val = parseInt(e.target.value);
+  emit('update-discount', isNaN(val) || val < 0 ? 0 : val);
+}
+
+const discountValue = computed(() => Number(props.item.discountValue) || 0);
+
+// Thành tiền dòng = đơn giá × số lượng − chiết khấu (kẹp >= 0).
+const lineTotal = computed(() => {
+  const gross = (Number(props.item.unitPrice) || 0) * (Number(props.item.quantity) || 0);
+  return Math.max(0, gross - discountValue.value);
+});
+
+// Giá vốn — CHỈ hiển thị khi field tồn tại (member thường không có).
+const itemCost = computed(() => {
+  const c = props.item.cost ?? props.item.unitCost;
+  return c === undefined || c === null ? null : Number(c);
+});
+const isBelowCost = computed(
+  () =>
+    itemCost.value !== null &&
+    (Number(props.item.unitPrice) || 0) < itemCost.value,
+);
 
 // HẾT HÀNG: tồn = 0
 const isOutOfStock = computed(() => props.item.stock === 0);
@@ -77,7 +107,36 @@ const isNearExpiry = computed(
 
       <div class="text-right">
         <div class="text-[11px] text-ink-secondary">{{ formatVND(item.unitPrice) }} × {{ item.quantity }}</div>
-        <div class="font-bold text-royal-700">{{ formatVND(item.unitPrice * item.quantity) }}</div>
+        <div class="font-bold text-royal-700">{{ formatVND(lineTotal) }}</div>
+      </div>
+    </div>
+
+    <!-- Phase 2: đơn giá thương lượng + chiết khấu dòng -->
+    <div class="mt-2 grid grid-cols-2 gap-2">
+      <div>
+        <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1">Đơn giá</div>
+        <input
+          :value="item.unitPrice"
+          @input="onPriceInput"
+          type="number"
+          min="0"
+          step="1000"
+          inputmode="numeric"
+          class="w-full h-9 px-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm text-right"
+        />
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1">Chiết khấu</div>
+        <input
+          :value="discountValue"
+          @input="onDiscountInput"
+          type="number"
+          min="0"
+          step="1000"
+          inputmode="numeric"
+          placeholder="0"
+          class="w-full h-9 px-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm text-right"
+        />
       </div>
     </div>
 
@@ -87,7 +146,10 @@ const isNearExpiry = computed(
     </div>
 
     <!-- Cảnh báo mềm (có thể hiện đồng thời nhiều badge) -->
-    <div v-if="isOutOfStock || isOverStock || isNearExpiry || isExpired" class="mt-1.5 flex flex-wrap gap-1.5">
+    <div v-if="isOutOfStock || isOverStock || isNearExpiry || isExpired || isBelowCost" class="mt-1.5 flex flex-wrap gap-1.5">
+      <span v-if="isBelowCost" class="text-[11px] text-red-700 bg-red-50 rounded px-2 py-1">
+        ⛔ Dưới giá vốn
+      </span>
       <span v-if="isOutOfStock" class="text-[11px] text-red-700 bg-red-50 rounded px-2 py-1">
         ⛔ Hết hàng
       </span>

@@ -147,6 +147,12 @@ model Contact {
   address                String?
   customerType           String?   @map("customer_type") // nha_thuoc | si_online | duoc_si | cua_hang_me_be
   scale                  String? // nho | vua | lon
+  // Hồ sơ xuất hóa đơn VAT mặc định của KH (đơn mới tự điền sẵn, vẫn sửa được).
+  invoiceBuyerType       String?   @map("invoice_buyer_type") // ca_nhan | ho_kinh_doanh | cong_ty
+  invoiceBuyerName       String?   @map("invoice_buyer_name")
+  invoiceTaxCode         String?   @map("invoice_tax_code")
+  invoiceAddress         String?   @map("invoice_address")
+  invoiceEmail           String?   @map("invoice_email")
   currentProducts        Json      @default("[]") @map("current_products")
   currentSupplier        String?   @map("current_supplier")
   monthlyRevenueEstimate String?   @map("monthly_revenue_estimate")
@@ -155,6 +161,7 @@ model Contact {
   stuckReason            String?   @map("stuck_reason")
   policyTier             String?   @map("policy_tier") // ctv | dai_ly_cap_1 | dai_ly_cap_2
   debtAmount             Decimal?  @map("debt_amount") @db.Decimal(15, 2)
+  creditLimit            Decimal?  @map("credit_limit") @db.Decimal(15, 2) // hạn mức công nợ
   lastOrderDate          DateTime? @map("last_order_date")
   nextContactDate        DateTime? @map("next_contact_date")
   internalNote           String?   @map("internal_note")
@@ -503,6 +510,8 @@ model Order {
   trackingCode     String?   @map("tracking_code")
   shippingFee      Decimal   @default(0) @map("shipping_fee") @db.Decimal(15, 2)
   deliveryAddress  String?   @map("delivery_address")
+  recipientName    String?   @map("recipient_name")
+  recipientPhone   String?   @map("recipient_phone")
   // Snapshots of the cart total (auto-computed in service):
   //   subtotalAmount  = SUM(line_total)
   //   discountAmount  = the resolved discount in VND (already applied)
@@ -526,6 +535,19 @@ model Order {
   vatInvoiceId     String? @map("vat_invoice_id")
   vatInvoiceStatus String  @default("not_issued") @map("vat_invoice_status")
   vatInvoiceUrl    String? @map("vat_invoice_url")
+
+  // Thông tin người mua để xuất hóa đơn VAT (per-order; prefill từ Contact,
+  // cho phép override vì khách có thể tách nhiều công ty). Giá đã gồm VAT
+  // nên KHÔNG tính thêm tiền — chỉ lưu thông tin để phát hành HĐ.
+  needsVatInvoice  Boolean @default(false) @map("needs_vat_invoice")
+  invoiceBuyerType String? @map("invoice_buyer_type") // ca_nhan | ho_kinh_doanh | cong_ty
+  invoiceBuyerName String? @map("invoice_buyer_name")
+  invoiceTaxCode   String? @map("invoice_tax_code") // MST (HKD/Công ty) hoặc CCCD (cá nhân)
+  invoiceAddress   String? @map("invoice_address")
+  invoiceEmail     String? @map("invoice_email")
+
+  // Người giới thiệu đơn/khách (free text — có thể là đại lý, CTV, hoặc tên ngoài).
+  referrerName     String? @map("referrer_name")
 
   // Stage timestamps
   confirmedAt DateTime? @map("confirmed_at")
