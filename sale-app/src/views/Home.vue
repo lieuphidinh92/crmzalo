@@ -8,6 +8,7 @@ import { useAuthStore } from '../stores/auth';
 import { formatVND, formatDateTimeVN, statusLabel, statusColor } from '../composables/useFormat';
 import KpiCard from '../components/KpiCard.vue';
 import PromotionBanner from '../components/PromotionBanner.vue';
+import LeaderboardCard from '../components/LeaderboardCard.vue';
 
 dayjs.locale('vi');
 
@@ -134,6 +135,11 @@ function levelBadge(l) {
           icon="dollar-circle"
           iconColor="red"
         />
+      </div>
+
+      <!-- Bảng xếp hạng sale (gamification) -->
+      <div class="mb-5">
+        <LeaderboardCard />
       </div>
 
       <!-- Promotion banner + Low stock alerts -->

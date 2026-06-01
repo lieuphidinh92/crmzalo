@@ -1924,4 +1924,80 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send({ error: 'Lỗi tạo đơn hàng' });
     }
   });
+
+  // ── GET /api/v1/sale-app/leaderboard ──────────────────────────────────
+  // Gamification: bảng xếp hạng sale theo doanh số + số đơn trong kỳ.
+  // Mọi user đã đăng nhập đều xem được toàn đội (KHÔNG gate role).
+  // period=week → từ đầu tuần đến nay; month (mặc định) → từ đầu tháng đến nay.
+  // Doanh số dùng totalAmountValue (số CÓ VAT) — fallback totalAmount nếu null.
+  app.get('/api/v1/sale-app/leaderboard', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { period = 'month' } = request.query as { period?: string };
+      const now = new Date();
+      const isWeek = period === 'week';
+      const from = isWeek ? startOfWeek(now) : startOfMonth(now);
+      const periodKey = isWeek ? 'week' : 'month';
+      const periodLabel = isWeek ? 'Tuần này' : 'Tháng này';
+
+      // Toàn đội: mọi user active trong org (member/admin/owner).
+      const users = await prisma.user.findMany({
+        where: { orgId: user.orgId, isActive: true },
+        select: { id: true, fullName: true },
+      });
+
+      // Đơn trong kỳ, scope toàn org, chỉ status tính doanh số.
+      const orders: Array<{ assignedSaleId: string | null; totalAmount: number; totalAmountValue: unknown }> =
+        await prisma.order.findMany({
+          where: {
+            orgId: user.orgId,
+            status: { in: COUNTABLE_STATUSES },
+            orderDate: { gte: from, lte: now },
+          },
+          select: { assignedSaleId: true, totalAmount: true, totalAmountValue: true },
+        });
+
+      // Gom doanh số + số đơn theo assignedSaleId.
+      const agg = new Map<string, { revenue: number; order_count: number }>();
+      for (const o of orders) {
+        if (!o.assignedSaleId) continue;
+        const a = agg.get(o.assignedSaleId) ?? { revenue: 0, order_count: 0 };
+        a.revenue += toNumber(o.totalAmountValue ?? o.totalAmount);
+        a.order_count += 1;
+        agg.set(o.assignedSaleId, a);
+      }
+
+      // Map về từng user (không có đơn → revenue 0, order_count 0).
+      type LbRow = { sale_id: string; name: string; revenue: number; order_count: number };
+      const rowsRaw: LbRow[] = users.map((u: { id: string; fullName: string | null }) => {
+        const a = agg.get(u.id) ?? { revenue: 0, order_count: 0 };
+        return {
+          sale_id: u.id,
+          name: u.fullName ?? '—',
+          revenue: Math.round(a.revenue),
+          order_count: a.order_count,
+        };
+      });
+
+      // Xếp hạng: revenue desc → order_count desc → tên A→Z.
+      rowsRaw.sort((a, b) => {
+        if (b.revenue !== a.revenue) return b.revenue - a.revenue;
+        if (b.order_count !== a.order_count) return b.order_count - a.order_count;
+        return a.name.localeCompare(b.name, 'vi');
+      });
+
+      let meRank: number | null = null;
+      const rows = rowsRaw.map((r: LbRow, i: number) => {
+        const rank = i + 1;
+        const is_me = r.sale_id === user.id;
+        if (is_me) meRank = rank;
+        return { rank, ...r, is_me };
+      });
+
+      return { period: periodKey, period_label: periodLabel, rows, me_rank: meRank };
+    } catch (err) {
+      logger.error('[sale-app] leaderboard error:', err);
+      return reply.status(500).send({ error: 'Lỗi tải bảng xếp hạng' });
+    }
+  });
 }
