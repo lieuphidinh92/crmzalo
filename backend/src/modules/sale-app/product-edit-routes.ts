@@ -350,9 +350,9 @@ export async function productEditRoutes(app: FastifyInstance): Promise<void> {
         markup_pct: markup,
         tier_delta: delta,
         suggestions: [
-          { tierName: 'Giá lẻ niêm yết', price: base + delta * 3 },
-          { tierName: 'Đại lý cấp 1', price: base + delta * 1 },
-          { tierName: 'Đại lý cấp 2 (VIP)', price: base },
+          { tierName: '<1 thùng', price: base + delta * 3 },
+          { tierName: '1 thùng', price: base + delta * 1 },
+          { tierName: '5 thùng', price: base },
         ],
       };
     } catch (err) {

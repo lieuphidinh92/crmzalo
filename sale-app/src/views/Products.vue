@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
 import { useAuthStore } from '../stores/auth';
+import { tierLabel } from '../composables/useFormat';
 import ProductCard from '../components/ProductCard.vue';
 import ProductTable from '../components/ProductTable.vue';
 import ProductDetailDrawer from '../components/ProductDetailDrawer.vue';
@@ -29,9 +30,8 @@ const sort = ref('name');
 const brandId = ref('');
 const brands = ref([]);
 
-// Tier follows the currently-selected customer's policyTier when a draft
-// is in progress; otherwise default to Đại lý cấp 2 VIP (rẻ nhất).
-const tier = computed(() => pos.selectedCustomer?.policyTier || pos.selectedTier || 'dai_ly_cap_2');
+// Tier theo policyTier của KH đang chọn (nếu có), nếu không mặc định "1 thùng".
+const tier = computed(() => pos.selectedCustomer?.policyTier || pos.selectedTier || 'thung_1');
 
 const detailId = ref(null);
 let debounceTimer = null;
@@ -186,7 +186,7 @@ const pageNumbers = computed(() => {
       <div>
         <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Sản phẩm</h1>
         <p class="text-xs text-ink-secondary mt-0.5">
-          {{ total.toLocaleString('vi-VN') }} SP · bảng giá {{ tier === 'ctv' ? 'CTV' : tier === 'dai_ly_cap_1' ? 'Đại lý cấp 1' : 'Đại lý cấp 2 (VIP)' }}
+          {{ total.toLocaleString('vi-VN') }} SP · bảng giá {{ tierLabel(tier) }}
         </p>
       </div>
       <div class="flex items-center gap-2">

@@ -12,7 +12,7 @@ function currentUserId() {
 export const usePOSStore = defineStore('pos', () => {
   const selectedCustomer = ref(null);
   const customerDetail = ref(null); // chi tiết KH: công nợ, điểm, hạn mức, đơn gần nhất
-  const selectedTier = ref('dai_ly_cap_1');
+  const selectedTier = ref('thung_1');
   const items = ref([]);
   const shippingMethod = ref('pickup_at_warehouse');
   const paymentMethod = ref('cod');
@@ -241,7 +241,7 @@ export const usePOSStore = defineStore('pos', () => {
   function reset() {
     selectedCustomer.value = null;
     customerDetail.value = null;
-    selectedTier.value = 'dai_ly_cap_1';
+    selectedTier.value = 'thung_1';
     items.value = [];
     shippingMethod.value = 'pickup_at_warehouse';
     paymentMethod.value = 'cod';

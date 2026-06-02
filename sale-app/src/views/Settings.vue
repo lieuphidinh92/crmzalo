@@ -169,7 +169,7 @@ onMounted(() => {
         <h2 class="text-base font-semibold text-ink-primary">Giá tier tự động</h2>
         <p class="text-xs text-ink-secondary mt-0.5">
           Backfill ProductPrice cho SP còn thiếu tier, dựa trên giá vốn.
-          Cấp 2 (VIP) = giá vốn × (1 + markup), các cấp khác cộng thêm tier delta.
+          5 thùng = giá vốn × (1 + markup), các cấp khác cộng thêm tier delta.
         </p>
       </div>
 
@@ -189,7 +189,7 @@ onMounted(() => {
               step="0.5"
               class="w-full h-11 px-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none"
             />
-            <p class="text-[11px] text-ink-secondary mt-1">VIP price = cost_price × (1 + markup/100)</p>
+            <p class="text-[11px] text-ink-secondary mt-1">Giá 5 thùng = cost_price × (1 + markup/100)</p>
           </div>
           <div>
             <label class="block text-xs font-medium text-ink-primary mb-1.5">Tier delta (đ)</label>
@@ -221,17 +221,17 @@ onMounted(() => {
           </div>
           <div class="grid grid-cols-3 gap-2 text-xs">
             <div class="bg-white border border-line-200 rounded-lg p-3 text-center">
-              <div class="text-[10px] uppercase tracking-wide text-ink-secondary mb-1">Cấp 2 (VIP)</div>
+              <div class="text-[10px] uppercase tracking-wide text-ink-secondary mb-1">5 thùng</div>
               <div class="text-sm font-bold text-royal-700">{{ formatVND(preview.vip) }}</div>
               <div class="text-[10px] text-ink-disabled mt-0.5">rẻ nhất</div>
             </div>
             <div class="bg-white border border-line-200 rounded-lg p-3 text-center">
-              <div class="text-[10px] uppercase tracking-wide text-ink-secondary mb-1">Cấp 1</div>
+              <div class="text-[10px] uppercase tracking-wide text-ink-secondary mb-1">1 thùng</div>
               <div class="text-sm font-bold text-royal-700">{{ formatVND(preview.cap1) }}</div>
               <div class="text-[10px] text-ink-disabled mt-0.5">+{{ formatVND(cfg.tier_delta) }}</div>
             </div>
             <div class="bg-white border border-line-200 rounded-lg p-3 text-center">
-              <div class="text-[10px] uppercase tracking-wide text-ink-secondary mb-1">CTV</div>
+              <div class="text-[10px] uppercase tracking-wide text-ink-secondary mb-1">&lt;1 thùng</div>
               <div class="text-sm font-bold text-royal-700">{{ formatVND(preview.ctv) }}</div>
               <div class="text-[10px] text-ink-disabled mt-0.5">+{{ formatVND(cfg.tier_delta * 2) }}</div>
             </div>

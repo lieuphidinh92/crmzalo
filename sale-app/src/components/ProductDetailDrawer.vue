@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/auth';
 
 const props = defineProps({
   productId: { type: String, default: null },
-  tier: { type: String, default: 'dai_ly_cap_2' },
+  tier: { type: String, default: 'thung_1' },
 });
 const emit = defineEmits(['close', 'add', 'updated']);
 
@@ -21,10 +21,11 @@ const activeTab = ref('info');
 // ---- Mode ----
 const editing = ref(false);
 
-// ---- Canonical tier names (must match backend / seeded data) ----
-const TIER_RETAIL = 'Giá lẻ niêm yết';
-const TIER_CAP1 = 'Đại lý cấp 1';
-const TIER_CAP2 = 'Đại lý cấp 2 (VIP)';
+// ---- Canonical tier names (nhóm giá theo thùng, từ 1/6/2026) ----
+// Lưu ý: mức "10 thùng" lấy theo bảng giá Excel, chưa sửa ở đây (sửa 3 mức dưới).
+const TIER_RETAIL = '<1 thùng';
+const TIER_CAP1 = '1 thùng';
+const TIER_CAP2 = '5 thùng';
 
 // ---- Doc categories ----
 const DOC_CATEGORIES = [
@@ -41,8 +42,8 @@ const editBrandId = ref('');
 const editAllowOversell = ref(false);
 
 const editRetail = ref(0); // Bán lẻ → 'Lẻ niêm yết'
-const editCap1 = ref(0); // Đại lý cấp 1
-const editCap2 = ref(0); // Đại lý cấp 2 (VIP)
+const editCap1 = ref(0); // 1 thùng
+const editCap2 = ref(0); // 5 thùng
 const fifoCost = ref(null);
 
 const editDescription = ref('');
@@ -82,9 +83,8 @@ function resetEditState() {
   editSku.value = p?.sku || '';
   editBrandId.value = p?.brand?.id || '';
   editAllowOversell.value = !!p?.allow_oversell;
-  // prices — retail matches a tier whose name contains 'lẻ'/'retail'
-  const retailTier = (p?.tiers || []).find((t) => /lẻ|le|retail/i.test(t.name || ''));
-  editRetail.value = retailTier ? Number(retailTier.price) || 0 : 0;
+  // prices theo nhóm thùng
+  editRetail.value = tierPrice(TIER_RETAIL);
   editCap1.value = tierPrice(TIER_CAP1);
   editCap2.value = tierPrice(TIER_CAP2);
   fifoCost.value = null;
@@ -496,7 +496,7 @@ function batchLevel(days) {
                 <h3 class="text-sm font-bold text-ink-primary">Bảng giá</h3>
                 <div class="grid grid-cols-3 gap-2">
                   <div>
-                    <label class="block text-[11px] font-semibold text-ink-secondary mb-1">Bán lẻ</label>
+                    <label class="block text-[11px] font-semibold text-ink-secondary mb-1">&lt;1 thùng</label>
                     <input
                       v-model.number="editRetail"
                       type="number"
@@ -505,7 +505,7 @@ function batchLevel(days) {
                     />
                   </div>
                   <div>
-                    <label class="block text-[11px] font-semibold text-ink-secondary mb-1">Đại lý cấp 1</label>
+                    <label class="block text-[11px] font-semibold text-ink-secondary mb-1">1 thùng</label>
                     <input
                       v-model.number="editCap1"
                       type="number"
@@ -514,7 +514,7 @@ function batchLevel(days) {
                     />
                   </div>
                   <div>
-                    <label class="block text-[11px] font-semibold text-ink-secondary mb-1">Đại lý cấp 2 (VIP)</label>
+                    <label class="block text-[11px] font-semibold text-ink-secondary mb-1">5 thùng</label>
                     <input
                       v-model.number="editCap2"
                       type="number"
@@ -763,7 +763,7 @@ function batchLevel(days) {
                   </div>
                   <div v-if="product.retail_price > product.wholesale_price" class="mt-2 flex gap-4 text-xs">
                     <div>
-                      <div class="text-ink-secondary">Giá lẻ niêm yết</div>
+                      <div class="text-ink-secondary">&lt;1 thùng</div>
                       <div class="font-semibold text-ink-primary line-through tabular-nums">{{ formatVND(product.retail_price) }}</div>
                     </div>
                     <div>

@@ -24,9 +24,10 @@ let debounceTimer = null;
 
 const tierOptions = [
   { value: '', label: 'Tất cả bảng giá' },
-  { value: 'ctv', label: 'CTV' },
-  { value: 'dai_ly_cap_1', label: 'Đại lý cấp 1' },
-  { value: 'dai_ly_cap_2', label: 'Đại lý cấp 2 (VIP)' },
+  { value: 'thung_10', label: '10 thùng' },
+  { value: 'thung_5', label: '5 thùng' },
+  { value: 'thung_1', label: '1 thùng' },
+  { value: 'le', label: '<1 thùng' },
 ];
 const typeOptions = [
   { value: '', label: 'Tất cả loại KH' },

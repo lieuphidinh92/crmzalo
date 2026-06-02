@@ -39,12 +39,20 @@ import {
 
 const COUNTABLE_STATUSES = ['confirmed', 'packing', 'shipping', 'completed', 'shipped', 'paid'];
 
-// Map Contact.policyTier → ProductPrice.tierName (matches seeded data).
+// Map Contact.policyTier → ProductPrice.tierName.
+// Nhóm giá theo sản lượng thùng (từ 1/6/2026). Giữ key cũ (ctv/dai_ly_cap_*)
+// map sang mức mới để KH cũ chưa migrate không bị vỡ giá.
 const TIER_NAME_MAP: Record<string, string> = {
-  ctv: 'CTV',
-  dai_ly_cap_1: 'Đại lý cấp 1',
-  dai_ly_cap_2: 'Đại lý cấp 2 (VIP)',
+  thung_10: '10 thùng',
+  thung_5: '5 thùng',
+  thung_1: '1 thùng',
+  le: '<1 thùng',
+  // legacy
+  dai_ly_cap_2: '5 thùng',
+  dai_ly_cap_1: '1 thùng',
+  ctv: '<1 thùng',
 };
+const DEFAULT_TIER = 'thung_1';
 
 function startOfDay(d: Date): Date {
   const x = new Date(d);
@@ -164,7 +172,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/sale-app/top-products', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = reqUser(request);
-      const { limit = '5', tier = 'dai_ly_cap_1' } = request.query as {
+      const { limit = '5', tier = DEFAULT_TIER } = request.query as {
         limit?: string;
         tier?: string;
       };
@@ -476,9 +484,10 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         });
 
         const TIERS = [
-          { name: 'Đại lý cấp 2 (VIP)', deltaMul: 0, displayOrder: 1, isDefault: false },
-          { name: 'Đại lý cấp 1',       deltaMul: 1, displayOrder: 2, isDefault: false },
-          { name: 'CTV',                deltaMul: 2, displayOrder: 3, isDefault: true  },
+          { name: '10 thùng', deltaMul: 0, displayOrder: 1, isDefault: false },
+          { name: '5 thùng',  deltaMul: 1, displayOrder: 2, isDefault: false },
+          { name: '1 thùng',  deltaMul: 2, displayOrder: 3, isDefault: true  },
+          { name: '<1 thùng', deltaMul: 3, displayOrder: 4, isDefault: false },
         ];
 
         let createdRows = 0;
@@ -1202,10 +1211,10 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         sort = 'name',
         page = '1',
         limit = '20',
-        tier = 'dai_ly_cap_2',
+        tier = DEFAULT_TIER,
       } = request.query as Record<string, string>;
 
-      const tierName = TIER_NAME_MAP[tier] ?? TIER_NAME_MAP.dai_ly_cap_2;
+      const tierName = TIER_NAME_MAP[tier] ?? TIER_NAME_MAP[DEFAULT_TIER];
       const take = Math.min(50, Math.max(1, parseInt(limit) || 20));
       const skip = (Math.max(1, parseInt(page) || 1) - 1) * take;
 
@@ -1312,7 +1321,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // "Đại lý cấp 1" reference price — independent of the selected tier.
-      const normalTierName = TIER_NAME_MAP.dai_ly_cap_1;
+      const normalTierName = TIER_NAME_MAP[DEFAULT_TIER];
 
       const items = rows.map((p: any) => {
         const wholesalePick =
@@ -1418,8 +1427,8 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
     try {
       const user = reqUser(request);
       const { id } = request.params as { id: string };
-      const { tier = 'dai_ly_cap_2' } = request.query as { tier?: string };
-      const tierName = TIER_NAME_MAP[tier] ?? TIER_NAME_MAP.dai_ly_cap_2;
+      const { tier = DEFAULT_TIER } = request.query as { tier?: string };
+      const tierName = TIER_NAME_MAP[tier] ?? TIER_NAME_MAP[DEFAULT_TIER];
 
       const p: any = await prisma.product.findFirst({
         where: { id, orgId: user.orgId },

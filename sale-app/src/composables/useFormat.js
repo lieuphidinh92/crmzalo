@@ -65,9 +65,14 @@ export function statusColor(s) {
 
 export function tierLabel(t) {
   const map = {
-    ctv: 'CTV',
-    dai_ly_cap_1: 'Đại lý cấp 1',
-    dai_ly_cap_2: 'Đại lý cấp 2',
+    thung_10: '10 thùng',
+    thung_5: '5 thùng',
+    thung_1: '1 thùng',
+    le: '<1 thùng',
+    // legacy
+    ctv: '<1 thùng',
+    dai_ly_cap_1: '1 thùng',
+    dai_ly_cap_2: '5 thùng',
   };
   return map[t] ?? '—';
 }

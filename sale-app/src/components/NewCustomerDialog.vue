@@ -9,7 +9,7 @@ const form = ref({
   phone: '',
   storeName: '',
   province: '',
-  policyTier: 'dai_ly_cap_1',
+  policyTier: 'thung_1',
   creditLimit: '',
 });
 const loading = ref(false);
@@ -65,9 +65,10 @@ async function submit() {
         <div>
           <label class="block text-xs font-medium text-ink-primary mb-1">Bảng giá</label>
           <select v-model="form.policyTier" class="w-full h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none bg-white">
-            <option value="ctv">CTV</option>
-            <option value="dai_ly_cap_1">Đại lý cấp 1</option>
-            <option value="dai_ly_cap_2">Đại lý cấp 2 (VIP)</option>
+            <option value="thung_10">10 thùng</option>
+            <option value="thung_5">5 thùng</option>
+            <option value="thung_1">1 thùng</option>
+            <option value="le">&lt;1 thùng</option>
           </select>
         </div>
         <div>

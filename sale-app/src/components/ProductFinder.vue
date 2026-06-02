@@ -100,13 +100,15 @@ const tabs = [
 
 // ── Giá theo 3 cấp KH ─────────────────────────────────────────────────────
 // Map tên cấp (tierName backend) → nhãn ngắn + key tier nội bộ của store.
-// "CTV" → CTV (ctv), "Đại lý cấp 1" → Cấp 1 (dai_ly_cap_1),
-// "Đại lý cấp 2 (VIP)" → VIP (dai_ly_cap_2).
+// "10/5/1/<1 thùng" → key thung_10/thung_5/thung_1/le.
 const TIER_DEFS = [
-  { label: 'CTV', tierKey: 'ctv', match: (n) => /ctv/i.test(n) },
-  { label: 'Cấp 1', tierKey: 'dai_ly_cap_1', match: (n) => /cấp\s*1/i.test(n) },
-  { label: 'VIP', tierKey: 'dai_ly_cap_2', match: (n) => /vip|cấp\s*2/i.test(n) },
+  { label: '10 thùng', tierKey: 'thung_10', match: (n) => (n || '').trim() === '10 thùng' },
+  { label: '5 thùng', tierKey: 'thung_5', match: (n) => (n || '').trim() === '5 thùng' },
+  { label: '1 thùng', tierKey: 'thung_1', match: (n) => (n || '').trim() === '1 thùng' },
+  { label: '<1 thùng', tierKey: 'le', match: (n) => (n || '').trim() === '<1 thùng' },
 ];
+// KH cũ chưa migrate (policyTier legacy) → quy về key thùng để highlight đúng.
+const LEGACY_TIER = { dai_ly_cap_2: 'thung_5', dai_ly_cap_1: 'thung_1', ctv: 'le' };
 
 // Trả về [{ label, tierKey, price }] theo đúng thứ tự CTV / Cấp 1 / VIP.
 function tierPrices(product) {
@@ -118,7 +120,8 @@ function tierPrices(product) {
 }
 
 function isSelectedTier(tierKey) {
-  return pos.selectedTier === tierKey;
+  const cur = LEGACY_TIER[pos.selectedTier] || pos.selectedTier;
+  return cur === tierKey;
 }
 
 // ── Thêm vào giỏ ──────────────────────────────────────────────────────────
@@ -285,8 +288,8 @@ defineExpose({ focusSearch });
             </button>
           </div>
 
-          <!-- Hàng giá theo 3 cấp (làm nổi cấp đang chọn của KH) -->
-          <div class="mt-2.5 grid grid-cols-3 gap-1 pt-2 border-t border-line-200">
+          <!-- Hàng giá theo 4 mức thùng (làm nổi mức đang chọn của KH) -->
+          <div class="mt-2.5 grid grid-cols-4 gap-1 pt-2 border-t border-line-200">
             <div
               v-for="tp in tierPrices(p)"
               :key="tp.tierKey"

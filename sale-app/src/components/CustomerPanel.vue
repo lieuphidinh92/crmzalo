@@ -9,12 +9,15 @@ const emit = defineEmits(['create-new']);
 
 // Nhãn cấp giá (badge + nhóm giá + selector).
 const TIERS = [
-  { value: 'ctv', label: 'CTV' },
-  { value: 'dai_ly_cap_1', label: 'Cấp 1' },
-  { value: 'dai_ly_cap_2', label: 'Cấp 2 (VIP)' },
+  { value: 'thung_10', label: '10 thùng' },
+  { value: 'thung_5', label: '5 thùng' },
+  { value: 'thung_1', label: '1 thùng' },
+  { value: 'le', label: '<1 thùng' },
 ];
+const LEGACY_TIER = { dai_ly_cap_2: 'thung_5', dai_ly_cap_1: 'thung_1', ctv: 'le' };
 function tierLabelOf(t) {
-  return TIERS.find((x) => x.value === t)?.label ?? '—';
+  const key = LEGACY_TIER[t] || t;
+  return TIERS.find((x) => x.value === key)?.label ?? '—';
 }
 
 // Tên NV phụ trách — thử các shape khác nhau từ search vs detail.
@@ -148,7 +151,7 @@ defineExpose({ focusSearch });
         <!-- Selector cấp giá -->
         <div>
           <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1.5">Bảng giá</div>
-          <div class="grid grid-cols-3 gap-2">
+          <div class="grid grid-cols-2 gap-2">
             <button
               v-for="t in TIERS"
               :key="t.value"
