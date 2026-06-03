@@ -6,6 +6,7 @@ import { usePOSStore } from '../stores/pos';
 import { api } from '../api/client';
 import GlobalSearchPanel from './GlobalSearchPanel.vue';
 import NotificationDrawer from './NotificationDrawer.vue';
+import BrandLogo from './BrandLogo.vue';
 
 const auth = useAuthStore();
 const pos = usePOSStore();
@@ -102,15 +103,7 @@ onBeforeUnmount(() => {
   >
     <!-- Mobile header -->
     <div class="lg:hidden h-14 px-4 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <div class="w-9 h-9 rounded-lg bg-royal-700 text-white text-xs font-bold flex items-center justify-center">
-          ND
-        </div>
-        <div class="leading-tight">
-          <div class="text-sm font-semibold text-ink-primary">ngheduocsi.vn</div>
-          <div class="text-[10px] text-ink-secondary">Bán sỉ chính hãng</div>
-        </div>
-      </div>
+      <BrandLogo size="sm" theme="light" :show-tagline="true" />
       <div class="flex items-center gap-1">
         <button
           @click="openCart"

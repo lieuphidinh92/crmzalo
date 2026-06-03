@@ -40,6 +40,8 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Nunito', 'Inter', 'system-ui', 'sans-serif'],
+        serif: ['Lora', 'Georgia', 'serif'],
       },
       boxShadow: {
         card: '0 8px 24px rgba(15,23,42,.06)',

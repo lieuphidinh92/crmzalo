@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { api } from '../api/client';
 import { formatVND } from '../composables/useFormat';
+import BrandLogo from './BrandLogo.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -61,14 +62,8 @@ function go(item) {
     style="height: 100dvh; background: linear-gradient(180deg, #0A2540 0%, #08213A 100%)"
   >
     <!-- Brand (88px area) -->
-    <div class="h-[88px] px-5 flex items-center gap-3 border-b border-white/5">
-      <div class="w-10 h-10 rounded-xl bg-royal-700 flex items-center justify-center text-white text-sm font-bold shadow-fab">
-        ND
-      </div>
-      <div class="leading-tight">
-        <div class="font-semibold text-[15px]">ngheduocsi.vn</div>
-        <div class="text-[10px] text-slate-400">Nền tảng bán sỉ chính hãng</div>
-      </div>
+    <div class="h-[88px] px-5 flex items-center border-b border-white/5">
+      <BrandLogo size="md" theme="dark" :show-tagline="true" />
     </div>
 
     <!-- Nav -->

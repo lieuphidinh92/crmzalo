@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import BrandLogo from '../components/BrandLogo.vue';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -39,15 +40,7 @@ async function submit() {
       <div class="absolute -left-20 -bottom-20 w-72 h-72 rounded-full bg-amber-500/20 blur-3xl"></div>
 
       <div class="relative">
-        <div class="flex items-center gap-3 mb-1">
-          <div class="w-11 h-11 rounded-xl bg-royal-700 flex items-center justify-center text-white font-bold">
-            ND
-          </div>
-          <div class="leading-tight">
-            <div class="text-lg font-semibold">ngheduocsi.vn</div>
-            <div class="text-xs text-slate-400">Nền tảng bán sỉ chính hãng</div>
-          </div>
-        </div>
+        <BrandLogo size="lg" theme="dark" :show-tagline="true" />
       </div>
 
       <div class="relative">
@@ -74,12 +67,8 @@ async function submit() {
     <div class="flex items-center justify-center px-4 py-8 lg:px-12">
       <div class="w-full max-w-sm">
         <!-- Mobile brand -->
-        <div class="lg:hidden text-center mb-8">
-          <div class="w-14 h-14 rounded-2xl bg-royal-700 text-white text-lg font-bold mx-auto flex items-center justify-center mb-3 shadow-pop">
-            ND
-          </div>
-          <h1 class="text-xl font-bold text-ink-primary">ngheduocsi.vn</h1>
-          <p class="text-xs text-ink-secondary mt-0.5">Nền tảng bán sỉ chính hãng</p>
+        <div class="lg:hidden mb-8 flex justify-center">
+          <BrandLogo size="xl" theme="light" :show-tagline="true" />
         </div>
 
         <div class="hidden lg:block mb-8">

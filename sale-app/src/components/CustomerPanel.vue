@@ -49,8 +49,6 @@ defineExpose({ focusSearch });
 
 <template>
   <div ref="rootRef" class="flex flex-col gap-4">
-    <h2 class="text-sm font-semibold text-ink-primary">Khách hàng</h2>
-
     <!-- TRẠNG THÁI 1: chưa chọn KH → ô tìm + tạo mới -->
     <template v-if="!pos.selectedCustomer">
       <CustomerSearch
