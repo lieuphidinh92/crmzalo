@@ -99,10 +99,11 @@ async function downloadImage() {
           <div :style="{ display: 'flex', gap: '12px', alignItems: 'center' }">
             <div :style="{ width: '60px', height: '60px', borderRadius: '12px', background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '22px', letterSpacing: '0.5px' }">nds</div>
             <div>
-              <div :style="{ fontSize: '20px', fontWeight: '800', color: NAVY }">Nghề Dược Sĩ</div>
+              <div :style="{ fontSize: '19px', fontWeight: '800', color: NAVY }">CÔNG TY TNHH HALOVN</div>
               <div :style="{ fontSize: '11px', fontStyle: 'italic', color: '#555' }">Nơi nghề dược sĩ cất lời.</div>
-              <div :style="{ fontSize: '10px', color: '#777', marginTop: '2px' }">CỘNG ĐỒNG DƯỢC SĨ • SÀN SỈ DƯỢC PHẨM &amp; TPCN</div>
-              <div :style="{ fontSize: '10px', color: '#777', marginTop: '1px' }">🌐 ngheduocsi.vn &nbsp; ☎ Hotline: 0888 888 888</div>
+              <div :style="{ fontSize: '10px', color: '#777', marginTop: '2px' }">MST: 0110086708 &nbsp;•&nbsp; ngheduocsi.vn</div>
+              <div :style="{ fontSize: '10px', color: '#777', marginTop: '1px' }">Thôn Thiên Lộc, Xã Trung Chính, Tỉnh Bắc Ninh, Việt Nam</div>
+              <div :style="{ fontSize: '10px', color: '#777', marginTop: '1px' }">✉ ketoanhalovn@gmail.com &nbsp; ☎ 0362431998 / 0964435197</div>
             </div>
           </div>
           <div :style="{ textAlign: 'right' }">
