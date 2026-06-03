@@ -1,0 +1,40 @@
+# Render Blueprint — Backend API (ngheduocsi.vn Sale)
+# Database KHÔNG khai ở đây: dùng Supabase (đặt DATABASE_URL thủ công bên dưới).
+# Frontend KHÔNG ở đây: deploy riêng trên Vercel.
+#
+# Cách dùng: Render Dashboard → New → Blueprint → chọn repo crmzalo → Render đọc file này.
+services:
+  - type: web
+    name: halo-sale-backend
+    runtime: node
+    plan: starter            # ~$7/tháng — luôn bật (KHÔNG dùng free vì sẽ ngủ → rớt Zalo/cron)
+    region: singapore        # gần VN nhất
+    rootDir: backend         # backend nằm trong thư mục con
+    branch: feature/sale-app-nhom1   # đổi sang nhánh anh dùng để deploy
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm run start:prod # chạy bằng tsx (transpile, bỏ qua lỗi type như khi dev)
+    # Đĩa lưu file upload (ảnh sản phẩm…) — giữ lại sau mỗi lần deploy
+    disk:
+      name: uploads
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: UPLOAD_DIR
+        value: /var/data/files
+      # --- Đặt THỦ CÔNG trong Render (Environment) — KHÔNG commit giá trị ---
+      - key: DATABASE_URL          # chuỗi kết nối Supabase (mục Connection → URI)
+        sync: false
+      - key: ENCRYPTION_KEY        # COPY Y HỆT từ .env hiện tại (đổi key = mất giải mã phiên Zalo!)
+        sync: false
+      - key: JWT_SECRET            # copy từ .env hiện tại (hoặc đặt mới → user phải đăng nhập lại)
+        sync: false
+      - key: APP_URL               # https://sale.halo.com.vn
+        sync: false
+      - key: PUBLIC_URL            # https://sale.halo.com.vn
+        sync: false
+      - key: PANCAKE_API_KEY       # nếu có dùng Pancake; không thì để trống
+        sync: false

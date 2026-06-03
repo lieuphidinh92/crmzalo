@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "_comment": "Đổi URL backend bên dưới thành URL thật của Render sau khi deploy backend (vd https://halo-sale-backend.onrender.com). Giữ phần /api/:path*.",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://halo-sale-backend.onrender.com/api/:path*"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}
