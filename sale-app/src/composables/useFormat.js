@@ -12,6 +12,46 @@ export function formatVND(n) {
   return `${VND.format(num)}đ`;
 }
 
+// Đọc số tiền VND sang chữ tiếng Việt — cho dòng "Bằng chữ" trên hóa đơn.
+const _DV = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+function _readTriple(n, full) {
+  const tram = Math.floor(n / 100);
+  const chuc = Math.floor((n % 100) / 10);
+  const dv = n % 10;
+  let s = '';
+  if (full || tram > 0) s += `${_DV[tram]} trăm`;
+  if (chuc > 1) {
+    s += ` ${_DV[chuc]} mươi`;
+    if (dv === 1) s += ' mốt';
+    else if (dv === 5) s += ' lăm';
+    else if (dv > 0) s += ` ${_DV[dv]}`;
+  } else if (chuc === 1) {
+    s += ' mười';
+    if (dv === 5) s += ' lăm';
+    else if (dv > 0) s += ` ${_DV[dv]}`;
+  } else if (dv > 0) {
+    if (full || tram > 0) s += ' lẻ';
+    s += ` ${_DV[dv]}`;
+  }
+  return s.trim();
+}
+export function readVND(n) {
+  let num = Math.floor(Math.abs(Number(n) || 0));
+  if (num === 0) return 'Không đồng';
+  const units = ['', ' nghìn', ' triệu', ' tỷ'];
+  const groups = [];
+  while (num > 0) { groups.unshift(num % 1000); num = Math.floor(num / 1000); }
+  let words = '';
+  const last = groups.length - 1;
+  groups.forEach((g, i) => {
+    if (g === 0) return;
+    words += `${_readTriple(g, words !== '')}${units[last - i]} `;
+  });
+  words = words.trim().replace(/\s+/g, ' ');
+  const cap = words.charAt(0).toUpperCase() + words.slice(1);
+  return `${cap} đồng chẵn.`;
+}
+
 export function formatVNDShort(n) {
   const num = Math.abs(Number(n) || 0);
   if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(num >= 10_000_000_000 ? 0 : 1)} tỷ`;
