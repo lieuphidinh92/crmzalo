@@ -1846,6 +1846,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         note?: string;
         source?: string;
         orderDate?: string;
+        status?: string;
         recipientName?: string;
         recipientPhone?: string;
         deliveryAddress?: string;
@@ -1870,9 +1871,12 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       if (!Number.isFinite(paidAmount)) return reply.status(400).send({ error: 'Số tiền trả trước không hợp lệ' });
 
       // Công nợ: bắt buộc có hạn nợ (số ngày) khi chọn thanh toán "credit".
+      // Lưu tạm = đơn nháp (chưa tính doanh thu); Xác nhận = chốt.
+      const orderStatus = body.status === 'draft' ? 'draft' : 'confirmed';
       const isCredit = body.paymentMethod === 'credit';
       const debtTermDays = Math.max(0, Math.floor(toNumber(body.debtTermDays ?? 0)));
-      if (isCredit && debtTermDays <= 0) {
+      // Đơn nháp cho phép thiếu hạn nợ (điền sau khi chốt).
+      if (orderStatus !== 'draft' && isCredit && debtTermDays <= 0) {
         return reply.status(400).send({ error: 'Đơn công nợ cần nhập số ngày cho nợ' });
       }
 
@@ -1953,9 +1957,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             contactId: contact.id,
             createdByUserId: user.id,
             orderCode,
-            status: 'confirmed',
+            status: orderStatus,
             orderDate,
-            confirmedAt: now,
+            confirmedAt: orderStatus === 'confirmed' ? now : null,
             assignedSaleId,
             referrerName,
             source: body.source ?? 'sale_app',

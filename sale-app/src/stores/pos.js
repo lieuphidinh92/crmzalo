@@ -8,6 +8,10 @@ function currentUserId() {
   const auth = useAuthStore();
   return auth.user?.id ?? auth.user?.userId ?? null;
 }
+function currentUserName() {
+  const auth = useAuthStore();
+  return auth.user?.fullName ?? auth.user?.full_name ?? '';
+}
 
 export const usePOSStore = defineStore('pos', () => {
   const selectedCustomer = ref(null);
@@ -238,6 +242,38 @@ export const usePOSStore = defineStore('pos', () => {
     return { added: nextItems.length, skipped };
   }
 
+  // Snapshot toàn bộ dữ liệu đơn để dựng phiếu (gọi TRƯỚC khi reset()).
+  function buildOrderSnapshot() {
+    const c = selectedCustomer.value || {};
+    const sale = staffList.value.find((s) => s.id === assignedSaleId.value);
+    const paid = isCredit.value ? Number(paidAmount.value) || 0 : 0;
+    const total = totalAmount.value;
+    return {
+      saleName: sale?.fullName || currentUserName() || '',
+      customerName: c.fullName || c.full_name || '',
+      customerPhone: c.phone || '',
+      recipientName: recipientName.value?.trim() || '',
+      recipientPhone: recipientPhone.value?.trim() || '',
+      deliveryAddress: deliveryAddress.value?.trim() || c.address || '',
+      items: items.value.map((it) => ({
+        name: it.name,
+        sku: it.sku,
+        unit: it.unit,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        lineTotal: lineTotal(it),
+      })),
+      subtotal: subtotal.value,
+      totalDiscount: totalDiscount.value,
+      shippingFee: Number(shippingFee.value) || 0,
+      total,
+      paid,
+      debt: Math.max(0, total - paid),
+      paymentMethod: paymentMethod.value,
+      shippingMethod: shippingMethod.value,
+    };
+  }
+
   function reset() {
     selectedCustomer.value = null;
     customerDetail.value = null;
@@ -271,10 +307,12 @@ export const usePOSStore = defineStore('pos', () => {
     // get tier-specific prices. (Acceptable for Phase 1; flag for Phase 2.)
   }
 
-  async function submitOrder() {
+  async function submitOrder(status = 'confirmed') {
+    const isDraft = status === 'draft';
     if (!selectedCustomer.value) throw new Error('Vui lòng chọn khách hàng');
     if (items.value.length === 0) throw new Error('Vui lòng chọn ít nhất 1 sản phẩm');
-    if (isCredit.value && (Number(debtTermDays.value) || 0) <= 0)
+    // Đơn nháp (lưu tạm) cho phép thiếu hạn nợ — điền sau khi chốt.
+    if (!isDraft && isCredit.value && (Number(debtTermDays.value) || 0) <= 0)
       throw new Error('Đơn công nợ cần nhập số ngày cho nợ');
     if (
       needsVatInvoice.value &&
@@ -294,6 +332,7 @@ export const usePOSStore = defineStore('pos', () => {
           priceTierId: it.priceTierId,
           discountValue: it.discountValue || 0,
         })),
+        status,
         shippingMethod: shippingMethod.value,
         paymentMethod: paymentMethod.value,
         shippingFee: Number(shippingFee.value) || 0,
@@ -357,6 +396,7 @@ export const usePOSStore = defineStore('pos', () => {
     clearCustomer,
     loadCustomerDetail,
     clearAll,
+    buildOrderSnapshot,
     addProduct,
     updateQuantity,
     updateUnitPrice,

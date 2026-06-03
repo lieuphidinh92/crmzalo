@@ -2,20 +2,21 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { usePOSStore } from '../stores/pos';
-import { formatVND, statusLabel } from '../composables/useFormat';
+import { formatVND } from '../composables/useFormat';
 import CustomerPanel from '../components/CustomerPanel.vue';
 import CartTable from '../components/CartTable.vue';
 import AdvancedOptions from '../components/AdvancedOptions.vue';
 import ProductFinder from '../components/ProductFinder.vue';
 import NewCustomerDialog from '../components/NewCustomerDialog.vue';
+import OrderSummaryDialog from '../components/OrderSummaryDialog.vue';
 
 const router = useRouter();
 const pos = usePOSStore();
 
 const showNewCustomer = ref(false);
-const submitMsg = ref('');
 const submitErr = ref('');
-const draftSaved = ref(false);
+const showSummary = ref(false);
+const summaryOrder = ref(null);
 
 const customerPanelRef = ref(null);
 const productFinderRef = ref(null);
@@ -45,37 +46,28 @@ const PAYMENT = [
   { v: 'credit', l: 'Công nợ' },
 ];
 
-async function handleSubmit() {
+// Lưu tạm (draft) / Xác nhận (confirmed) → tạo đơn rồi mở modal tóm tắt.
+async function submit(status) {
   if (!canSubmit.value) return;
   submitErr.value = '';
-  submitMsg.value = '';
   try {
-    const order = await pos.submitOrder();
-    submitMsg.value = `Đã tạo đơn ${order.order_code} (${statusLabel(order.status)}) — ${formatVND(order.total_amount)}`;
+    const snapshot = pos.buildOrderSnapshot(); // chụp dữ liệu TRƯỚC khi reset
+    const order = await pos.submitOrder(status);
+    summaryOrder.value = {
+      ...snapshot,
+      order_code: order.order_code,
+      status: order.status,
+    };
+    showSummary.value = true;
     pos.reset();
-    localStorage.removeItem('pos_draft');
-    setTimeout(() => {
-      if (confirm(`✅ ${submitMsg.value}\n\nVề trang chủ?`)) router.push('/');
-    }, 50);
   } catch (err) {
     submitErr.value = err.response?.data?.error || err.message || 'Lỗi khi tạo đơn';
   }
 }
 
-// Lưu nháp đơn ở máy (localStorage) — bản đầu, để sale ghi tạm khi bận.
-function saveDraft() {
-  if (!pos.selectedCustomer && pos.items.length === 0) return;
-  const draft = {
-    contact: pos.selectedCustomer,
-    items: pos.items,
-    note: pos.note,
-    shippingMethod: pos.shippingMethod,
-    paymentMethod: pos.paymentMethod,
-    savedAt: new Date().toISOString(),
-  };
-  localStorage.setItem('pos_draft', JSON.stringify(draft));
-  draftSaved.value = true;
-  setTimeout(() => (draftSaved.value = false), 2000);
+function closeSummary() {
+  showSummary.value = false;
+  summaryOrder.value = null;
 }
 
 function onCustomerCreated(customer) {
@@ -91,7 +83,7 @@ function onKeydown(e) {
     productFinderRef.value?.focusSearch?.();
   } else if (key === 'F9') {
     e.preventDefault();
-    handleSubmit();
+    submit('confirmed');
   } else if ((e.ctrlKey || e.metaKey) && (key === 'k' || key === 'K')) {
     e.preventDefault();
     customerPanelRef.value?.focusSearch?.();
@@ -205,14 +197,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
           </div>
           <div class="flex gap-2">
             <button
-              @click="saveDraft"
+              @click="submit('draft')"
+              :disabled="!canSubmit"
               type="button"
-              class="h-12 px-4 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50 transition whitespace-nowrap"
+              class="h-12 px-4 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50 transition whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {{ draftSaved ? '✓ Đã lưu' : '⤓ Lưu tạm' }}
+              ⤓ Lưu tạm
             </button>
             <button
-              @click="handleSubmit"
+              @click="submit('confirmed')"
               :disabled="!canSubmit"
               class="flex-1 h-12 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
@@ -247,6 +240,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
       v-if="showNewCustomer"
       @close="showNewCustomer = false"
       @created="onCustomerCreated"
+    />
+
+    <OrderSummaryDialog
+      v-if="showSummary && summaryOrder"
+      :order="summaryOrder"
+      @close="closeSummary"
     />
   </div>
 </template>
