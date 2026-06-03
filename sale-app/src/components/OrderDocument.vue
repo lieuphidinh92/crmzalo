@@ -147,7 +147,7 @@ async function downloadImage() {
               <th :style="{ padding: '8px 6px', textAlign: 'center', width: '70px' }">SKU</th>
               <th :style="{ padding: '8px 6px', textAlign: 'center', width: '46px' }">Lô</th>
               <th :style="{ padding: '8px 6px', textAlign: 'center', width: '50px' }">SL</th>
-              <th :style="{ padding: '8px 6px', textAlign: 'right', width: '90px' }">Đơn giá</th>
+              <th v-if="isInvoice" :style="{ padding: '8px 6px', textAlign: 'right', width: '90px' }">Đơn giá</th>
               <th v-if="isInvoice" :style="{ padding: '8px 8px', textAlign: 'right', width: '100px' }">Thành tiền</th>
             </tr>
           </thead>
@@ -158,7 +158,7 @@ async function downloadImage() {
               <td :style="{ padding: '8px 6px', textAlign: 'center', fontFamily: 'monospace', fontSize: '11px' }">{{ it.sku }}</td>
               <td :style="{ padding: '8px 6px', textAlign: 'center', color: '#999' }">–</td>
               <td :style="{ padding: '8px 6px', textAlign: 'center' }">{{ it.quantity }}<span :style="{ fontSize: '10px', color: '#999' }"> {{ it.unit || 'Hộp' }}</span></td>
-              <td :style="{ padding: '8px 6px', textAlign: 'right' }">{{ formatVND(it.unitPrice) }}</td>
+              <td v-if="isInvoice" :style="{ padding: '8px 6px', textAlign: 'right' }">{{ formatVND(it.unitPrice) }}</td>
               <td v-if="isInvoice" :style="{ padding: '8px 8px', textAlign: 'right', fontWeight: '600' }">{{ formatVND(it.lineTotal) }}</td>
             </tr>
           </tbody>
