@@ -35,6 +35,7 @@ export const SKU_COST_REGISTRY: Record<string, SkuCostEntry> = {
   MH_01:        { unitCost: 240_000, note: 'Manhae Menopause 30v' },
   MH_02:        { unitCost: 436_000, note: 'Manhae Menopause 60v' },
   MH_03:        { unitCost: 655_000, effectiveFrom: '2026-05-08', note: 'Manhae Menopause 90v — NCC tăng giá, áp dụng cho đơn mới chưa có cost. KHÔNG backfill đơn cũ.' },
+  MH_003:       { unitCost: 763_200, effectiveFrom: '2026-06-05', note: 'Manhae Menopause 120v — SKU MỚI T6 (NCC Manhae). Đã nhập 288 hộp 5/6 + 8/6.' },
   MH_04:        { unitCost: 195_000, effectiveFrom: '2026-05-01', note: 'Vitamin tổng hợp bầu Manhae Femmes — sync DB Bảng giá vốn 19/05' },
   MH_05:        { unitCost: 381_000, effectiveFrom: '2026-05-01', note: 'Vitavea Force G Libido 60v — sync DB Bảng giá vốn 19/05' },
   MH_07:        { unitCost: 285_000, effectiveFrom: '2026-05-01', note: 'Manhae Intima Equilibre 30v — sync DB Bảng giá vốn 19/05' },
@@ -57,11 +58,13 @@ export const SKU_COST_REGISTRY: Record<string, SkuCostEntry> = {
 
   // ── Neubria / Neubiotics ─────────────────────────────────────────────
   NEU_01:       { unitCost: 265_000, effectiveFrom: '2026-05-01', note: 'Neubiotics Her (men phụ khoa) — sync DB Bảng giá vốn 19/05' },
+  NEU_04:       { unitCost: 270_000, effectiveFrom: '2026-05-28', note: 'Neubria Neu Kid 30v — SKU mới xuất hiện 28/5 (XK5970 PML Đỗ Tiến Đạt)' },
   'NEU-EDG-30': { unitCost: 380_000, note: 'Neubria Edge 30v' },
 
   // ── Healthy Care (Úc) ────────────────────────────────────────────────
   HC_01:        { unitCost: 161_557, note: 'Healthy Care Super Lecithin 100tab' },
-  HC_03:        { unitCost: 350_000, note: 'Healthy Care Fish Oil 1000mg Omega' },
+  HC_02:        { unitCost: 185_000, effectiveFrom: '2026-05-05', note: 'HC Ginkgo Biloba 100tab — NCC KQ Minh Cảnh tăng giá 5/5 (168k → 185k)' },
+  HC_03:        { unitCost: 350_000, note: 'Healthy Care Fish Oil 1000mg Omega 3 — tham khảo NCC Bích Lệ chào 310k 8/6, xem xét đổi NCC' },
 
   // ── Swisse (Úc) ──────────────────────────────────────────────────────
   SW_1:         { unitCost: 153_548, note: 'Swisse Liver Detox 60v' },
@@ -79,17 +82,25 @@ export const SKU_COST_REGISTRY: Record<string, SkuCostEntry> = {
   ARK_05:       { unitCost: 665_000, note: 'Perles De Peau Collagen 10 ống' },
 
   // ── Nature Made / khác ───────────────────────────────────────────────
-  NM_1:         { unitCost: 620_503, note: 'Nature Made Prenatal' },
+  NM_1:         { unitCost: 660_000, effectiveFrom: '2026-05-09', note: 'Nature Made Prenatal 150v — NCC Hiệp Trần báo 660k đều (9/5 Đỗ Tuyền 670k, 19/5+3/6 Hiệp Trần 660k). DB cũ 1.065k SAI cao 38%.' },
   DDR_01:       { unitCost: 332_403, note: 'Vitamin D3 Ddrops 400IU' },
   GH_01:        { unitCost: 173_810, note: 'Oyster Plus Goodhealth' },
   GH_001:       { unitCost: 449_385, note: 'GH Creation EX+ 270v' },
   'INO-COL-60': { unitCost: 280_000, note: 'Inocare Collagen 60v' },
-  VTPB_02:      { unitCost: 368_133, note: 'Vitamin tổng hợp phụ nữ sau sinh' },
+  VTPB_02:      { unitCost: 380_000, effectiveFrom: '2026-05-06', note: 'Pregnacare Breast-Feeding — NCC Việt Hương tăng giá (6/5 + 8/6 đều 380k, cũ 368k)' },
+  VTR_04:       { unitCost: 295_000, effectiveFrom: '2026-05-04', note: 'Vitatree Organ Fat Detox 60v — NCC VTC giảm giá (348k → 295k)' },
   VTR_16:       { unitCost: 35_758,  note: 'Vitatree Glucosamine' },
+  VTR_18:       { unitCost: 173_000, effectiveFrom: '2026-05-23', note: 'Vitatree D3K2MK7 DHA Spray — NCC VTC giảm giá MẠNH -20% (217k → 173k)' },
+  NOW_13:       { unitCost: 260_000, effectiveFrom: '2026-05-05', note: 'NOW Sunflower Lecithin 1200mg 100v — NCC Ngọc Liên/Vũ Nhung tăng giá (240k → 260k)' },
   PBB_01:       { unitCost: 94_250,  note: "P'tit BOBO Isotonic xịt mũi" },
   PBB_001:      { unitCost: 81_250,  note: "P'tit BOBO Isotonic (mã khác)" },
+  PRT_06:       { unitCost: 135_000, effectiveFrom: '2026-05-05', note: 'PRT Evening Primrose Oil 500mg — NCC Ngọc Liên (DB cũ 86k sai, đã verify 5/5)' },
   PRT_32:       { unitCost: 180_000, note: 'Biotin 10000mcg 100v' },
+  PRT_35:       { unitCost: 115_000, effectiveFrom: '2026-05-05', note: 'PRT Biotin 10000mcg 50v — NCC Ngọc Liên tăng giá (90k → 115k)' },
+  USL_28:       { unitCost: 356_400, effectiveFrom: '2026-05-19', note: 'Sun Block Cream SPF50+ 50ml — SKU mới chưa có DB cost' },
+  USL_30:       { unitCost: 653_400, effectiveFrom: '2026-05-19', note: 'Body & Spa Whitening Scrub — SKU mới chưa có DB cost' },
   VAG_001:      { unitCost: 148_000, effectiveFrom: '2026-05-01', note: 'Vagisil 240ml (Hồng) — added 19/05 từ Bảng giá vốn' },
+  VAG_01:       { unitCost: 137_000, effectiveFrom: '2026-05-01', note: 'Vagisil 240ml (Tím) — KHÁC VAG_001 Hồng, xuất hiện tặng kèm XK5940/XK5964' },
 
   // ── Inocare / Inc (Tăm nước + Bàn chải điện) ─────────────────────────
   INC_01H:      { unitCost: 236_414, effectiveFrom: '2026-05-13', note: 'Ultra Flosser X3A màu hồng — anh Philip chốt 13/05 (loại 114k là sai)' },
