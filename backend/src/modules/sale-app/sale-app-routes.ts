@@ -54,6 +54,47 @@ const TIER_NAME_MAP: Record<string, string> = {
 };
 const DEFAULT_TIER = 'thung_1';
 
+/**
+ * Tìm contactId khớp ô tìm kiếm — TÁCH TỪNG TỪ (không phụ thuộc thứ tự) và
+ * CHUẨN HOÁ SĐT (bỏ dấu cách/ký tự) để gõ số liền vẫn ra.
+ *   - Mỗi "từ" phải khớp ít nhất 1 trong: tên / cửa hàng / mã KH (MISA) / SĐT.
+ *   - Các từ kết hợp AND → gõ "Huế Flora" hay "Flora Huế" đều ra "Flora Thanh Huế".
+ *   - Số: so khớp trên SĐT đã bỏ ký tự không phải số → "0966886241" khớp "096 6886241".
+ * Tham số dùng positional ($1, $2...) nên KHÔNG có nguy cơ SQL injection.
+ * Trả về mảng id (có thể rỗng); null nếu term rỗng (không lọc theo tìm kiếm).
+ */
+async function searchContactIdsByTerm(
+  orgId: string,
+  assignedUserId: string | null,
+  term: string,
+): Promise<string[] | null> {
+  const tokens = (term || '').trim().split(/\s+/).filter(Boolean).slice(0, 8);
+  if (!tokens.length) return null;
+
+  const params: any[] = [orgId];
+  let sql = `SELECT id FROM contacts WHERE org_id = $1`;
+  if (assignedUserId) {
+    params.push(assignedUserId);
+    sql += ` AND assigned_user_id = $${params.length}`;
+  }
+  for (const tok of tokens) {
+    params.push(`%${tok}%`);
+    const pLike = params.length;
+    let cond = `(full_name ILIKE $${pLike} OR store_name ILIKE $${pLike} OR misa_customer_code ILIKE $${pLike}`;
+    const digits = tok.replace(/\D/g, '');
+    if (digits.length >= 3) {
+      params.push(`%${digits}%`);
+      cond += ` OR regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') ILIKE $${params.length}`;
+    }
+    cond += `)`;
+    sql += ` AND ${cond}`;
+  }
+  sql += ` LIMIT 500`;
+
+  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(sql, ...params);
+  return rows.map((r: { id: string }) => r.id);
+}
+
 function startOfDay(d: Date): Date {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -613,12 +654,13 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       // Member sees only their own contacts; admin/owner sees all.
       if (user.role === 'member') where.assignedUserId = user.id;
       if (term) {
-        where.OR = [
-          { fullName: { contains: term, mode: 'insensitive' } },
-          { phone: { contains: term } },
-          { storeName: { contains: term, mode: 'insensitive' } },
-          { misaCustomerCode: { contains: term, mode: 'insensitive' } },
-        ];
+        // Tách từ + chuẩn hoá SĐT → gõ đảo thứ tự / số liền vẫn ra.
+        const ids = await searchContactIdsByTerm(
+          user.orgId,
+          user.role === 'member' ? user.id : null,
+          term,
+        );
+        where.id = { in: ids ?? [] };
       }
 
       const contacts = await prisma.contact.findMany({
@@ -751,14 +793,15 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       if (tier) where.policyTier = tier;
       if (province) where.province = { contains: province, mode: 'insensitive' };
       if (customerType) where.customerType = customerType;
+      // Tách từ + chuẩn hoá SĐT → gõ đảo thứ tự / số liền vẫn ra.
+      let searchIds: string[] | null = null;
       if (q.trim()) {
-        const term = q.trim();
-        where.OR = [
-          { fullName: { contains: term, mode: 'insensitive' } },
-          { phone: { contains: term } },
-          { storeName: { contains: term, mode: 'insensitive' } },
-          { misaCustomerCode: { contains: term, mode: 'insensitive' } },
-        ];
+        searchIds = await searchContactIdsByTerm(
+          user.orgId,
+          user.role === 'member' ? user.id : null,
+          q,
+        );
+        where.id = { in: searchIds ?? [] };
       }
 
       // has_debt + sort=debt depend on order aggregates, so pre-resolve the
@@ -786,8 +829,11 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             .map((g: any) => [g.contactId, { debt: toNumber(g._sum.debtAmountValue), revenue: 0, orders: 0 }]),
         );
         if (needsDebtFilter) {
-          where.id = { in: Array.from(debtByContact.keys()) };
-          if (debtByContact.size === 0) {
+          const debtIds = Array.from(debtByContact.keys());
+          // Nếu đang tìm kiếm → giao 2 tập (vừa khớp tìm kiếm vừa còn công nợ).
+          const finalIds = searchIds ? debtIds.filter((id) => searchIds!.includes(id)) : debtIds;
+          where.id = { in: finalIds };
+          if (finalIds.length === 0) {
             return { customers: [], total: 0, page: parseInt(page) || 1, limit: take };
           }
         }
