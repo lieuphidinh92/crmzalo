@@ -213,7 +213,7 @@ model Contact {
   @@index([orgId, birthday])
   // Chặn trùng SĐT trong cùng org. NULL được phép nhiều (KH chưa xin SĐT)
   // — PostgreSQL unique cho phép multiple NULLs by default. Áp sau khi
-  // backfill: dedup (16 nhóm merge) + normalize (chuẩn 10 số bắt đầu 0).
+  // backfill: dedup (merge nhóm trùng) + normalize (chuẩn 10 số bắt đầu 0).
   @@unique([orgId, phone], map: "contacts_org_id_phone_unique")
   @@map("contacts")
 }
