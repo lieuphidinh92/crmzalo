@@ -34,7 +34,9 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   server: {
-    port: 5174,
+    // Ưu tiên cổng do trình preview/host cấp qua biến môi trường PORT;
+    // fallback 5174 khi chạy `npm run dev` thủ công.
+    port: Number(process.env.PORT) || 5174,
     proxy: {
       '/api': 'http://localhost:3000',
     },

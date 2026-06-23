@@ -47,6 +47,14 @@
         </v-avatar>
       </template>
 
+      <!-- Customer code (KH001 → KHnnn) -->
+      <template #item.customerCode="{ item }">
+        <span v-if="item.customerCode" class="font-mono text-caption">
+          {{ item.customerCode }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+
       <!-- Name → opens insight panel -->
       <template #item.fullName="{ item }">
         <a
@@ -283,6 +291,7 @@ const authStore = useAuthStore();
 // Stage/province/notes/etc are optional via the "Cột hiển thị" picker.
 const columnDefs: ColumnDef[] = [
   { key: 'avatarUrl', title: 'Ảnh', alwaysVisible: true, defaultVisible: true },
+  { key: 'customerCode', title: 'Mã KH', defaultVisible: true },
   { key: 'fullName', title: 'Tên', alwaysVisible: true, defaultVisible: true },
   { key: 'phone', title: 'SĐT', alwaysVisible: true, defaultVisible: true },
   { key: 'customerType', title: 'Loại KH', defaultVisible: true },

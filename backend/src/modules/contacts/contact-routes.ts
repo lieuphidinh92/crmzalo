@@ -11,6 +11,8 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { invalidateCacheByPrefix } from '../reports/resale-service.js';
 import { logCompliance } from '../../shared/utils/compliance-logger.js';
+import { normalizePhone } from '../../shared/utils/phone.js';
+import { getNextCustomerCode } from './customer-code-service.js';
 
 /** Statuses that count as booked revenue. Mirrors the convention in
  * reports/overview-service. Excludes draft + cancelled. */
@@ -339,11 +341,40 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const user = request.user!;
       const body = request.body as Record<string, any>;
 
+      // Chuẩn hoá SĐT (nếu có). KH có thể không SĐT (FB lead chưa xin được)
+      // → cho phép trống; chỉ reject khi có nhập mà sai format.
+      let phone: string | null = null;
+      if (body.phone !== undefined && body.phone !== null && String(body.phone).trim() !== '') {
+        const r = normalizePhone(body.phone);
+        if (!r.ok) {
+          return reply.status(400).send({
+            error: 'SĐT không hợp lệ. SĐT phải có 10 số bắt đầu bằng 0 (chấp nhận +84… hoặc 9 số thiếu 0).',
+          });
+        }
+        phone = r.value;
+        // Check trùng trong cùng org.
+        const dup = await prisma.contact.findFirst({
+          where: { orgId: user.orgId, phone },
+          select: { id: true, fullName: true, customerCode: true },
+        });
+        if (dup) {
+          return reply.status(409).send({
+            error: 'duplicate_phone',
+            message: `SĐT ${phone} đã có trong CRM (${dup.customerCode ?? '???'} — ${dup.fullName ?? 'chưa có tên'}).`,
+            existingContact: dup,
+          });
+        }
+      }
+
+      // Mã KH tự cấp. Caller không cần truyền customerCode.
+      const customerCode = await getNextCustomerCode(user.orgId);
+
       const contact = await prisma.contact.create({
         data: {
           orgId: user.orgId,
+          customerCode,
           fullName: body.fullName,
-          phone: body.phone,
+          phone,
           zaloUid: body.zaloUid,
           avatarUrl: body.avatarUrl,
           source: body.source,
@@ -390,9 +421,36 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const existing = await prisma.contact.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
       if (!existing) return reply.status(404).send({ error: 'Contact not found' });
 
+      // Chuẩn hoá SĐT khi PUT. Cho phép clear (null/empty). Reject khi
+      // có nhập mà sai format. Check trùng — bỏ qua chính mình.
+      let phoneToSave: string | null | undefined = undefined;
+      if (body.phone !== undefined) {
+        if (body.phone === null || String(body.phone).trim() === '') {
+          phoneToSave = null;
+        } else {
+          const r = normalizePhone(body.phone);
+          if (!r.ok) {
+            return reply.status(400).send({
+              error: 'SĐT không hợp lệ. SĐT phải có 10 số bắt đầu bằng 0 (chấp nhận +84… hoặc 9 số thiếu 0).',
+            });
+          }
+          const dup = await prisma.contact.findFirst({
+            where: { orgId: user.orgId, phone: r.value, NOT: { id } },
+            select: { id: true, fullName: true, customerCode: true },
+          });
+          if (dup) {
+            return reply.status(409).send({
+              error: 'duplicate_phone',
+              message: `SĐT ${r.value} đã có ở KH khác (${dup.customerCode ?? '???'} — ${dup.fullName ?? 'chưa có tên'}).`,
+              existingContact: dup,
+            });
+          }
+          phoneToSave = r.value;
+        }
+      }
+
       const updateData: any = {
         fullName: body.fullName,
-        phone: body.phone,
         avatarUrl: body.avatarUrl,
         source: body.source,
         sourceDate: body.sourceDate ? new Date(body.sourceDate) : undefined,
@@ -401,6 +459,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         tags: body.tags,
         metadata: body.metadata,
       };
+      if (phoneToSave !== undefined) updateData.phone = phoneToSave;
       if (body.firstContactDate !== undefined) {
         updateData.firstContactDate = body.firstContactDate ? new Date(body.firstContactDate) : null;
       }

@@ -44,8 +44,14 @@ const hasDebt = computed(() => (props.customer.debt ?? 0) > 0);
         </span>
       </div>
 
-      <!-- Sub: store / phone / province -->
-      <div class="text-xs text-ink-secondary mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+      <!-- Sub: mã KH / store / phone / province -->
+      <div class="text-xs text-ink-secondary mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span
+          v-if="customer.misa_customer_code"
+          class="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded border border-line-300 text-ink-secondary tabular-nums"
+        >
+          Mã: {{ customer.misa_customer_code }}
+        </span>
         <span v-if="customer.store_name" class="truncate">🏪 {{ customer.store_name }}</span>
         <span v-if="customer.phone">📞 {{ customer.phone }}</span>
         <span v-if="customer.province">📍 {{ customer.province }}</span>

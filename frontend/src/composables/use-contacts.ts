@@ -19,6 +19,7 @@ export interface AIInsight {
 
 export interface Contact {
   id: string;
+  customerCode?: string | null;
   fullName: string | null;
   phone: string | null;
   avatarUrl?: string | null;
@@ -119,6 +120,19 @@ export function useContacts() {
   const loading = ref(false);
   const saving = ref(false);
   const deleting = ref(false);
+  // Lỗi từ lần lưu gần nhất (POST/PUT). Backend trả 400 (SĐT sai format)
+  // hoặc 409 (SĐT trùng) — dialog đọc để hiển thị banner đỏ thay vì close
+  // im lặng.
+  const lastSaveError = ref<string | null>(null);
+
+  function extractApiError(err: unknown): string {
+    const e = err as { response?: { data?: { message?: string; error?: string } } };
+    return (
+      e?.response?.data?.message ??
+      e?.response?.data?.error ??
+      'Lưu thất bại. Vui lòng thử lại.'
+    );
+  }
 
   const filters = reactive<ContactFilters>({
     search: '',
@@ -177,12 +191,14 @@ export function useContacts() {
 
   async function createContact(payload: Partial<Contact>): Promise<Contact | null> {
     saving.value = true;
+    lastSaveError.value = null;
     try {
       const res = await api.post('/contacts', payload);
       await fetchContacts();
       return res.data;
     } catch (err) {
       console.error('Failed to create contact:', err);
+      lastSaveError.value = extractApiError(err);
       return null;
     } finally {
       saving.value = false;
@@ -191,6 +207,7 @@ export function useContacts() {
 
   async function updateContact(id: string, payload: Partial<Contact>): Promise<Contact | null> {
     saving.value = true;
+    lastSaveError.value = null;
     try {
       const res = await api.put(`/contacts/${id}`, payload);
       const idx = contacts.value.findIndex(c => c.id === id);
@@ -198,6 +215,7 @@ export function useContacts() {
       return res.data;
     } catch (err) {
       console.error('Failed to update contact:', err);
+      lastSaveError.value = extractApiError(err);
       return null;
     } finally {
       saving.value = false;
@@ -265,7 +283,7 @@ export function useContacts() {
   }
 
   return {
-    contacts, total, summary, loading, saving, deleting,
+    contacts, total, summary, loading, saving, deleting, lastSaveError,
     filters, pagination, sort,
     fetchContacts, fetchContact,
     createContact, updateContact, deleteContact,
