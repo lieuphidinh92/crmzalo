@@ -39,6 +39,210 @@
       @update:items-per-page="onLimitChange"
       @update:sort-by="onSortChange"
     >
+      <!-- PR3: Header filter menus — click icon mdi-filter-variant để mở.
+           Active icon hiện màu primary khi filter có giá trị. -->
+      <template #header.customerCode="{ column }">
+        <div class="d-flex align-center">
+          <span>{{ column.title }}</span>
+          <v-menu :close-on-content-click="false" location="bottom start">
+            <template #activator="{ props }">
+              <v-icon
+                v-bind="props"
+                size="14"
+                class="ml-1"
+                :color="filters.search ? 'primary' : ''"
+                @click.stop
+              >mdi-filter-variant</v-icon>
+            </template>
+            <div class="pa-3 bg-surface" style="min-width: 240px">
+              <v-text-field
+                v-model="filters.search"
+                label="Tìm theo mã / tên / SĐT"
+                density="compact"
+                clearable
+                hide-details
+                autofocus
+                @update:model-value="onFilterChange"
+              />
+            </div>
+          </v-menu>
+        </div>
+      </template>
+
+      <template #header.customerRank="{ column }">
+        <div class="d-flex align-center">
+          <span>{{ column.title }}</span>
+          <v-menu :close-on-content-click="false" location="bottom start">
+            <template #activator="{ props }">
+              <v-icon
+                v-bind="props"
+                size="14"
+                class="ml-1"
+                :color="filters.customerRank ? 'primary' : ''"
+                @click.stop
+              >mdi-filter-variant</v-icon>
+            </template>
+            <div class="pa-3 bg-surface" style="min-width: 260px">
+              <v-select
+                v-model="filters.customerRank"
+                :items="rankFilterOptions"
+                item-title="text"
+                item-value="value"
+                label="Chọn hạng"
+                density="compact"
+                clearable
+                hide-details
+                @update:model-value="onFilterChange"
+              />
+            </div>
+          </v-menu>
+        </div>
+      </template>
+
+      <template #header.assignedUser="{ column }">
+        <div class="d-flex align-center">
+          <span>{{ column.title }}</span>
+          <v-menu :close-on-content-click="false" location="bottom start">
+            <template #activator="{ props }">
+              <v-icon
+                v-bind="props"
+                size="14"
+                class="ml-1"
+                :color="filters.assignedUserId ? 'primary' : ''"
+                @click.stop
+              >mdi-filter-variant</v-icon>
+            </template>
+            <div class="pa-3 bg-surface" style="min-width: 260px">
+              <v-autocomplete
+                v-model="filters.assignedUserId"
+                :items="salesOptions"
+                item-title="fullName"
+                item-value="id"
+                label="Lọc theo sale"
+                density="compact"
+                clearable
+                hide-details
+                @update:model-value="onFilterChange"
+              />
+            </div>
+          </v-menu>
+        </div>
+      </template>
+
+      <template #header.revenueLifetime="{ column }">
+        <div class="d-flex align-center">
+          <span>{{ column.title }}</span>
+          <v-menu :close-on-content-click="false" location="bottom start">
+            <template #activator="{ props }">
+              <v-icon
+                v-bind="props"
+                size="14"
+                class="ml-1"
+                :color="filters.minRevenue || filters.maxRevenue ? 'primary' : ''"
+                @click.stop
+              >mdi-filter-variant</v-icon>
+            </template>
+            <div class="pa-3 bg-surface" style="min-width: 240px">
+              <div class="text-caption mb-1">Doanh số tổng (VND)</div>
+              <div class="d-flex gap-2">
+                <v-text-field
+                  v-model="filters.minRevenue"
+                  label="Tối thiểu"
+                  type="number"
+                  density="compact"
+                  hide-details
+                  @blur="onFilterChange"
+                />
+                <v-text-field
+                  v-model="filters.maxRevenue"
+                  label="Tối đa"
+                  type="number"
+                  density="compact"
+                  hide-details
+                  @blur="onFilterChange"
+                />
+              </div>
+            </div>
+          </v-menu>
+        </div>
+      </template>
+
+      <template #header.profitLifetime="{ column }">
+        <div class="d-flex align-center">
+          <span>{{ column.title }}</span>
+          <v-menu :close-on-content-click="false" location="bottom start">
+            <template #activator="{ props }">
+              <v-icon
+                v-bind="props"
+                size="14"
+                class="ml-1"
+                :color="filters.minProfit || filters.maxProfit ? 'primary' : ''"
+                @click.stop
+              >mdi-filter-variant</v-icon>
+            </template>
+            <div class="pa-3 bg-surface" style="min-width: 240px">
+              <div class="text-caption mb-1">Lợi nhuận tổng (VND)</div>
+              <div class="d-flex gap-2">
+                <v-text-field
+                  v-model="filters.minProfit"
+                  label="Tối thiểu"
+                  type="number"
+                  density="compact"
+                  hide-details
+                  @blur="onFilterChange"
+                />
+                <v-text-field
+                  v-model="filters.maxProfit"
+                  label="Tối đa"
+                  type="number"
+                  density="compact"
+                  hide-details
+                  @blur="onFilterChange"
+                />
+              </div>
+            </div>
+          </v-menu>
+        </div>
+      </template>
+
+      <template #header.birthday="{ column }">
+        <div class="d-flex align-center">
+          <span>{{ column.title }}</span>
+          <v-menu :close-on-content-click="false" location="bottom start">
+            <template #activator="{ props }">
+              <v-icon
+                v-bind="props"
+                size="14"
+                class="ml-1"
+                :color="filters.hasBirthday || filters.birthdayWithin30d ? 'primary' : ''"
+                @click.stop
+              >mdi-filter-variant</v-icon>
+            </template>
+            <div class="pa-3 bg-surface" style="min-width: 220px">
+              <v-select
+                v-model="filters.hasBirthday"
+                :items="HAS_BIRTHDAY_OPTIONS"
+                item-title="text"
+                item-value="value"
+                label="Có sinh nhật?"
+                density="compact"
+                clearable
+                hide-details
+                class="mb-2"
+                @update:model-value="onFilterChange"
+              />
+              <v-checkbox
+                v-model="birthdayWithin30dChecked"
+                label="Sinh nhật trong 30 ngày tới"
+                density="compact"
+                hide-details
+                @update:model-value="onFilterChange"
+              />
+            </div>
+          </v-menu>
+        </div>
+      </template>
+
       <!-- Avatar -->
       <template #item.avatarUrl="{ item }">
         <v-avatar size="32" color="grey-lighten-2">
@@ -312,12 +516,14 @@ import {
   CUSTOMER_TYPE_OPTIONS,
   STAGE_OPTIONS,
   POLICY_TIER_OPTIONS,
+  CUSTOMER_RANK_FILTER_OPTIONS,
   customerRankShortLabel,
   customerRankColor,
   type Contact,
 } from '@/composables/use-contacts';
 import { formatVNDShort } from '@/composables/use-overview-report';
 import { useAuthStore } from '@/stores/auth';
+import { api } from '@/api/index';
 
 const {
   contacts,
@@ -416,12 +622,32 @@ watch(
   { deep: true },
 );
 
+// PR3 — Sort mở rộng cho mọi cột data. Backend handle:
+//   - Scalar (Prisma orderBy): customerCode, customerRank→rankScore, birthday,
+//     debtAmount, province, customerType, rewardPoints, lastOrderDate,
+//     firstContactDate, nextContactDate, fullName, daysSinceLastOrder.
+//   - Metric (fetch all + sort JS + slice): revenue/profit lifetime/60d/ytd/month.
 const SORTABLE_KEYS = new Set([
   'fullName',
+  'customerCode',
+  'customerRank',
+  'customerType',
+  'province',
+  'birthday',
+  'debtAmount',
+  'rewardPoints',
   'nextContactDate',
   'lastOrderDate',
   'firstContactDate',
   'daysSinceLastOrder',
+  'revenueLifetime',
+  'profitLifetime',
+  'revenue60d',
+  'profit60d',
+  'revenueYtd',
+  'profitYtd',
+  'revenueMonth',
+  'profitMonth',
 ]);
 
 const visibleHeaders = computed(() =>
@@ -507,6 +733,34 @@ function isBirthdaySoon(d: string | null | undefined): boolean {
   }
   return diff <= 30 * 86400_000;
 }
+
+// PR3 — Filter header menus: options + sales list
+const rankFilterOptions = CUSTOMER_RANK_FILTER_OPTIONS;
+const HAS_BIRTHDAY_OPTIONS = [
+  { value: 'yes', text: 'Đã có ngày sinh' },
+  { value: 'no', text: 'Chưa có ngày sinh' },
+];
+const salesOptions = ref<Array<{ id: string; fullName: string }>>([]);
+
+async function loadSales() {
+  try {
+    const res = await api.get('/users');
+    salesOptions.value = (res.data.users ?? res.data ?? []).map((u: any) => ({
+      id: u.id,
+      fullName: u.fullName ?? u.email ?? u.id,
+    }));
+  } catch (err) {
+    console.error('Failed to load sales list:', err);
+  }
+}
+
+// Wrap string filter as boolean for v-checkbox
+const birthdayWithin30dChecked = computed({
+  get: () => filters.birthdayWithin30d === 'yes',
+  set: (v: boolean) => {
+    filters.birthdayWithin30d = v ? 'yes' : '';
+  },
+});
 
 function formatCurrency(v: number | string | null | undefined): string {
   if (v === null || v === undefined || v === '') return '—';
@@ -634,7 +888,10 @@ function onDeleted() {
   fetchContacts();
 }
 
-onMounted(() => fetchContacts());
+onMounted(() => {
+  fetchContacts();
+  loadSales();
+});
 </script>
 
 <style scoped>
