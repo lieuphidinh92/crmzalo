@@ -80,6 +80,20 @@
         @update:model-value="emit('search')"
       />
     </v-col>
+
+    <!-- PR2: Customer rank -->
+    <v-col cols="12" sm="3">
+      <v-select
+        v-model="filters.customerRank"
+        :items="CUSTOMER_RANK_FILTER_OPTIONS"
+        item-title="text"
+        item-value="value"
+        label="Hạng KH"
+        clearable
+        hide-details
+        @update:model-value="emit('search')"
+      />
+    </v-col>
   </v-row>
 </template>
 
@@ -91,6 +105,7 @@ import {
   STAGE_OPTIONS,
   POLICY_TIER_OPTIONS,
   DAYS_INACTIVE_OPTIONS,
+  CUSTOMER_RANK_FILTER_OPTIONS,
 } from '@/composables/use-contacts';
 
 defineProps<{ filters: ContactFilters }>();
