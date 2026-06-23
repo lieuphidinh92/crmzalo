@@ -26,6 +26,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import pkg from '@prisma/client';
 const { Prisma } = pkg;
+import ExcelJS from 'exceljs';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireRole } from '../auth/role-middleware.js';
@@ -36,6 +37,40 @@ import {
   toNumber,
   reqUser,
 } from '../orders/order-service.js';
+
+// ── Label maps cho file Excel xuất KH (sale-app) ──────────────────────────
+const SALE_APP_TIER_LABELS: Record<string, string> = {
+  thung_10: '10 thùng',
+  thung_5: '5 thùng',
+  thung_1: '1 thùng',
+  le: '<1 thùng',
+  ctv: 'CTV',
+  dai_ly_cap_1: 'Đại lý cấp 1',
+  dai_ly_cap_2: 'Đại lý cấp 2',
+};
+const SALE_APP_CUSTOMER_TYPE_LABELS: Record<string, string> = {
+  nha_thuoc: 'Nhà thuốc',
+  si_online: 'Sỉ online',
+  duoc_si: 'Dược sĩ',
+  cua_hang_me_be: 'Cửa hàng mẹ bé',
+};
+const SALE_APP_STAGE_LABELS: Record<string, string> = {
+  tiep_can: 'Tiếp cận',
+  da_bao_gia: 'Đã báo giá',
+  dang_thu_hang: 'Đang thử hàng',
+  dai_ly_chinh_thuc: 'Đại lý chính thức',
+  ngung: 'Ngưng',
+};
+const SALE_APP_RANK_LABELS: Record<string, string> = {
+  top_1: 'Top 1 — VIP',
+  top_2: 'Top 2 — Thân thiết',
+  top_3: 'Top 3 — Thường',
+  top_4: 'Top 4 — Ít hoạt động',
+};
+function saleAppLabel(map: Record<string, string>, v: string | null | undefined): string {
+  if (!v) return '';
+  return map[v] ?? v;
+}
 
 const COUNTABLE_STATUSES = ['confirmed', 'packing', 'shipping', 'completed', 'shipped', 'paid'];
 
@@ -1004,6 +1039,232 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[sale-app] customers list error:', err);
       return reply.status(500).send({ error: 'Lỗi tải danh sách khách hàng' });
+    }
+  });
+
+  // ── GET /api/v1/sale-app/customers/export ─ xuất Excel toàn bộ KH ────────
+  // Áp đúng filter giống endpoint list (không paginate), gom doanh số tổng,
+  // doanh số 60 ngày, công nợ → 1 sheet. Member chỉ xuất KH được assign.
+  app.get('/api/v1/sale-app/customers/export', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const {
+        q = '',
+        tier = '',
+        province = '',
+        customerType = '',
+        filter = '',
+        rank = '',
+      } = request.query as Record<string, string>;
+
+      const where: any = { orgId: user.orgId };
+      if (user.role === 'member') where.assignedUserId = user.id;
+      if (tier) where.policyTier = tier;
+      if (province) where.province = { contains: province, mode: 'insensitive' };
+      if (customerType) where.customerType = customerType;
+      if (rank === 'no_data') where.customerRank = null;
+      else if (rank) where.customerRank = rank;
+
+      if (q.trim()) {
+        const ids = await searchContactIdsByTerm(
+          user.orgId,
+          user.role === 'member' ? user.id : null,
+          q,
+        );
+        where.id = { in: ids ?? [] };
+      }
+
+      // has_debt → giới hạn theo các KH còn công nợ.
+      if (filter === 'has_debt') {
+        const orderWhere: any = {
+          orgId: user.orgId,
+          debtAmountValue: { gt: 0 },
+          status: { notIn: ['cancelled'] },
+        };
+        if (user.role === 'member') {
+          orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+        }
+        const grouped: any[] = await prisma.order.groupBy({
+          by: ['contactId'],
+          where: orderWhere,
+          _sum: { debtAmountValue: true },
+        });
+        const debtIds = grouped.filter((g: any) => g.contactId).map((g: any) => g.contactId);
+        const baseIds = where.id?.in as string[] | undefined;
+        const finalIds = baseIds ? debtIds.filter((id) => baseIds.includes(id)) : debtIds;
+        where.id = { in: finalIds };
+      }
+
+      // Cap 5000 KH/file để tránh OOM nếu org quá lớn — đủ cho hiện tại
+      // (DB có ~vài trăm KH). Nếu vượt, anh Philip cần lọc lại trước khi xuất.
+      const contacts = await prisma.contact.findMany({
+        where,
+        select: {
+          id: true,
+          fullName: true,
+          phone: true,
+          storeName: true,
+          province: true,
+          address: true,
+          misaCustomerCode: true,
+          customerCode: true,
+          customerRank: true,
+          rankScore: true,
+          birthday: true,
+          customerType: true,
+          policyTier: true,
+          stage: true,
+          lastOrderDate: true,
+          createdAt: true,
+        },
+        orderBy: [
+          { customerCode: { sort: 'asc', nulls: 'last' } },
+          { fullName: 'asc' },
+        ],
+        take: 5000,
+      });
+
+      // Aggregate revenue + debt cho toàn bộ contactIds.
+      const pageIds = contacts.map((c: any) => c.id);
+      const revByContact = new Map<string, { revenue: number; orders: number; revenue60d: number }>();
+      const debtByContact = new Map<string, number>();
+      if (pageIds.length) {
+        const revWhere: any = {
+          orgId: user.orgId,
+          contactId: { in: pageIds },
+          status: { in: COUNTABLE_STATUSES },
+        };
+        const grouped: any[] = await prisma.order.groupBy({
+          by: ['contactId'],
+          where: revWhere,
+          _sum: { totalAmountValue: true },
+          _count: { id: true },
+        });
+        for (const g of grouped) {
+          if (g.contactId) {
+            revByContact.set(g.contactId, {
+              revenue: toNumber(g._sum.totalAmountValue),
+              orders: g._count.id,
+              revenue60d: 0,
+            });
+          }
+        }
+        const cutoff60d = new Date(Date.now() - 60 * 86400_000);
+        const grouped60d: any[] = await prisma.order.groupBy({
+          by: ['contactId'],
+          where: { ...revWhere, orderDate: { gte: cutoff60d } },
+          _sum: { totalAmountValue: true },
+        });
+        for (const g of grouped60d) {
+          if (g.contactId) {
+            const existing = revByContact.get(g.contactId) ?? { revenue: 0, orders: 0, revenue60d: 0 };
+            existing.revenue60d = toNumber(g._sum.totalAmountValue);
+            revByContact.set(g.contactId, existing);
+          }
+        }
+        const debtWhere: any = {
+          orgId: user.orgId,
+          contactId: { in: pageIds },
+          debtAmountValue: { gt: 0 },
+          status: { notIn: ['cancelled'] },
+        };
+        const debtGrouped: any[] = await prisma.order.groupBy({
+          by: ['contactId'],
+          where: debtWhere,
+          _sum: { debtAmountValue: true },
+        });
+        for (const g of debtGrouped) {
+          if (g.contactId) debtByContact.set(g.contactId, toNumber(g._sum.debtAmountValue));
+        }
+      }
+
+      // ── Build workbook ──────────────────────────────────────────────────
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Sale App Halo';
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet('Khách hàng');
+
+      sheet.columns = [
+        { header: 'Mã KH', key: 'customerCode', width: 10 },
+        { header: 'Mã MISA', key: 'misaCustomerCode', width: 12 },
+        { header: 'Tên', key: 'fullName', width: 28 },
+        { header: 'SĐT', key: 'phone', width: 14 },
+        { header: 'Cửa hàng', key: 'storeName', width: 24 },
+        { header: 'Tỉnh/Thành', key: 'province', width: 18 },
+        { header: 'Địa chỉ', key: 'address', width: 30 },
+        { header: 'Loại KH', key: 'customerType', width: 16 },
+        { header: 'Hạng KH', key: 'customerRank', width: 18 },
+        { header: 'Điểm hạng', key: 'rankScore', width: 10, style: { numFmt: '0.0' } },
+        { header: 'Bảng giá', key: 'policyTier', width: 12 },
+        { header: 'Stage', key: 'stage', width: 18 },
+        { header: 'Sinh nhật', key: 'birthday', width: 12 },
+        { header: 'Đơn gần nhất', key: 'lastOrderDate', width: 14 },
+        { header: 'Doanh số tổng (VND)', key: 'totalRevenue', width: 18, style: { numFmt: '#,##0' } },
+        { header: 'Doanh số 60 ngày (VND)', key: 'revenue60d', width: 18, style: { numFmt: '#,##0' } },
+        { header: 'Số đơn', key: 'orderCount', width: 10, style: { numFmt: '0' } },
+        { header: 'Công nợ (VND)', key: 'debt', width: 16, style: { numFmt: '#,##0' } },
+      ];
+      sheet.getRow(1).font = { bold: true };
+      sheet.getRow(1).alignment = { vertical: 'middle' };
+      sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+      const fmtDate = (d: Date | null | undefined): string => {
+        if (!d) return '';
+        const dt = d instanceof Date ? d : new Date(d);
+        if (Number.isNaN(dt.getTime())) return '';
+        return dt.toISOString().slice(0, 10);
+      };
+      const fmtBirthday = (d: Date | null | undefined): string => {
+        if (!d) return '';
+        const dt = d instanceof Date ? d : new Date(d);
+        if (Number.isNaN(dt.getTime())) return '';
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        return `${dd}/${mm}`;
+      };
+
+      for (const c of contacts as any[]) {
+        const rev = revByContact.get(c.id);
+        sheet.addRow({
+          customerCode: c.customerCode ?? '',
+          misaCustomerCode: c.misaCustomerCode ?? '',
+          fullName: c.fullName ?? '',
+          phone: c.phone ?? '',
+          storeName: c.storeName ?? '',
+          province: c.province ?? '',
+          address: c.address ?? '',
+          customerType: saleAppLabel(SALE_APP_CUSTOMER_TYPE_LABELS, c.customerType),
+          customerRank: saleAppLabel(SALE_APP_RANK_LABELS, c.customerRank),
+          rankScore: c.rankScore != null ? toNumber(c.rankScore) : null,
+          policyTier: saleAppLabel(SALE_APP_TIER_LABELS, c.policyTier),
+          stage: saleAppLabel(SALE_APP_STAGE_LABELS, c.stage),
+          birthday: fmtBirthday(c.birthday),
+          lastOrderDate: fmtDate(c.lastOrderDate),
+          totalRevenue: rev?.revenue ?? 0,
+          revenue60d: rev?.revenue60d ?? 0,
+          orderCount: rev?.orders ?? 0,
+          debt: debtByContact.get(c.id) ?? 0,
+        });
+      }
+
+      sheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: sheet.columnCount },
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      const ts = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}`;
+      const filename = `Khach-hang-${stamp}.xlsx`;
+
+      reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      return reply.send(Buffer.from(buffer as ArrayBuffer));
+    } catch (err) {
+      logger.error('[sale-app] customers/export error:', err);
+      return reply.status(500).send({ error: 'Xuất Excel thất bại' });
     }
   });
 

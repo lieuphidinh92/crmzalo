@@ -21,6 +21,7 @@ const rank = ref(''); // PR4 — filter hạng KH
 
 const detailId = ref(null);
 const showCreate = ref(false);
+const exporting = ref(false);
 let debounceTimer = null;
 
 const tierOptions = [
@@ -109,6 +110,44 @@ function onUpdated() {
   load();
 }
 
+async function exportExcel() {
+  if (exporting.value) return;
+  exporting.value = true;
+  try {
+    const res = await api.get('/sale-app/customers/export', {
+      params: {
+        q: q.value,
+        tier: tier.value,
+        customerType: customerType.value,
+        filter: filter.value,
+        rank: rank.value,
+      },
+      responseType: 'blob',
+    });
+    const cd = res.headers?.['content-disposition'] ?? '';
+    const match = /filename="?([^"]+)"?/.exec(cd);
+    const ts = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const fallback = `Khach-hang-${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.xlsx`;
+    const filename = match?.[1] ?? fallback;
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    errorMsg.value = err.response?.data?.error || 'Xuất Excel thất bại';
+  } finally {
+    exporting.value = false;
+  }
+}
+
 const pageNumbers = computed(() => {
   const pages = [];
   const max = totalPages.value;
@@ -134,15 +173,30 @@ const pageNumbers = computed(() => {
         <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Khách hàng</h1>
         <p class="text-xs text-ink-secondary mt-0.5">{{ total.toLocaleString('vi-VN') }} khách hàng</p>
       </div>
-      <button
-        @click="showCreate = true"
-        class="h-10 px-4 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-1.5"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        Tạo KH
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          @click="exportExcel"
+          :disabled="exporting"
+          class="h-10 px-3 rounded-btn border border-line-300 hover:border-emerald-600 text-emerald-700 text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed bg-white"
+        >
+          <svg v-if="!exporting" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <svg v-else class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" stroke-opacity="0.25" /><path d="M22 12a10 10 0 01-10 10" />
+          </svg>
+          {{ exporting ? 'Đang xuất…' : 'Xuất Excel' }}
+        </button>
+        <button
+          @click="showCreate = true"
+          class="h-10 px-4 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-1.5"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Tạo KH
+        </button>
+      </div>
     </div>
 
     <!-- Filters -->

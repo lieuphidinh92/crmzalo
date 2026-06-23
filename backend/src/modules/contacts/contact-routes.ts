@@ -6,6 +6,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import pkg from '@prisma/client';
 const { Prisma } = pkg;
+import ExcelJS from 'exceljs';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
@@ -13,6 +14,51 @@ import { invalidateCacheByPrefix } from '../reports/resale-service.js';
 import { logCompliance } from '../../shared/utils/compliance-logger.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 import { getNextCustomerCode } from './customer-code-service.js';
+
+// ── Label maps cho file Excel xuất KH ─────────────────────────────────────
+// Backend không có chỗ nào tập trung label như frontend, nên dump tại chỗ
+// để file Excel đọc được tiếng Việt thay vì mã code.
+const SOURCE_LABELS: Record<string, string> = {
+  FB: 'Facebook',
+  TT: 'TikTok',
+  GT: 'Giới thiệu',
+  CN: 'Chốt nóng',
+  zalo: 'Zalo',
+  gioi_thieu: 'Giới thiệu',
+  khac: 'Khác',
+};
+const CUSTOMER_TYPE_LABELS: Record<string, string> = {
+  nha_thuoc: 'Nhà thuốc',
+  si_online: 'Sỉ online',
+  duoc_si: 'Dược sĩ',
+  cua_hang_me_be: 'Cửa hàng mẹ bé',
+};
+const STAGE_LABELS: Record<string, string> = {
+  tiep_can: 'Tiếp cận',
+  da_bao_gia: 'Đã báo giá',
+  dang_thu_hang: 'Đang thử hàng',
+  dai_ly_chinh_thuc: 'Đại lý chính thức',
+  ngung: 'Ngưng',
+};
+const POLICY_TIER_LABELS: Record<string, string> = {
+  thung_10: '10 thùng',
+  thung_5: '5 thùng',
+  thung_1: '1 thùng',
+  le: '<1 thùng',
+  ctv: 'CTV',
+  dai_ly_cap_1: 'Đại lý cấp 1',
+  dai_ly_cap_2: 'Đại lý cấp 2',
+};
+const CUSTOMER_RANK_LABELS: Record<string, string> = {
+  top_1: 'Top 1 — VIP',
+  top_2: 'Top 2 — Thân thiết',
+  top_3: 'Top 3 — Thường',
+  top_4: 'Top 4 — Ít hoạt động',
+};
+function labelOr(map: Record<string, string>, v: string | null | undefined): string {
+  if (!v) return '';
+  return map[v] ?? v;
+}
 
 /** Validate + clean array `[{label, date}]` từ body — drop entry sai. */
 function sanitizeSpecialDates(raw: unknown): Array<{ label: string; date: string }> {
@@ -453,6 +499,376 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[contacts] List error:', err);
       return reply.status(500).send({ error: 'Failed to fetch contacts' });
+    }
+  });
+
+  // ── GET /api/v1/contacts/export — xuất Excel toàn bộ KH theo filter ──────
+  // Áp đúng filter giống GET /api/v1/contacts (không paginate), tính metrics,
+  // dump ra 1 sheet. Member chỉ thấy KH được assign; cột lợi nhuận ẩn với
+  // member để khớp với /contacts list.
+  app.get('/api/v1/contacts/export', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const q = request.query as QueryParams;
+      const {
+        search = '',
+        source = '',
+        assignedUserId = '',
+        customerType = '',
+        stage = '',
+        policyTier = '',
+        province = '',
+        scale = '',
+        daysInactiveBucket = '',
+      } = q;
+
+      const where: any = { orgId: user.orgId };
+      // Member chỉ xuất KH được assign cho mình — khớp với chính sách
+      // hiển thị của list endpoint (frontend ẩn KH khác).
+      if (user.role === 'member') where.assignedUserId = user.id;
+      if (source) where.source = source;
+      if (assignedUserId) where.assignedUserId = assignedUserId;
+      if (customerType) where.customerType = customerType;
+      if (stage) where.stage = stage;
+      if (policyTier) where.policyTier = policyTier;
+      if (province) where.province = { contains: province, mode: 'insensitive' };
+      if (scale) where.scale = scale;
+      const customerRank = q.customerRank;
+      if (customerRank === 'no_data') where.customerRank = null;
+      else if (customerRank) where.customerRank = customerRank;
+      if (q.storeName) where.storeName = { contains: q.storeName, mode: 'insensitive' };
+      if (q.hasPhone === 'yes') where.phone = { not: null };
+      else if (q.hasPhone === 'no') where.phone = null;
+      if (q.hasBirthday === 'yes') where.birthday = { not: null };
+      else if (q.hasBirthday === 'no') where.birthday = null;
+      if (q.minDebt) where.debtAmount = { ...(where.debtAmount ?? {}), gte: Number(q.minDebt) };
+      if (q.maxDebt) where.debtAmount = { ...(where.debtAmount ?? {}), lte: Number(q.maxDebt) };
+      const birthdayWithin30d = q.birthdayWithin30d === 'yes';
+      if (search) {
+        where.OR = [
+          { fullName: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search } },
+          { storeName: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      const now = new Date();
+      const daysAgo = (n: number) => new Date(now.getTime() - n * 86400_000);
+      if (daysInactiveBucket === 'active') {
+        where.lastOrderDate = { gte: daysAgo(DAYS_BUCKET_ACTIVE_MAX) };
+      } else if (daysInactiveBucket === 'need_care') {
+        where.lastOrderDate = {
+          lte: daysAgo(DAYS_BUCKET_NEEDCARE_MIN),
+          gte: daysAgo(DAYS_BUCKET_NEEDCARE_MAX),
+        };
+      } else if (daysInactiveBucket === 'about_to_lose') {
+        where.lastOrderDate = {
+          lt: daysAgo(DAYS_BUCKET_ABOUTLOSE_MIN),
+          gte: daysAgo(DAYS_BUCKET_ABOUTLOSE_MAX),
+        };
+      } else if (daysInactiveBucket === 'lost') {
+        where.lastOrderDate = { lt: daysAgo(DAYS_BUCKET_LOST_MIN) };
+      } else if (daysInactiveBucket === 'never') {
+        where.lastOrderDate = null;
+      }
+
+      // Lấy hết KH (no pagination), sort theo mã KH cho dễ đọc khi mở file.
+      const contacts: any[] = await prisma.contact.findMany({
+        where,
+        include: {
+          assignedUser: { select: { id: true, fullName: true, email: true } },
+        },
+        orderBy: [
+          { customerCode: { sort: 'asc', nulls: 'last' } },
+          { fullName: 'asc' },
+        ],
+      });
+
+      // Metrics — query 1 lần cho toàn bộ contactIds (giống list endpoint).
+      const contactIds = contacts.map((c: { id: string }) => c.id);
+      const metricsMap = new Map<string, {
+        daysSinceLastOrder: number | null;
+        revenueYtd: number;
+        profitYtd: number;
+        revenueMonth: number;
+        profitMonth: number;
+        revenueLifetime: number;
+        profitLifetime: number;
+        revenue60d: number;
+        profit60d: number;
+      }>();
+      if (contactIds.length > 0) {
+        const rows = await prisma.$queryRaw<Array<{
+          contact_id: string;
+          days_since_last_order: number | null;
+          revenue_ytd: bigint;
+          profit_ytd: bigint;
+          revenue_month: bigint;
+          profit_month: bigint;
+          revenue_lifetime: bigint;
+          profit_lifetime: bigint;
+          revenue_60d: bigint;
+          profit_60d: bigint;
+        }>>(Prisma.sql`
+          WITH order_rev AS (
+            SELECT
+              o.contact_id,
+              COALESCE(SUM(o.total_amount) FILTER (
+                WHERE o.order_date >= DATE_TRUNC('year', NOW())
+              ), 0)::bigint AS revenue_ytd,
+              COALESCE(SUM(o.total_amount) FILTER (
+                WHERE o.order_date >= DATE_TRUNC('month', NOW())
+              ), 0)::bigint AS revenue_month,
+              COALESCE(SUM(o.total_amount), 0)::bigint AS revenue_lifetime,
+              COALESCE(SUM(o.total_amount) FILTER (
+                WHERE o.order_date >= NOW() - INTERVAL '60 days'
+              ), 0)::bigint AS revenue_60d
+            FROM orders o
+            WHERE o.contact_id IN (${Prisma.join(contactIds)})
+              AND o.status IN ('confirmed','shipped','completed')
+            GROUP BY o.contact_id
+          ),
+          item_profit AS (
+            SELECT
+              o.contact_id,
+              COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+                WHERE o.order_date >= DATE_TRUNC('year', NOW())
+                  AND oi.line_cost IS NOT NULL
+              ), 0)::bigint AS profit_ytd,
+              COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+                WHERE o.order_date >= DATE_TRUNC('month', NOW())
+                  AND oi.line_cost IS NOT NULL
+              ), 0)::bigint AS profit_month,
+              COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+                WHERE oi.line_cost IS NOT NULL
+              ), 0)::bigint AS profit_lifetime,
+              COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+                WHERE o.order_date >= NOW() - INTERVAL '60 days'
+                  AND oi.line_cost IS NOT NULL
+              ), 0)::bigint AS profit_60d
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.contact_id IN (${Prisma.join(contactIds)})
+              AND o.status IN ('confirmed','shipped','completed')
+            GROUP BY o.contact_id
+          )
+          SELECT
+            c.id AS contact_id,
+            CASE
+              WHEN c.last_order_date IS NULL THEN NULL
+              ELSE EXTRACT(DAY FROM NOW() - c.last_order_date)::int
+            END AS days_since_last_order,
+            COALESCE(orv.revenue_ytd, 0)::bigint AS revenue_ytd,
+            COALESCE(ipf.profit_ytd, 0)::bigint AS profit_ytd,
+            COALESCE(orv.revenue_month, 0)::bigint AS revenue_month,
+            COALESCE(ipf.profit_month, 0)::bigint AS profit_month,
+            COALESCE(orv.revenue_lifetime, 0)::bigint AS revenue_lifetime,
+            COALESCE(ipf.profit_lifetime, 0)::bigint AS profit_lifetime,
+            COALESCE(orv.revenue_60d, 0)::bigint AS revenue_60d,
+            COALESCE(ipf.profit_60d, 0)::bigint AS profit_60d
+          FROM contacts c
+          LEFT JOIN order_rev orv ON orv.contact_id = c.id
+          LEFT JOIN item_profit ipf ON ipf.contact_id = c.id
+          WHERE c.id IN (${Prisma.join(contactIds)})
+        `);
+        for (const r of rows) {
+          metricsMap.set(r.contact_id, {
+            daysSinceLastOrder: r.days_since_last_order,
+            revenueYtd: Number(r.revenue_ytd),
+            profitYtd: Number(r.profit_ytd),
+            revenueMonth: Number(r.revenue_month),
+            profitMonth: Number(r.profit_month),
+            revenueLifetime: Number(r.revenue_lifetime),
+            profitLifetime: Number(r.profit_lifetime),
+            revenue60d: Number(r.revenue_60d),
+            profit60d: Number(r.profit_60d),
+          });
+        }
+      }
+
+      // Post-filter birthdayWithin30d (giống list endpoint).
+      let enriched: any[] = contacts;
+      if (birthdayWithin30d) {
+        enriched = enriched.filter((c: any) => {
+          if (!c.birthday) return false;
+          const d = new Date(c.birthday);
+          if (Number.isNaN(d.getTime())) return false;
+          const thisYear = new Date(now.getFullYear(), d.getMonth(), d.getDate());
+          let diff = thisYear.getTime() - now.getTime();
+          if (diff < 0) {
+            const nextYear = new Date(now.getFullYear() + 1, d.getMonth(), d.getDate());
+            diff = nextYear.getTime() - now.getTime();
+          }
+          return diff <= 30 * 86400_000;
+        });
+      }
+
+      const canSeeProfit = user.role === 'owner' || user.role === 'admin';
+
+      // ── Build Excel workbook ────────────────────────────────────────────
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'CRM Halo';
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet('Khách hàng');
+
+      type Col = { header: string; key: string; width: number; numFmt?: string };
+      const baseCols: Col[] = [
+        { header: 'Mã KH', key: 'customerCode', width: 10 },
+        { header: 'Tên', key: 'fullName', width: 28 },
+        { header: 'SĐT', key: 'phone', width: 14 },
+        { header: 'Cửa hàng', key: 'storeName', width: 24 },
+        { header: 'Tỉnh/Thành', key: 'province', width: 18 },
+        { header: 'Địa chỉ', key: 'address', width: 30 },
+        { header: 'Loại KH', key: 'customerType', width: 16 },
+        { header: 'Stage', key: 'stage', width: 18 },
+        { header: 'Hạng KH', key: 'customerRank', width: 18 },
+        { header: 'Điểm hạng', key: 'rankScore', width: 10, numFmt: '0.0' },
+        { header: 'Sale phụ trách', key: 'assignedUser', width: 20 },
+        { header: 'Chính sách giá', key: 'policyTier', width: 14 },
+        { header: 'Nguồn', key: 'source', width: 12 },
+        { header: 'NCC hiện tại', key: 'currentSupplier', width: 20 },
+        { header: 'DS tháng ước tính', key: 'monthlyRevenueEstimate', width: 16 },
+        { header: 'Sinh nhật', key: 'birthday', width: 12 },
+        { header: 'Doanh số tổng (VND)', key: 'revenueLifetime', width: 18, numFmt: '#,##0' },
+      ];
+      const profitCols: Col[] = [
+        { header: 'Lợi nhuận tổng (VND)', key: 'profitLifetime', width: 18, numFmt: '#,##0' },
+      ];
+      const dsCols: Col[] = [
+        { header: 'Doanh số năm (VND)', key: 'revenueYtd', width: 18, numFmt: '#,##0' },
+      ];
+      const lnYtdCols: Col[] = [
+        { header: 'Lợi nhuận năm (VND)', key: 'profitYtd', width: 18, numFmt: '#,##0' },
+      ];
+      const dsMonthCols: Col[] = [
+        { header: 'Doanh số tháng (VND)', key: 'revenueMonth', width: 18, numFmt: '#,##0' },
+      ];
+      const lnMonthCols: Col[] = [
+        { header: 'Lợi nhuận tháng (VND)', key: 'profitMonth', width: 18, numFmt: '#,##0' },
+      ];
+      const ds60Cols: Col[] = [
+        { header: 'Doanh số 60 ngày (VND)', key: 'revenue60d', width: 18, numFmt: '#,##0' },
+      ];
+      const ln60Cols: Col[] = [
+        { header: 'Lợi nhuận 60 ngày (VND)', key: 'profit60d', width: 18, numFmt: '#,##0' },
+      ];
+      const tailCols: Col[] = [
+        { header: 'Đơn gần nhất', key: 'lastOrderDate', width: 14 },
+        { header: 'Số ngày chưa đặt', key: 'daysSinceLastOrder', width: 14, numFmt: '0' },
+        { header: 'Công nợ (VND)', key: 'debtAmount', width: 16, numFmt: '#,##0' },
+        { header: 'Hạn mức công nợ (VND)', key: 'creditLimit', width: 16, numFmt: '#,##0' },
+        { header: 'Điểm thưởng', key: 'rewardPoints', width: 12, numFmt: '0' },
+        { header: 'Ngày tiếp nhận', key: 'firstContactDate', width: 14 },
+        { header: 'Liên hệ tiếp theo', key: 'nextContactDate', width: 14 },
+        { header: 'Ghi chú', key: 'notes', width: 30 },
+      ];
+
+      const allCols: Col[] = canSeeProfit
+        ? [
+            ...baseCols,
+            ...profitCols,
+            ...dsCols,
+            ...lnYtdCols,
+            ...dsMonthCols,
+            ...lnMonthCols,
+            ...ds60Cols,
+            ...ln60Cols,
+            ...tailCols,
+          ]
+        : [
+            ...baseCols,
+            ...dsCols,
+            ...dsMonthCols,
+            ...ds60Cols,
+            ...tailCols,
+          ];
+
+      sheet.columns = allCols.map((c) => ({
+        header: c.header,
+        key: c.key,
+        width: c.width,
+        style: c.numFmt ? { numFmt: c.numFmt } : undefined,
+      }));
+      // Header style: bold + filter dropdown trên hàng 1.
+      sheet.getRow(1).font = { bold: true };
+      sheet.getRow(1).alignment = { vertical: 'middle' };
+      sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+      const fmtDate = (d: Date | null | undefined): string => {
+        if (!d) return '';
+        const dt = d instanceof Date ? d : new Date(d);
+        if (Number.isNaN(dt.getTime())) return '';
+        return dt.toISOString().slice(0, 10);
+      };
+      const fmtBirthday = (d: Date | null | undefined): string => {
+        if (!d) return '';
+        const dt = d instanceof Date ? d : new Date(d);
+        if (Number.isNaN(dt.getTime())) return '';
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        return `${dd}/${mm}`;
+      };
+
+      for (const c of enriched) {
+        const m = metricsMap.get(c.id);
+        const row: Record<string, any> = {
+          customerCode: c.customerCode ?? '',
+          fullName: c.fullName ?? '',
+          phone: c.phone ?? '',
+          storeName: c.storeName ?? '',
+          province: c.province ?? '',
+          address: c.address ?? '',
+          customerType: labelOr(CUSTOMER_TYPE_LABELS, c.customerType),
+          stage: labelOr(STAGE_LABELS, c.stage),
+          customerRank: labelOr(CUSTOMER_RANK_LABELS, c.customerRank),
+          rankScore: c.rankScore != null ? Number(c.rankScore) : null,
+          assignedUser: c.assignedUser?.fullName ?? '',
+          policyTier: labelOr(POLICY_TIER_LABELS, c.policyTier),
+          source: labelOr(SOURCE_LABELS, c.source),
+          currentSupplier: c.currentSupplier ?? '',
+          monthlyRevenueEstimate: c.monthlyRevenueEstimate ?? '',
+          birthday: fmtBirthday(c.birthday),
+          revenueLifetime: m?.revenueLifetime ?? 0,
+          revenueYtd: m?.revenueYtd ?? 0,
+          revenueMonth: m?.revenueMonth ?? 0,
+          revenue60d: m?.revenue60d ?? 0,
+          lastOrderDate: fmtDate(c.lastOrderDate),
+          daysSinceLastOrder: m?.daysSinceLastOrder ?? null,
+          debtAmount: c.debtAmount != null ? Number(c.debtAmount) : 0,
+          creditLimit: c.creditLimit != null ? Number(c.creditLimit) : null,
+          rewardPoints: c.rewardPoints ?? 0,
+          firstContactDate: fmtDate(c.firstContactDate),
+          nextContactDate: fmtDate(c.nextContactDate),
+          notes: c.notes ?? '',
+        };
+        if (canSeeProfit) {
+          row.profitLifetime = m?.profitLifetime ?? 0;
+          row.profitYtd = m?.profitYtd ?? 0;
+          row.profitMonth = m?.profitMonth ?? 0;
+          row.profit60d = m?.profit60d ?? 0;
+        }
+        sheet.addRow(row);
+      }
+
+      // Autofilter trên header (Excel sẽ hiện dropdown filter sẵn).
+      sheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: allCols.length },
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      const ts = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}`;
+      const filename = `Khach-hang-${stamp}.xlsx`;
+
+      reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      return reply.send(Buffer.from(buffer as ArrayBuffer));
+    } catch (err) {
+      logger.error('[contacts] Export error:', err);
+      return reply.status(500).send({ error: 'Xuất Excel thất bại' });
     }
   });
 
