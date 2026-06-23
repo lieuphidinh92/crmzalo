@@ -150,27 +150,32 @@ export async function recomputeRanksForOrg(orgId: string): Promise<{
 
   // Batch update bằng transaction để atomic. PG row-level lock đủ — không
   // serializable vì các row độc lập.
+  // Timeout 60s vì Supabase prod latency ~50ms/query × 250 contacts = ~12s
+  // — default 5s sẽ time-out.
   const now = new Date();
-  await prisma.$transaction(async (tx: any) => {
-    for (const s of scored) {
-      byRank[s.rank]++;
-      await tx.contact.update({
-        where: { id: s.contactId },
-        data: {
-          customerRank: s.rank,
-          rankScore: Math.round(s.score * 100) / 100, // 2 decimal
-          rankUpdatedAt: now,
-        },
-      });
-    }
-    // KH không có data → clear rank (idempotent: đặt null nếu trước đó có rank).
-    for (const r of noData) {
-      await tx.contact.update({
-        where: { id: r.contact_id },
-        data: { customerRank: null, rankScore: null, rankUpdatedAt: now },
-      });
-    }
-  });
+  await prisma.$transaction(
+    async (tx: any) => {
+      for (const s of scored) {
+        byRank[s.rank]++;
+        await tx.contact.update({
+          where: { id: s.contactId },
+          data: {
+            customerRank: s.rank,
+            rankScore: Math.round(s.score * 100) / 100, // 2 decimal
+            rankUpdatedAt: now,
+          },
+        });
+      }
+      // KH không có data → clear rank (idempotent: đặt null nếu trước đó có rank).
+      for (const r of noData) {
+        await tx.contact.update({
+          where: { id: r.contact_id },
+          data: { customerRank: null, rankScore: null, rankUpdatedAt: now },
+        });
+      }
+    },
+    { timeout: 60_000, maxWait: 10_000 },
+  );
 
   const durationMs = Date.now() - t0;
   logger.info(
