@@ -22,7 +22,12 @@
     <!-- Filters -->
     <ContactFilters :filters="filters" @search="onFilterChange" />
 
-    <!-- Data table -->
+    <!-- Data table.
+         PR3.2 — Sort qua CUSTOM buttons ở header (em viết) thay vì Vuetify
+         built-in. Lý do: `v-data-table-server` mặc định sort items
+         client-side theo prop sort-by, đè lên thứ tự đã sort từ backend
+         → KH025 (160tr) bị nhảy lên hàng 5 dù KH011 (2694tr) phải lên đầu.
+         Đã bỏ :sort-by + @update:sort-by; mọi cột sortable=false. -->
     <v-data-table-server
       :headers="visibleHeaders"
       :items="contacts"
@@ -31,13 +36,11 @@
       :items-length="total"
       :page="pagination.page"
       :items-per-page-options="ITEMS_PER_PAGE_OPTIONS"
-      :sort-by="vuetifySortBy"
       item-value="id"
       hover
       @click:row="onRowClick"
       @update:page="onPageChange"
       @update:items-per-page="onLimitChange"
-      @update:sort-by="onSortChange"
     >
       <!-- PR3: Header filter menus — click icon mdi-filter-variant để mở.
            Active icon hiện màu primary khi filter có giá trị. -->
@@ -675,33 +678,8 @@ watch(
   { deep: true },
 );
 
-// PR3 — Sort mở rộng cho mọi cột data. Backend handle:
-//   - Scalar (Prisma orderBy): customerCode, customerRank→rankScore, birthday,
-//     debtAmount, province, customerType, rewardPoints, lastOrderDate,
-//     firstContactDate, nextContactDate, fullName, daysSinceLastOrder.
-//   - Metric (fetch all + sort JS + slice): revenue/profit lifetime/60d/ytd/month.
-const SORTABLE_KEYS = new Set([
-  'fullName',
-  'customerCode',
-  'customerRank',
-  'customerType',
-  'province',
-  'birthday',
-  'debtAmount',
-  'rewardPoints',
-  'nextContactDate',
-  'lastOrderDate',
-  'firstContactDate',
-  'daysSinceLastOrder',
-  'revenueLifetime',
-  'profitLifetime',
-  'revenue60d',
-  'profit60d',
-  'revenueYtd',
-  'profitYtd',
-  'revenueMonth',
-  'profitMonth',
-]);
+// PR3.2 — SORTABLE_KEYS không dùng nữa (Vuetify sort tắt). Sort handle
+// qua custom buttons mdi-sort-* trên header → backend orderBy.
 
 const visibleHeaders = computed(() =>
   columnDefs
@@ -709,15 +687,11 @@ const visibleHeaders = computed(() =>
     .map((c) => ({
       title: c.title,
       key: c.key,
-      sortable: SORTABLE_KEYS.has(c.key),
+      // PR3.2 — Tắt Vuetify built-in sort. Sort được handle qua custom
+      // buttons em viết trên header (mdi-sort-* icons) + backend orderBy.
+      sortable: false,
       width: c.key === 'avatarUrl' ? '48px' : undefined,
     })),
-);
-
-// Vuetify v-data-table-server emits sort-by as Array<{key, order}>; we
-// keep the composable's flat shape and bridge here.
-const vuetifySortBy = computed(() =>
-  sort.orderBy ? [{ key: sort.orderBy, order: sort.order }] : [],
 );
 
 // ── Slide-over panel state ────────────────────────────────────────────────
@@ -838,18 +812,6 @@ function onPageChange(page: number) {
 
 function onLimitChange(limit: number) {
   pagination.limit = limit;
-  pagination.page = 1;
-  fetchContacts();
-}
-
-function onSortChange(sortArr: Array<{ key: string; order: 'asc' | 'desc' }>) {
-  if (!sortArr || sortArr.length === 0) {
-    sort.orderBy = '';
-    sort.order = 'desc';
-  } else {
-    sort.orderBy = sortArr[0].key;
-    sort.order = sortArr[0].order ?? 'desc';
-  }
   pagination.page = 1;
   fetchContacts();
 }
