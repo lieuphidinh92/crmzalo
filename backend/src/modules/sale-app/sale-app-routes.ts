@@ -671,6 +671,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           phone: true,
           storeName: true,
           misaCustomerCode: true,
+          customerCode: true,    // PR4
+          customerRank: true,    // PR4
+          rankScore: true,       // PR4
           province: true,
           policyTier: true,
           address: true,
@@ -693,7 +696,15 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         take: 20,
       });
 
-      return { customers: contacts };
+      // PR4 — flatten Decimal/Date như list endpoint để frontend dùng nhất quán.
+      const customers = contacts.map((c: any) => ({
+        ...c,
+        customer_code: c.customerCode,
+        customer_rank: c.customerRank,
+        rank_score: c.rankScore == null ? null : toNumber(c.rankScore),
+      }));
+
+      return { customers };
     } catch (err) {
       logger.error('[sale-app] customers/search error:', err);
       return reply.status(500).send({ error: 'Lỗi tìm khách hàng' });
@@ -783,6 +794,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         sort = 'recent',
         page = '1',
         limit = '20',
+        rank = '', // PR4 — top_1 | top_2 | top_3 | top_4 | no_data
       } = request.query as Record<string, string>;
 
       const take = Math.min(50, Math.max(1, parseInt(limit) || 20));
@@ -793,6 +805,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       if (tier) where.policyTier = tier;
       if (province) where.province = { contains: province, mode: 'insensitive' };
       if (customerType) where.customerType = customerType;
+      // PR4 — filter hạng KH
+      if (rank === 'no_data') where.customerRank = null;
+      else if (rank) where.customerRank = rank;
       // Tách từ + chuẩn hoá SĐT → gõ đảo thứ tự / số liền vẫn ra.
       let searchIds: string[] | null = null;
       if (q.trim()) {
@@ -842,12 +857,16 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       let orderBy: any = [{ lastOrderDate: { sort: 'desc', nulls: 'last' } }, { fullName: 'asc' }];
       if (sort === 'name') orderBy = { fullName: 'asc' };
       else if (sort === 'newest') orderBy = { createdAt: 'desc' };
-      // sort=debt handled post-fetch below.
+      else if (sort === 'rank') orderBy = [{ rankScore: { sort: 'desc', nulls: 'last' } }, { fullName: 'asc' }]; // PR4
+      else if (sort === 'code') orderBy = { customerCode: { sort: 'asc', nulls: 'last' } }; // PR4
+      // sort=debt + sort=revenue handled post-fetch below.
 
-      // For debt-sort we can't page in SQL (debt lives in orders), so pull a
-      // wider window and slice in code. Otherwise page normally in SQL.
-      const sqlSkip = needsDebtSort ? 0 : skip;
-      const sqlTake = needsDebtSort ? 200 : take;
+      // For debt-sort + revenue-sort we can't page in SQL (metric lives in
+      // orders), so pull a wider window and slice in code. Otherwise page
+      // normally in SQL.
+      const needsRevenueSort = sort === 'revenue';
+      const sqlSkip = needsDebtSort || needsRevenueSort ? 0 : skip;
+      const sqlTake = needsDebtSort || needsRevenueSort ? 200 : take;
 
       const [rows, total] = await Promise.all([
         prisma.contact.findMany({
@@ -860,6 +879,10 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             province: true,
             address: true,
             misaCustomerCode: true,
+            customerCode: true,     // PR4
+            customerRank: true,     // PR4
+            rankScore: true,        // PR4
+            birthday: true,         // PR4
             customerType: true,
             policyTier: true,
             stage: true,
@@ -875,7 +898,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
 
       // Aggregate revenue + debt for the contacts on this page.
       const pageIds = rows.map((c: any) => c.id);
-      const revByContact = new Map<string, { revenue: number; orders: number }>();
+      const revByContact = new Map<string, { revenue: number; orders: number; revenue60d: number }>();
       if (pageIds.length) {
         const revWhere: any = {
           orgId: user.orgId,
@@ -893,7 +916,22 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             revByContact.set(g.contactId, {
               revenue: toNumber(g._sum.totalAmountValue),
               orders: g._count.id,
+              revenue60d: 0,
             });
+          }
+        }
+        // PR4 — revenue 60 ngày (cùng status + cutoff order_date)
+        const cutoff60d = new Date(Date.now() - 60 * 86400_000);
+        const grouped60d: any[] = await prisma.order.groupBy({
+          by: ['contactId'],
+          where: { ...revWhere, orderDate: { gte: cutoff60d } },
+          _sum: { totalAmountValue: true },
+        });
+        for (const g of grouped60d) {
+          if (g.contactId) {
+            const existing = revByContact.get(g.contactId) ?? { revenue: 0, orders: 0, revenue60d: 0 };
+            existing.revenue60d = toNumber(g._sum.totalAmountValue);
+            revByContact.set(g.contactId, existing);
           }
         }
         // Backfill debt for the page if we didn't already compute it globally.
@@ -925,18 +963,34 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         province: c.province,
         address: c.address,
         misa_customer_code: c.misaCustomerCode,
+        customer_code: c.customerCode,           // PR4
+        customer_rank: c.customerRank,           // PR4
+        rank_score: c.rankScore == null ? null : toNumber(c.rankScore), // PR4
+        birthday: c.birthday,                    // PR4
         customer_type: c.customerType,
         policy_tier: c.policyTier,
         stage: c.stage,
         last_order_date: c.lastOrderDate,
         total_revenue: revByContact.get(c.id)?.revenue ?? 0,
+        revenue_60d: revByContact.get(c.id)?.revenue60d ?? 0, // PR4
         order_count: revByContact.get(c.id)?.orders ?? 0,
         debt: debtByContact?.get(c.id)?.debt ?? 0,
       }));
 
       let totalReturn = total;
       if (needsDebtSort) {
-        items.sort((a: { debt: number }, b: { debt: number }) => b.debt - a.debt);
+        items.sort((a, b) => b.debt - a.debt);
+        totalReturn = items.length;
+        items = items.slice(skip, skip + take);
+      } else if (needsRevenueSort) {
+        // PR4 — sort doanh số lifetime DESC, KH no-data xuống cuối (giống PR3.3)
+        items.sort((a, b) => {
+          const aHas = a.total_revenue > 0;
+          const bHas = b.total_revenue > 0;
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          return b.total_revenue - a.total_revenue;
+        });
         totalReturn = items.length;
         items = items.slice(skip, skip + take);
       }
@@ -973,6 +1027,12 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           province: true,
           address: true,
           misaCustomerCode: true,
+          customerCode: true,    // PR4
+          customerRank: true,    // PR4
+          rankScore: true,       // PR4
+          rankUpdatedAt: true,   // PR4
+          birthday: true,        // PR4
+          specialDates: true,    // PR4
           customerType: true,
           scale: true,
           policyTier: true,
@@ -1007,8 +1067,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         take: 30,
       });
 
-      // Stats: revenue (countable only), order count, current debt.
-      const [revAgg, debtAgg] = await Promise.all([
+      // Stats: revenue (countable only), order count, current debt, revenue 60d (PR4).
+      const cutoff60d = new Date(Date.now() - 60 * 86400_000);
+      const [revAgg, debtAgg, rev60dAgg] = await Promise.all([
         prisma.order.aggregate({
           where: { orgId: user.orgId, contactId: id, status: { in: COUNTABLE_STATUSES } },
           _sum: { totalAmountValue: true },
@@ -1023,6 +1084,15 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           },
           _sum: { debtAmountValue: true },
           _count: { id: true },
+        }),
+        prisma.order.aggregate({
+          where: {
+            orgId: user.orgId,
+            contactId: id,
+            status: { in: COUNTABLE_STATUSES },
+            orderDate: { gte: cutoff60d },
+          },
+          _sum: { totalAmountValue: true },
         }),
       ]);
 
@@ -1055,6 +1125,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             : null,
           stats: {
             total_revenue: revenue,
+            revenue_60d: toNumber(rev60dAgg._sum.totalAmountValue), // PR4
             order_count: orderCount,
             avg_order_value: orderCount > 0 ? Math.round(revenue / orderCount) : 0,
             current_debt: toNumber(debtAgg._sum.debtAmountValue),

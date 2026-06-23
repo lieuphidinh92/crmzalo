@@ -58,6 +58,29 @@ const debtOrders = computed(() =>
   (customer.value?.orders || []).filter((o) => (o.debt_amount ?? 0) > 0),
 );
 
+// PR4 — Hạng KH labels + colors (Tailwind class strings).
+const RANK_LABEL = {
+  top_1: 'Top 1 VIP',
+  top_2: 'Top 2 Thân',
+  top_3: 'Top 3 Thường',
+  top_4: 'Top 4 Ít',
+};
+const RANK_CLASS = {
+  top_1: 'bg-amber-100 text-amber-800',
+  top_2: 'bg-emerald-100 text-emerald-800',
+  top_3: 'bg-sky-100 text-sky-800',
+  top_4: 'bg-slate-100 text-slate-600',
+};
+const displayCode = computed(
+  () => customer.value?.customer_code || customer.value?.misa_customer_code || null,
+);
+function formatBirthdayShort(d) {
+  if (!d) return '';
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
 async function load(id) {
   if (!id) {
     customer.value = null;
@@ -177,11 +200,21 @@ function createOrder() {
                       <span v-if="customer.store_name">· {{ customer.store_name }}</span>
                     </div>
                     <div class="flex items-center gap-1.5 mt-2 flex-wrap">
+                      <!-- PR4 — Hạng KH badge -->
+                      <span
+                        v-if="customer.customer_rank"
+                        class="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                        :class="RANK_CLASS[customer.customer_rank]"
+                        :title="`Điểm ${customer.rank_score ?? 0}/100`"
+                      >
+                        {{ RANK_LABEL[customer.customer_rank] }}
+                      </span>
                       <span v-if="customer.policy_tier" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-royal-50 text-royal-700">
                         {{ tierLabel(customer.policy_tier) }}
                       </span>
-                      <span v-if="customer.misa_customer_code" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-soft text-ink-secondary">
-                        {{ customer.misa_customer_code }}
+                      <!-- PR4 — ưu tiên customer_code, fallback misa_customer_code -->
+                      <span v-if="displayCode" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-soft text-ink-secondary">
+                        {{ displayCode }}
                       </span>
                     </div>
                   </div>
@@ -194,11 +227,15 @@ function createOrder() {
                   </button>
                 </div>
 
-                <!-- Stat cards -->
-                <div class="grid grid-cols-3 gap-2 mt-4">
+                <!-- Stat cards — PR4: thêm DS 60 ngày + Sinh nhật khi có -->
+                <div class="grid grid-cols-4 gap-2 mt-4">
                   <div class="p-2.5 rounded-input bg-surface-soft">
-                    <div class="text-[10px] text-ink-secondary uppercase">Doanh số</div>
+                    <div class="text-[10px] text-ink-secondary uppercase">DS tổng</div>
                     <div class="text-sm font-bold text-ink-primary tabular-nums">{{ formatVND(customer.stats?.total_revenue || 0) }}</div>
+                  </div>
+                  <div class="p-2.5 rounded-input bg-emerald-50">
+                    <div class="text-[10px] text-emerald-700 uppercase">DS 60d</div>
+                    <div class="text-sm font-bold text-emerald-800 tabular-nums">{{ formatVND(customer.stats?.revenue_60d || 0) }}</div>
                   </div>
                   <div class="p-2.5 rounded-input bg-surface-soft">
                     <div class="text-[10px] text-ink-secondary uppercase">Số đơn</div>
@@ -210,6 +247,20 @@ function createOrder() {
                       {{ formatVND(customer.stats?.current_debt || 0) }}
                     </div>
                   </div>
+                </div>
+
+                <!-- PR4 — Sinh nhật / ngày đặc biệt khi có -->
+                <div v-if="customer.birthday || (customer.special_dates && customer.special_dates.length)" class="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span v-if="customer.birthday" class="px-2 py-1 rounded bg-amber-50 text-amber-800">
+                    🎂 Sinh nhật: {{ formatBirthdayShort(customer.birthday) }}
+                  </span>
+                  <span
+                    v-for="(d, idx) in (customer.special_dates || [])"
+                    :key="idx"
+                    class="px-2 py-1 rounded bg-violet-50 text-violet-800"
+                  >
+                    {{ d.label }}: {{ formatBirthdayShort(d.date) }}
+                  </span>
                 </div>
               </div>
 

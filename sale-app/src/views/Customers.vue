@@ -17,6 +17,7 @@ const tier = ref('');
 const customerType = ref('');
 const filter = ref('');
 const sort = ref('recent');
+const rank = ref(''); // PR4 — filter hạng KH
 
 const detailId = ref(null);
 const showCreate = ref(false);
@@ -41,6 +42,17 @@ const sortOptions = [
   { value: 'name', label: 'Tên A → Z' },
   { value: 'newest', label: 'Mới thêm' },
   { value: 'debt', label: 'Công nợ cao' },
+  { value: 'revenue', label: 'Doanh số cao' }, // PR4
+  { value: 'rank', label: 'Hạng KH cao' },     // PR4
+  { value: 'code', label: 'Mã KH (A→Z)' },     // PR4
+];
+const rankOptions = [
+  { value: '', label: 'Tất cả hạng' },
+  { value: 'top_1', label: 'Top 1 — VIP' },
+  { value: 'top_2', label: 'Top 2 — Thân thiết' },
+  { value: 'top_3', label: 'Top 3 — Thường' },
+  { value: 'top_4', label: 'Top 4 — Ít hoạt động' },
+  { value: 'no_data', label: 'Chưa có hạng' },
 ];
 const filterChips = [
   { key: '', label: 'Tất cả' },
@@ -60,6 +72,7 @@ async function load() {
         customerType: customerType.value,
         filter: filter.value,
         sort: sort.value,
+        rank: rank.value, // PR4
         page: page.value,
         limit: limit.value,
       },
@@ -75,7 +88,7 @@ async function load() {
   }
 }
 
-watch([q, tier, customerType, filter, sort], () => {
+watch([q, tier, customerType, filter, sort, rank], () => {
   page.value = 1;
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(load, 250);
@@ -134,7 +147,7 @@ const pageNumbers = computed(() => {
 
     <!-- Filters -->
     <div class="bg-white border border-line-200 rounded-card p-4 shadow-card mb-4">
-      <div class="grid lg:grid-cols-4 gap-3 mb-3">
+      <div class="grid lg:grid-cols-5 gap-3 mb-3">
         <div class="relative lg:col-span-2">
           <input
             v-model="q"
@@ -151,6 +164,10 @@ const pageNumbers = computed(() => {
         </select>
         <select v-model="customerType" class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm">
           <option v-for="o in typeOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+        </select>
+        <!-- PR4 — filter hạng KH -->
+        <select v-model="rank" class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm">
+          <option v-for="o in rankOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>
       </div>
 
