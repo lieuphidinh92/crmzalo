@@ -979,12 +979,12 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
 
       let totalReturn = total;
       if (needsDebtSort) {
-        items.sort((a, b) => b.debt - a.debt);
+        items.sort((a: { debt: number }, b: { debt: number }) => b.debt - a.debt);
         totalReturn = items.length;
         items = items.slice(skip, skip + take);
       } else if (needsRevenueSort) {
         // PR4 — sort doanh số lifetime DESC, KH no-data xuống cuối (giống PR3.3)
-        items.sort((a, b) => {
+        items.sort((a: { total_revenue: number }, b: { total_revenue: number }) => {
           const aHas = a.total_revenue > 0;
           const bHas = b.total_revenue > 0;
           if (aHas && !bHas) return -1;
