@@ -78,6 +78,15 @@ export interface ContactFilters {
   province: string;
   daysInactiveBucket: string;
   customerRank: string;
+  // PR3 — filter per-column ở header
+  assignedUserId: string;
+  storeName: string;
+  hasBirthday: string; // '' | 'yes' | 'no'
+  birthdayWithin30d: string; // '' | 'yes'
+  minRevenue: string;
+  maxRevenue: string;
+  minProfit: string;
+  maxProfit: string;
 }
 
 export const CUSTOMER_RANK_OPTIONS = [
@@ -180,6 +189,14 @@ export function useContacts() {
     province: '',
     daysInactiveBucket: '',
     customerRank: '',
+    assignedUserId: '',
+    storeName: '',
+    hasBirthday: '',
+    birthdayWithin30d: '',
+    minRevenue: '',
+    maxRevenue: '',
+    minProfit: '',
+    maxProfit: '',
   });
 
   const pagination = reactive({ page: 1, limit: 50 });
@@ -200,6 +217,14 @@ export function useContacts() {
           province: filters.province || undefined,
           daysInactiveBucket: filters.daysInactiveBucket || undefined,
           customerRank: filters.customerRank || undefined,
+          assignedUserId: filters.assignedUserId || undefined,
+          storeName: filters.storeName || undefined,
+          hasBirthday: filters.hasBirthday || undefined,
+          birthdayWithin30d: filters.birthdayWithin30d || undefined,
+          minRevenue: filters.minRevenue || undefined,
+          maxRevenue: filters.maxRevenue || undefined,
+          minProfit: filters.minProfit || undefined,
+          maxProfit: filters.maxProfit || undefined,
           orderBy: sort.orderBy || undefined,
           order: sort.order || undefined,
         },
@@ -284,6 +309,14 @@ export function useContacts() {
     filters.province = '';
     filters.daysInactiveBucket = '';
     filters.customerRank = '';
+    filters.assignedUserId = '';
+    filters.storeName = '';
+    filters.hasBirthday = '';
+    filters.birthdayWithin30d = '';
+    filters.minRevenue = '';
+    filters.maxRevenue = '';
+    filters.minProfit = '';
+    filters.maxProfit = '';
     pagination.page = 1;
     fetchContacts();
   }

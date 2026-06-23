@@ -83,13 +83,32 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       if (customerType) where.customerType = customerType;
       if (stage) where.stage = stage;
       if (policyTier) where.policyTier = policyTier;
-      if (province) where.province = province;
+      // PR3: province → text contains (case-insensitive) thay vì equal
+      if (province) where.province = { contains: province, mode: 'insensitive' };
       if (scale) where.scale = scale;
       // PR2: filter theo hạng KH (customerRank). Special value `no_data`
       // = KH chưa có đơn (rank NULL).
       const customerRank = (request.query as QueryParams).customerRank;
       if (customerRank === 'no_data') where.customerRank = null;
       else if (customerRank) where.customerRank = customerRank;
+
+      // PR3 — Filter mới:
+      // - storeName: text contains
+      // - hasPhone: 'yes' | 'no'
+      // - hasBirthday: 'yes' | 'no'
+      // - birthdayWithin30d: 'yes' → sinh nhật trong 30 ngày tới (ignore year)
+      // - minDebt / maxDebt: range công nợ
+      const q = request.query as QueryParams;
+      if (q.storeName) where.storeName = { contains: q.storeName, mode: 'insensitive' };
+      if (q.hasPhone === 'yes') where.phone = { not: null };
+      else if (q.hasPhone === 'no') where.phone = null;
+      if (q.hasBirthday === 'yes') where.birthday = { not: null };
+      else if (q.hasBirthday === 'no') where.birthday = null;
+      if (q.minDebt) where.debtAmount = { ...(where.debtAmount ?? {}), gte: Number(q.minDebt) };
+      if (q.maxDebt) where.debtAmount = { ...(where.debtAmount ?? {}), lte: Number(q.maxDebt) };
+      // Sinh nhật trong 30 ngày tới — handle như post-query filter để
+      // tránh raw SQL phức tạp month/day arithmetic.
+      const birthdayWithin30d = q.birthdayWithin30d === 'yes';
       if (search) {
         where.OR = [
           { fullName: { contains: search, mode: 'insensitive' } },
@@ -124,47 +143,113 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
 
-      // Map the "daysSinceLastOrder" virtual sort to the underlying column.
-      // Most-stale-first (desc) means smallest lastOrderDate first.
+      // PR3 — Sort mở rộng:
+      //   - SCALAR_ORDER_MAP: dùng Prisma orderBy + skip/take (nhanh, dùng index).
+      //   - METRIC_SORT_KEYS: phải compute metrics trước → fetch all + sort JS
+      //     + slice page. Với <1k KH, latency ~vài chục ms — chấp nhận được.
+      const SCALAR_ORDER_MAP: Record<string, string> = {
+        fullName: 'fullName',
+        lastOrderDate: 'lastOrderDate',
+        firstContactDate: 'firstContactDate',
+        nextContactDate: 'nextContactDate',
+        customerCode: 'customerCode',
+        birthday: 'birthday',
+        debtAmount: 'debtAmount',
+        province: 'province',
+        customerType: 'customerType',
+        rewardPoints: 'rewardPoints',
+        createdAt: 'createdAt',
+      };
+      const METRIC_SORT_KEYS = [
+        'revenueLifetime',
+        'profitLifetime',
+        'revenue60d',
+        'profit60d',
+        'revenueYtd',
+        'profitYtd',
+        'revenueMonth',
+        'profitMonth',
+      ] as const;
+      const isMetricSort = (METRIC_SORT_KEYS as readonly string[]).includes(orderBy);
+      const sortDir: 'asc' | 'desc' = order === 'asc' ? 'asc' : 'desc';
+      // Filter birthdayWithin30d và metric sort đều cần fetch all rồi
+      // post-process trước khi paginate → gộp logic.
+      const needsFullFetch = isMetricSort || birthdayWithin30d;
+
       let orderClause: any = { updatedAt: 'desc' };
       if (orderBy === 'daysSinceLastOrder') {
-        orderClause = { lastOrderDate: order === 'asc' ? 'desc' : 'asc' };
-      } else if (orderBy === 'fullName') {
-        orderClause = { fullName: order === 'asc' ? 'asc' : 'desc' };
-      } else if (orderBy === 'lastOrderDate') {
-        orderClause = { lastOrderDate: order === 'asc' ? 'asc' : 'desc' };
-      } else if (orderBy === 'firstContactDate') {
-        orderClause = { firstContactDate: order === 'asc' ? 'asc' : 'desc' };
-      } else if (orderBy === 'nextContactDate') {
-        orderClause = { nextContactDate: order === 'asc' ? 'asc' : 'desc' };
+        // virtual: stale-first khi sort desc → lastOrderDate asc
+        orderClause = { lastOrderDate: { sort: sortDir === 'asc' ? 'desc' : 'asc', nulls: 'last' } };
+      } else if (orderBy === 'customerRank') {
+        // Hạng → sort theo rank score (cao = top_1)
+        orderClause = { rankScore: { sort: sortDir, nulls: 'last' } };
+      } else if (SCALAR_ORDER_MAP[orderBy]) {
+        orderClause = { [SCALAR_ORDER_MAP[orderBy]]: { sort: sortDir, nulls: 'last' } };
       }
 
-      const [contacts, total, summaryActive, summaryNeedCare] = await Promise.all([
-        prisma.contact.findMany({
-          where,
-          include: {
-            assignedUser: { select: { id: true, fullName: true, email: true } },
-            _count: { select: { conversations: true, appointments: true } },
+      const summaryActiveQ = prisma.contact.count({
+        where: { orgId: user.orgId, lastOrderDate: { gte: daysAgo(DAYS_BUCKET_ACTIVE_MAX) } },
+      });
+      const summaryNeedCareQ = prisma.contact.count({
+        where: {
+          orgId: user.orgId,
+          lastOrderDate: {
+            lte: daysAgo(DAYS_BUCKET_NEEDCARE_MIN),
+            gte: daysAgo(DAYS_BUCKET_NEEDCARE_MAX),
           },
-          orderBy: orderClause,
-          skip: (pageNum - 1) * limitNum,
-          // limit=-1 → return all (used by "Tất cả" page-size option)
-          ...(limitNum > 0 ? { take: limitNum } : {}),
-        }),
-        prisma.contact.count({ where }),
-        prisma.contact.count({
-          where: { orgId: user.orgId, lastOrderDate: { gte: daysAgo(DAYS_BUCKET_ACTIVE_MAX) } },
-        }),
-        prisma.contact.count({
-          where: {
-            orgId: user.orgId,
-            lastOrderDate: {
-              lte: daysAgo(DAYS_BUCKET_NEEDCARE_MIN),
-              gte: daysAgo(DAYS_BUCKET_NEEDCARE_MAX),
+        },
+      });
+
+      let contacts: any[];
+      let total: number;
+      let summaryActive: number;
+      let summaryNeedCare: number;
+
+      if (needsFullFetch) {
+        // Branch metric / birthdayWithin30d: fetch all, post-process, slice.
+        const [allContacts, totalCount, sActive, sNeedCare] = await Promise.all([
+          prisma.contact.findMany({
+            where,
+            include: {
+              assignedUser: { select: { id: true, fullName: true, email: true } },
+              _count: { select: { conversations: true, appointments: true } },
             },
-          },
-        }),
-      ]);
+            // Khi không phải metric sort, vẫn dùng scalar orderBy để
+            // ổn định thứ tự trước khi slice (vd birthdayWithin30d + sort
+            // theo fullName ASC).
+            ...(!isMetricSort ? { orderBy: orderClause } : {}),
+          }),
+          prisma.contact.count({ where }),
+          summaryActiveQ,
+          summaryNeedCareQ,
+        ]);
+        total = totalCount;
+        summaryActive = sActive;
+        summaryNeedCare = sNeedCare;
+        // Slice ở SAU khi compute metrics + sort + filter (xem dưới).
+        contacts = allContacts;
+      } else {
+        const [pageContacts, totalCount, sActive, sNeedCare] = await Promise.all([
+          prisma.contact.findMany({
+            where,
+            include: {
+              assignedUser: { select: { id: true, fullName: true, email: true } },
+              _count: { select: { conversations: true, appointments: true } },
+            },
+            orderBy: orderClause,
+            skip: (pageNum - 1) * limitNum,
+            // limit=-1 → return all (used by "Tất cả" page-size option)
+            ...(limitNum > 0 ? { take: limitNum } : {}),
+          }),
+          prisma.contact.count({ where }),
+          summaryActiveQ,
+          summaryNeedCareQ,
+        ]);
+        contacts = pageContacts;
+        total = totalCount;
+        summaryActive = sActive;
+        summaryNeedCare = sNeedCare;
+      }
 
       // Aggregate per-contact metrics in ONE raw query. Doing it as
       // Prisma .groupBy would need 2-3 round trips (revenue + profit
@@ -274,7 +359,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       // Per CEO decision (Q1 in Session 3.5D): members see revenue
       // (DS) but NOT profit (LN). Cost / margin is owner+admin only.
       const canSeeProfit = user.role === 'owner' || user.role === 'admin';
-      const enriched = contacts.map((c: { id: string }) => {
+      let enriched = contacts.map((c: { id: string }) => {
         const m = metricsMap.get(c.id);
         return {
           ...c,
@@ -289,6 +374,41 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           profit60d: canSeeProfit ? (m?.profit60d ?? 0) : null,
         };
       });
+
+      // PR3 — post-process khi needsFullFetch:
+      // 1. Filter birthdayWithin30d (ignore year)
+      // 2. Sort theo metric nếu isMetricSort
+      // 3. Recompute total (sau filter)
+      // 4. Slice page
+      if (needsFullFetch) {
+        if (birthdayWithin30d) {
+          const now = new Date();
+          enriched = enriched.filter((c: any) => {
+            if (!c.birthday) return false;
+            const d = new Date(c.birthday);
+            if (Number.isNaN(d.getTime())) return false;
+            const thisYear = new Date(now.getFullYear(), d.getMonth(), d.getDate());
+            let diff = thisYear.getTime() - now.getTime();
+            if (diff < 0) {
+              const nextYear = new Date(now.getFullYear() + 1, d.getMonth(), d.getDate());
+              diff = nextYear.getTime() - now.getTime();
+            }
+            return diff <= 30 * 86400_000;
+          });
+          total = enriched.length;
+        }
+        if (isMetricSort) {
+          const key = orderBy as keyof typeof enriched[number];
+          enriched.sort((a: any, b: any) => {
+            const va = (a[key] ?? 0) as number;
+            const vb = (b[key] ?? 0) as number;
+            return sortDir === 'asc' ? va - vb : vb - va;
+          });
+        }
+        if (limitNum > 0) {
+          enriched = enriched.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+        }
+      }
 
       return {
         contacts: enriched,
