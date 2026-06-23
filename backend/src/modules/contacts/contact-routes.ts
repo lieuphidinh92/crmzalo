@@ -398,11 +398,20 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           total = enriched.length;
         }
         if (isMetricSort) {
+          // PR3.3 — KH không có dữ liệu (metric=0/null) LUÔN xuống cuối,
+          // bất kể ASC hay DESC. Anh Philip không muốn KH `—` lẫn vào giữa.
           const key = orderBy as keyof typeof enriched[number];
           enriched.sort((a: any, b: any) => {
-            const va = (a[key] ?? 0) as number;
-            const vb = (b[key] ?? 0) as number;
-            return sortDir === 'asc' ? va - vb : vb - va;
+            const va = a[key];
+            const vb = b[key];
+            const aHas = va !== null && va !== undefined && va !== 0;
+            const bHas = vb !== null && vb !== undefined && vb !== 0;
+            if (aHas && !bHas) return -1;
+            if (!aHas && bHas) return 1;
+            if (!aHas && !bHas) return 0;
+            const na = Number(va);
+            const nb = Number(vb);
+            return sortDir === 'asc' ? na - nb : nb - na;
           });
         }
         if (limitNum > 0) {
