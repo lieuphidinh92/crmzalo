@@ -39,6 +39,7 @@ export const SKU_COST_REGISTRY: Record<string, SkuCostEntry> = {
   MH_05:        { unitCost: 381_000, effectiveFrom: '2026-05-01', note: 'Vitavea Force G Libido 60v — sync DB Bảng giá vốn 19/05' },
   MH_07:        { unitCost: 285_000, effectiveFrom: '2026-05-01', note: 'Manhae Intima Equilibre 30v — sync DB Bảng giá vốn 19/05' },
   MH_09:        { unitCost: 330_000, note: 'Manhae Collagen Expert 30v' },
+  MH_003:       { unitCost: 763_200, effectiveFrom: '2026-06-23', note: 'Manhae Nutrisante 120v (nội tiết) — anh Philip chốt 23/06. Cuối quý có thưởng thêm 1% từ NCC (chưa tính vào cost).' },
   'MNH-MEN-60': { unitCost: 620_000, note: 'Manhae Ménopause 60v (mã mới)' },
 
   // ── Bioisland ────────────────────────────────────────────────────────
@@ -56,12 +57,14 @@ export const SKU_COST_REGISTRY: Record<string, SkuCostEntry> = {
   OTB08:        { unitCost: 295_394, note: 'Optibac Baby Drops' },
 
   // ── Neubria / Neubiotics ─────────────────────────────────────────────
-  NEU_01:       { unitCost: 265_000, effectiveFrom: '2026-05-01', note: 'Neubiotics Her (men phụ khoa) — sync DB Bảng giá vốn 19/05' },
+  NEU_01:       { unitCost: 265_000, effectiveFrom: '2026-05-01', note: 'Neubiotics Her (men phụ khoa) — sync DB Bảng giá vốn 19/05. Cuối tháng có thưởng thêm 5% từ NCC.' },
+  NEU_04:       { unitCost: 280_000, effectiveFrom: '2026-06-23', note: 'Neubria Neu Kid 30v — anh Philip chốt 23/06. Cuối tháng có thưởng thêm 5% từ NCC.' },
   'NEU-EDG-30': { unitCost: 380_000, note: 'Neubria Edge 30v' },
 
   // ── Healthy Care (Úc) ────────────────────────────────────────────────
   HC_01:        { unitCost: 161_557, note: 'Healthy Care Super Lecithin 100tab' },
   HC_03:        { unitCost: 350_000, note: 'Healthy Care Fish Oil 1000mg Omega' },
+  HC_11:        { unitCost: 365_000, effectiveFrom: '2026-06-23', note: 'Healthy Care Ultimate Omega 3-6-9 200tab — anh Philip chốt 23/06.' },
 
   // ── Swisse (Úc) ──────────────────────────────────────────────────────
   SW_1:         { unitCost: 153_548, note: 'Swisse Liver Detox 60v' },
