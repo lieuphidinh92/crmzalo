@@ -125,6 +125,11 @@ model ZaloAccountAccess {
 model Contact {
   id                    String    @id @default(uuid())
   orgId                 String    @map("org_id")
+  // Mã KH thân thiện cho anh Philip — KH001, KH002... Cấp tự động khi
+  // tạo KH mới (xem customer-code-service.ts). Backfill cho 254 KH cũ
+  // qua scripts/backfill-customer-codes.ts. Unique constraint sẽ thêm
+  // sau khi backfill xong (tránh fail migration nếu có row chưa gán).
+  customerCode          String?   @map("customer_code")
   zaloUid               String?   @map("zalo_uid")
   phone                 String?
   fullName              String?   @map("full_name")
@@ -189,6 +194,11 @@ model Contact {
   @@index([orgId, province])
   @@index([orgId, phone])
   @@index([orgId, misaCustomerCode])
+  @@index([orgId, customerCode])
+  // Chặn trùng SĐT trong cùng org. NULL được phép nhiều (KH chưa xin SĐT)
+  // — PostgreSQL unique cho phép multiple NULLs by default. Áp sau khi
+  // backfill: dedup (16 nhóm merge) + normalize (chuẩn 10 số bắt đầu 0).
+  @@unique([orgId, phone], map: "contacts_org_id_phone_unique")
   @@map("contacts")
 }
 

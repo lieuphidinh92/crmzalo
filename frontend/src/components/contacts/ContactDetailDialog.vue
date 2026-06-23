@@ -10,13 +10,29 @@
       <v-divider />
 
       <v-card-text>
+        <v-alert
+          v-if="lastSaveError"
+          type="error"
+          variant="tonal"
+          density="comfortable"
+          class="mb-3"
+          closable
+          @click:close="lastSaveError = null"
+        >
+          {{ lastSaveError }}
+        </v-alert>
         <v-row dense>
           <!-- Identity --------------------------------------------------- -->
           <v-col cols="12" sm="6">
             <v-text-field v-model="form.fullName" label="Họ và tên" :rules="[required]" />
           </v-col>
           <v-col cols="12" sm="6">
-            <v-text-field v-model="form.phone" label="Số điện thoại (Zalo)" />
+            <v-text-field
+              v-model="form.phone"
+              label="Số điện thoại (Zalo)"
+              hint="10 số bắt đầu 0. Hệ thống tự chuẩn hoá +84… hoặc thiếu 0."
+              persistent-hint
+            />
           </v-col>
 
           <v-col cols="12" sm="6">
@@ -242,7 +258,7 @@ const emit = defineEmits<{
   deleted: [id: string];
 }>();
 
-const { saving, deleting, createContact, updateContact, deleteContact } = useContacts();
+const { saving, deleting, lastSaveError, createContact, updateContact, deleteContact } = useContacts();
 
 const show = computed({
   get: () => props.modelValue,
