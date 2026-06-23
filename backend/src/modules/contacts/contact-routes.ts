@@ -268,6 +268,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       }>();
       const contactIds = contacts.map((c: { id: string }) => c.id);
       if (contactIds.length > 0) {
+        // PR4.1 — HOTFIX: bug bị multiply doanh số vì LEFT JOIN order_items
+        // làm SUM(o.total_amount) cộng nhiều lần theo số line items mỗi đơn.
+        // → KH003 PHARMADI: 35 đơn × ~2.26 items = 79 rows → DS x2.57.
+        // Sửa: tách SUM revenue (chỉ JOIN orders) khỏi SUM profit (JOIN items),
+        // gộp qua CTE.
         const rows = await prisma.$queryRaw<Array<{
           contact_id: string;
           days_since_last_order: number | null;
@@ -280,51 +285,66 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           revenue_60d: bigint;
           profit_60d: bigint;
         }>>(Prisma.sql`
+          WITH order_rev AS (
+            SELECT
+              o.contact_id,
+              COALESCE(SUM(o.total_amount) FILTER (
+                WHERE o.order_date >= DATE_TRUNC('year', NOW())
+              ), 0)::bigint AS revenue_ytd,
+              COALESCE(SUM(o.total_amount) FILTER (
+                WHERE o.order_date >= DATE_TRUNC('month', NOW())
+              ), 0)::bigint AS revenue_month,
+              COALESCE(SUM(o.total_amount), 0)::bigint AS revenue_lifetime,
+              COALESCE(SUM(o.total_amount) FILTER (
+                WHERE o.order_date >= NOW() - INTERVAL '60 days'
+              ), 0)::bigint AS revenue_60d
+            FROM orders o
+            WHERE o.contact_id IN (${Prisma.join(contactIds)})
+              AND o.status IN ('confirmed','shipped','completed')
+            GROUP BY o.contact_id
+          ),
+          item_profit AS (
+            SELECT
+              o.contact_id,
+              COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+                WHERE o.order_date >= DATE_TRUNC('year', NOW())
+                  AND oi.line_cost IS NOT NULL
+              ), 0)::bigint AS profit_ytd,
+              COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+                WHERE o.order_date >= DATE_TRUNC('month', NOW())
+                  AND oi.line_cost IS NOT NULL
+              ), 0)::bigint AS profit_month,
+              COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+                WHERE oi.line_cost IS NOT NULL
+              ), 0)::bigint AS profit_lifetime,
+              COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+                WHERE o.order_date >= NOW() - INTERVAL '60 days'
+                  AND oi.line_cost IS NOT NULL
+              ), 0)::bigint AS profit_60d
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.contact_id IN (${Prisma.join(contactIds)})
+              AND o.status IN ('confirmed','shipped','completed')
+            GROUP BY o.contact_id
+          )
           SELECT
             c.id AS contact_id,
             CASE
               WHEN c.last_order_date IS NULL THEN NULL
               ELSE EXTRACT(DAY FROM NOW() - c.last_order_date)::int
             END AS days_since_last_order,
-            COALESCE(SUM(o.total_amount) FILTER (
-              WHERE o.order_date >= DATE_TRUNC('year', NOW())
-                AND o.status IN ('confirmed','shipped','completed')
-            ), 0)::bigint AS revenue_ytd,
-            COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
-              WHERE o.order_date >= DATE_TRUNC('year', NOW())
-                AND o.status IN ('confirmed','shipped','completed')
-                AND oi.line_cost IS NOT NULL
-            ), 0)::bigint AS profit_ytd,
-            COALESCE(SUM(o.total_amount) FILTER (
-              WHERE o.order_date >= DATE_TRUNC('month', NOW())
-                AND o.status IN ('confirmed','shipped','completed')
-            ), 0)::bigint AS revenue_month,
-            COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
-              WHERE o.order_date >= DATE_TRUNC('month', NOW())
-                AND o.status IN ('confirmed','shipped','completed')
-                AND oi.line_cost IS NOT NULL
-            ), 0)::bigint AS profit_month,
-            COALESCE(SUM(o.total_amount) FILTER (
-              WHERE o.status IN ('confirmed','shipped','completed')
-            ), 0)::bigint AS revenue_lifetime,
-            COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
-              WHERE o.status IN ('confirmed','shipped','completed')
-                AND oi.line_cost IS NOT NULL
-            ), 0)::bigint AS profit_lifetime,
-            COALESCE(SUM(o.total_amount) FILTER (
-              WHERE o.order_date >= NOW() - INTERVAL '60 days'
-                AND o.status IN ('confirmed','shipped','completed')
-            ), 0)::bigint AS revenue_60d,
-            COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
-              WHERE o.order_date >= NOW() - INTERVAL '60 days'
-                AND o.status IN ('confirmed','shipped','completed')
-                AND oi.line_cost IS NOT NULL
-            ), 0)::bigint AS profit_60d
+            COALESCE(orv.revenue_ytd, 0)::bigint AS revenue_ytd,
+            COALESCE(ipf.profit_ytd, 0)::bigint AS profit_ytd,
+            COALESCE(orv.revenue_month, 0)::bigint AS revenue_month,
+            COALESCE(ipf.profit_month, 0)::bigint AS profit_month,
+            COALESCE(orv.revenue_lifetime, 0)::bigint AS revenue_lifetime,
+            COALESCE(ipf.profit_lifetime, 0)::bigint AS profit_lifetime,
+            COALESCE(orv.revenue_60d, 0)::bigint AS revenue_60d,
+            COALESCE(ipf.profit_60d, 0)::bigint AS profit_60d
           FROM contacts c
-          LEFT JOIN orders o ON o.contact_id = c.id
-          LEFT JOIN order_items oi ON oi.order_id = o.id
+          LEFT JOIN order_rev orv ON orv.contact_id = c.id
+          LEFT JOIN item_profit ipf ON ipf.contact_id = c.id
           WHERE c.id IN (${Prisma.join(contactIds)})
-          GROUP BY c.id
         `);
         type MetricRow = {
           contact_id: string;
