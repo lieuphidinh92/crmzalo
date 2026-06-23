@@ -72,6 +72,20 @@
       <template #header.customerRank="{ column }">
         <div class="d-flex align-center">
           <span>{{ column.title }}</span>
+          <v-icon
+            size="14"
+            class="ml-1 sort-btn"
+            :color="isSortActive('customerRank', 'desc') ? 'primary' : ''"
+            title="Hạng cao xuống thấp"
+            @click.stop="setSort('customerRank', 'desc')"
+          >mdi-sort-descending</v-icon>
+          <v-icon
+            size="14"
+            class="sort-btn"
+            :color="isSortActive('customerRank', 'asc') ? 'primary' : ''"
+            title="Hạng thấp lên cao"
+            @click.stop="setSort('customerRank', 'asc')"
+          >mdi-sort-ascending</v-icon>
           <v-menu :close-on-content-click="false" location="bottom start">
             <template #activator="{ props }">
               <v-icon
@@ -132,6 +146,20 @@
       <template #header.revenueLifetime="{ column }">
         <div class="d-flex align-center">
           <span>{{ column.title }}</span>
+          <v-icon
+            size="14"
+            class="ml-1 sort-btn"
+            :color="isSortActive('revenueLifetime', 'desc') ? 'primary' : ''"
+            title="Cao đến thấp"
+            @click.stop="setSort('revenueLifetime', 'desc')"
+          >mdi-sort-numeric-descending</v-icon>
+          <v-icon
+            size="14"
+            class="sort-btn"
+            :color="isSortActive('revenueLifetime', 'asc') ? 'primary' : ''"
+            title="Thấp đến cao"
+            @click.stop="setSort('revenueLifetime', 'asc')"
+          >mdi-sort-numeric-ascending</v-icon>
           <v-menu :close-on-content-click="false" location="bottom start">
             <template #activator="{ props }">
               <v-icon
@@ -170,6 +198,20 @@
       <template #header.profitLifetime="{ column }">
         <div class="d-flex align-center">
           <span>{{ column.title }}</span>
+          <v-icon
+            size="14"
+            class="ml-1 sort-btn"
+            :color="isSortActive('profitLifetime', 'desc') ? 'primary' : ''"
+            title="Cao đến thấp"
+            @click.stop="setSort('profitLifetime', 'desc')"
+          >mdi-sort-numeric-descending</v-icon>
+          <v-icon
+            size="14"
+            class="sort-btn"
+            :color="isSortActive('profitLifetime', 'asc') ? 'primary' : ''"
+            title="Thấp đến cao"
+            @click.stop="setSort('profitLifetime', 'asc')"
+          >mdi-sort-numeric-ascending</v-icon>
           <v-menu :close-on-content-click="false" location="bottom start">
             <template #activator="{ props }">
               <v-icon
@@ -204,6 +246,17 @@
           </v-menu>
         </div>
       </template>
+
+      <!-- PR3.1 — 2 nút sort cho các cột số phụ (60d / năm / tháng / công nợ / điểm) -->
+      <template #header.revenue60d="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('revenue60d','desc')?'primary':''" title="Cao đến thấp" @click.stop="setSort('revenue60d','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('revenue60d','asc')?'primary':''" title="Thấp đến cao" @click.stop="setSort('revenue60d','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
+      <template #header.profit60d="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('profit60d','desc')?'primary':''" title="Cao đến thấp" @click.stop="setSort('profit60d','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('profit60d','asc')?'primary':''" title="Thấp đến cao" @click.stop="setSort('profit60d','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
+      <template #header.revenueYtd="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('revenueYtd','desc')?'primary':''" title="Cao đến thấp" @click.stop="setSort('revenueYtd','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('revenueYtd','asc')?'primary':''" title="Thấp đến cao" @click.stop="setSort('revenueYtd','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
+      <template #header.profitYtd="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('profitYtd','desc')?'primary':''" title="Cao đến thấp" @click.stop="setSort('profitYtd','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('profitYtd','asc')?'primary':''" title="Thấp đến cao" @click.stop="setSort('profitYtd','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
+      <template #header.revenueMonth="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('revenueMonth','desc')?'primary':''" title="Cao đến thấp" @click.stop="setSort('revenueMonth','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('revenueMonth','asc')?'primary':''" title="Thấp đến cao" @click.stop="setSort('revenueMonth','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
+      <template #header.profitMonth="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('profitMonth','desc')?'primary':''" title="Cao đến thấp" @click.stop="setSort('profitMonth','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('profitMonth','asc')?'primary':''" title="Thấp đến cao" @click.stop="setSort('profitMonth','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
+      <template #header.debtAmount="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('debtAmount','desc')?'primary':''" title="Cao đến thấp" @click.stop="setSort('debtAmount','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('debtAmount','asc')?'primary':''" title="Thấp đến cao" @click.stop="setSort('debtAmount','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
+      <template #header.rewardPoints="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('rewardPoints','desc')?'primary':''" title="Cao đến thấp" @click.stop="setSort('rewardPoints','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('rewardPoints','asc')?'primary':''" title="Thấp đến cao" @click.stop="setSort('rewardPoints','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
+      <template #header.daysSinceLastOrder="{ column }"><div class="d-flex align-center"><span>{{ column.title }}</span><v-icon size="14" class="ml-1 sort-btn" :color="isSortActive('daysSinceLastOrder','desc')?'primary':''" title="Lâu nhất trước" @click.stop="setSort('daysSinceLastOrder','desc')">mdi-sort-numeric-descending</v-icon><v-icon size="14" class="sort-btn" :color="isSortActive('daysSinceLastOrder','asc')?'primary':''" title="Gần đây nhất" @click.stop="setSort('daysSinceLastOrder','asc')">mdi-sort-numeric-ascending</v-icon></div></template>
 
       <template #header.birthday="{ column }">
         <div class="d-flex align-center">
@@ -801,6 +854,26 @@ function onSortChange(sortArr: Array<{ key: string; order: 'asc' | 'desc' }>) {
   fetchContacts();
 }
 
+/**
+ * PR3.1 — Click 1 trong 2 nút "↓ to-nhỏ" / "↑ nhỏ-to" trên header cột số.
+ * Cùng dir đang active → bỏ sort (về mặc định).
+ */
+function setSort(key: string, dir: 'asc' | 'desc') {
+  if (sort.orderBy === key && sort.order === dir) {
+    sort.orderBy = '';
+    sort.order = 'desc';
+  } else {
+    sort.orderBy = key;
+    sort.order = dir;
+  }
+  pagination.page = 1;
+  fetchContacts();
+}
+
+function isSortActive(key: string, dir: 'asc' | 'desc'): boolean {
+  return sort.orderBy === key && sort.order === dir;
+}
+
 /** Map daysSinceLastOrder to the bucket color used in the badge.
  *  Boundaries mirror DAYS_BUCKET_* on the backend so labels stay aligned. */
 function daysInactiveColor(days: number): string {
@@ -925,6 +998,16 @@ onMounted(() => {
 
 .font-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* PR3.1 — Sort buttons trên header table */
+.sort-btn {
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.sort-btn:hover {
+  opacity: 1;
 }
 
 .money-pos {
