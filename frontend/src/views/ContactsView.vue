@@ -55,6 +55,63 @@
         <span v-else class="text-grey">—</span>
       </template>
 
+      <!-- PR2: Hạng KH (top_1 → top_4 với score 0-100) -->
+      <template #item.customerRank="{ item }">
+        <v-chip
+          v-if="item.customerRank"
+          size="small"
+          variant="flat"
+          :color="customerRankColor(item.customerRank)"
+          :title="`Điểm ${item.rankScore ?? 0}/100`"
+        >
+          {{ customerRankShortLabel(item.customerRank) }}
+        </v-chip>
+        <span v-else class="text-grey">—</span>
+      </template>
+
+      <!-- PR2: Sinh nhật -->
+      <template #item.birthday="{ item }">
+        <span v-if="item.birthday">
+          {{ formatBirthday(item.birthday) }}
+          <v-icon
+            v-if="isBirthdaySoon(item.birthday)"
+            size="14"
+            color="amber"
+            class="ml-1"
+            title="Sinh nhật trong 30 ngày tới"
+          >mdi-cake-variant</v-icon>
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+
+      <!-- PR2: Lợi nhuận tổng (lifetime) -->
+      <template #item.profitLifetime="{ item }">
+        <span
+          v-if="item.profitLifetime !== null && item.profitLifetime !== undefined && item.profitLifetime !== 0"
+          :class="item.profitLifetime > 0 ? 'money-pos' : 'money-neg'"
+        >
+          {{ formatVNDShort(item.profitLifetime) }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+
+      <!-- PR2: 60-day metrics -->
+      <template #item.revenue60d="{ item }">
+        <span v-if="item.revenue60d && item.revenue60d > 0" class="money-pos">
+          {{ formatVNDShort(item.revenue60d) }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+      <template #item.profit60d="{ item }">
+        <span
+          v-if="item.profit60d !== null && item.profit60d !== undefined && item.profit60d !== 0"
+          :class="item.profit60d > 0 ? 'money-pos' : 'money-neg'"
+        >
+          {{ formatVNDShort(item.profit60d) }}
+        </span>
+        <span v-else class="text-grey">—</span>
+      </template>
+
       <!-- Name → opens insight panel -->
       <template #item.fullName="{ item }">
         <a
@@ -255,6 +312,8 @@ import {
   CUSTOMER_TYPE_OPTIONS,
   STAGE_OPTIONS,
   POLICY_TIER_OPTIONS,
+  customerRankShortLabel,
+  customerRankColor,
   type Contact,
 } from '@/composables/use-contacts';
 import { formatVNDShort } from '@/composables/use-overview-report';
@@ -294,18 +353,23 @@ const columnDefs: ColumnDef[] = [
   { key: 'customerCode', title: 'Mã KH', defaultVisible: true },
   { key: 'fullName', title: 'Tên', alwaysVisible: true, defaultVisible: true },
   { key: 'phone', title: 'SĐT', alwaysVisible: true, defaultVisible: true },
-  { key: 'customerType', title: 'Loại KH', defaultVisible: true },
+  { key: 'customerRank', title: 'Hạng KH', defaultVisible: true },
+  { key: 'customerType', title: 'Loại KH', defaultVisible: false },
   { key: 'assignedUser', title: 'Sale', defaultVisible: true },
   { key: 'daysSinceLastOrder', title: 'Số ngày chưa đặt', defaultVisible: true },
-  { key: 'revenueYtd', title: 'Doanh số năm', defaultVisible: true },
-  { key: 'profitYtd', title: 'Lợi nhuận năm', defaultVisible: true },
+  { key: 'revenueLifetime', title: 'Doanh số tổng', defaultVisible: true },
+  { key: 'profitLifetime', title: 'Lợi nhuận tổng', defaultVisible: true },
+  { key: 'birthday', title: 'Sinh nhật', defaultVisible: true },
   // Optional columns ────────────────────────────────────────────
+  { key: 'revenueYtd', title: 'Doanh số năm', defaultVisible: false },
+  { key: 'profitYtd', title: 'Lợi nhuận năm', defaultVisible: false },
+  { key: 'revenue60d', title: 'Doanh số 60 ngày', defaultVisible: false },
+  { key: 'profit60d', title: 'Lợi nhuận 60 ngày', defaultVisible: false },
   { key: 'stage', title: 'Stage', defaultVisible: false },
   { key: 'province', title: 'Tỉnh thành', defaultVisible: false },
   { key: 'nextContactDate', title: 'Liên hệ tiếp theo', defaultVisible: false },
   { key: 'revenueMonth', title: 'Doanh số tháng', defaultVisible: false },
   { key: 'profitMonth', title: 'Lợi nhuận tháng', defaultVisible: false },
-  { key: 'revenueLifetime', title: 'Doanh số lifetime', defaultVisible: false },
   { key: 'policyTier', title: 'Chính sách', defaultVisible: false },
   { key: 'source', title: 'Nguồn', defaultVisible: false },
   { key: 'currentSupplier', title: 'NCC hiện tại', defaultVisible: false },
@@ -417,6 +481,31 @@ function stageColor(value: string): string {
 function formatDate(d: string | null | undefined) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('vi-VN');
+}
+
+/** PR2: Sinh nhật format dd/MM (không hiện năm vì có thể không đủ chính xác). */
+function formatBirthday(d: string | null | undefined): string {
+  if (!d) return '—';
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return '—';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
+}
+
+/** PR2: True nếu sinh nhật trong vòng 30 ngày tới (so với hôm nay, ignore year). */
+function isBirthdaySoon(d: string | null | undefined): boolean {
+  if (!d) return false;
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  const thisYearBday = new Date(now.getFullYear(), date.getMonth(), date.getDate());
+  let diff = thisYearBday.getTime() - now.getTime();
+  if (diff < 0) {
+    const nextYearBday = new Date(now.getFullYear() + 1, date.getMonth(), date.getDate());
+    diff = nextYearBday.getTime() - now.getTime();
+  }
+  return diff <= 30 * 86400_000;
 }
 
 function formatCurrency(v: number | string | null | undefined): string {

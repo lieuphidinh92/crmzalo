@@ -14,6 +14,24 @@ import { logCompliance } from '../../shared/utils/compliance-logger.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 import { getNextCustomerCode } from './customer-code-service.js';
 
+/** Validate + clean array `[{label, date}]` từ body — drop entry sai. */
+function sanitizeSpecialDates(raw: unknown): Array<{ label: string; date: string }> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ label: string; date: string }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const label = typeof (item as any).label === 'string' ? (item as any).label.trim() : '';
+    const date = typeof (item as any).date === 'string' ? (item as any).date.trim() : '';
+    if (!label || !date) continue;
+    // ISO `YYYY-MM-DD` hoặc bất kỳ format Date parse được — chuẩn hoá về
+    // `YYYY-MM-DD` để frontend không cần parse phức tạp.
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) continue;
+    out.push({ label, date: d.toISOString().slice(0, 10) });
+  }
+  return out;
+}
+
 /** Statuses that count as booked revenue. Mirrors the convention in
  * reports/overview-service. Excludes draft + cancelled. */
 const COUNTABLE_STATUSES = ['confirmed', 'shipped', 'completed'] as const;
@@ -67,6 +85,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       if (policyTier) where.policyTier = policyTier;
       if (province) where.province = province;
       if (scale) where.scale = scale;
+      // PR2: filter theo hạng KH (customerRank). Special value `no_data`
+      // = KH chưa có đơn (rank NULL).
+      const customerRank = (request.query as QueryParams).customerRank;
+      if (customerRank === 'no_data') where.customerRank = null;
+      else if (customerRank) where.customerRank = customerRank;
       if (search) {
         where.OR = [
           { fullName: { contains: search, mode: 'insensitive' } },
@@ -154,6 +177,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         revenueMonth: number;
         profitMonth: number;
         revenueLifetime: number;
+        profitLifetime: number;
+        revenue60d: number;
+        profit60d: number;
       }>();
       const contactIds = contacts.map((c: { id: string }) => c.id);
       if (contactIds.length > 0) {
@@ -165,6 +191,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           revenue_month: bigint;
           profit_month: bigint;
           revenue_lifetime: bigint;
+          profit_lifetime: bigint;
+          revenue_60d: bigint;
+          profit_60d: bigint;
         }>>(Prisma.sql`
           SELECT
             c.id AS contact_id,
@@ -192,7 +221,20 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             ), 0)::bigint AS profit_month,
             COALESCE(SUM(o.total_amount) FILTER (
               WHERE o.status IN ('confirmed','shipped','completed')
-            ), 0)::bigint AS revenue_lifetime
+            ), 0)::bigint AS revenue_lifetime,
+            COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+              WHERE o.status IN ('confirmed','shipped','completed')
+                AND oi.line_cost IS NOT NULL
+            ), 0)::bigint AS profit_lifetime,
+            COALESCE(SUM(o.total_amount) FILTER (
+              WHERE o.order_date >= NOW() - INTERVAL '60 days'
+                AND o.status IN ('confirmed','shipped','completed')
+            ), 0)::bigint AS revenue_60d,
+            COALESCE(SUM(oi.line_total - oi.line_cost) FILTER (
+              WHERE o.order_date >= NOW() - INTERVAL '60 days'
+                AND o.status IN ('confirmed','shipped','completed')
+                AND oi.line_cost IS NOT NULL
+            ), 0)::bigint AS profit_60d
           FROM contacts c
           LEFT JOIN orders o ON o.contact_id = c.id
           LEFT JOIN order_items oi ON oi.order_id = o.id
@@ -207,6 +249,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           revenue_month: bigint;
           profit_month: bigint;
           revenue_lifetime: bigint;
+          profit_lifetime: bigint;
+          revenue_60d: bigint;
+          profit_60d: bigint;
         };
         metricsMap = new Map(
           rows.map((r: MetricRow) => [
@@ -218,6 +263,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               revenueMonth: Number(r.revenue_month),
               profitMonth: Number(r.profit_month),
               revenueLifetime: Number(r.revenue_lifetime),
+              profitLifetime: Number(r.profit_lifetime),
+              revenue60d: Number(r.revenue_60d),
+              profit60d: Number(r.profit_60d),
             },
           ]),
         );
@@ -234,8 +282,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           revenueYtd: m?.revenueYtd ?? 0,
           revenueMonth: m?.revenueMonth ?? 0,
           revenueLifetime: m?.revenueLifetime ?? 0,
+          revenue60d: m?.revenue60d ?? 0,
           profitYtd: canSeeProfit ? (m?.profitYtd ?? 0) : null,
           profitMonth: canSeeProfit ? (m?.profitMonth ?? 0) : null,
+          profitLifetime: canSeeProfit ? (m?.profitLifetime ?? 0) : null,
+          profit60d: canSeeProfit ? (m?.profit60d ?? 0) : null,
         };
       });
 
@@ -401,6 +452,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           internalNote: body.internalNote,
           rewardPoints: body.rewardPoints,
           potentialValue: body.potentialValue,
+          // PR2 fields
+          birthday: body.birthday ? new Date(body.birthday) : null,
+          specialDates: sanitizeSpecialDates(body.specialDates),
         },
       });
 
@@ -491,6 +545,12 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       }
       if (body.nextContactDate !== undefined) {
         updateData.nextContactDate = body.nextContactDate ? new Date(body.nextContactDate) : null;
+      }
+      if (body.birthday !== undefined) {
+        updateData.birthday = body.birthday ? new Date(body.birthday) : null;
+      }
+      if (body.specialDates !== undefined) {
+        updateData.specialDates = sanitizeSpecialDates(body.specialDates);
       }
 
       const updated = await prisma.contact.update({

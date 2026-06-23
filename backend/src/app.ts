@@ -24,7 +24,9 @@ import { chatRoutes } from './modules/chat/chat-routes.js';
 import { contactRoutes } from './modules/contacts/contact-routes.js';
 import { contactSubResourceRoutes } from './modules/contacts/contact-sub-resource-routes.js';
 import { contactAiInsightRoutes } from './modules/contacts/contact-ai-insight-routes.js';
+import { contactCareRoutes } from './modules/contacts/contact-care-routes.js';
 import { appointmentRoutes } from './modules/contacts/appointment-routes.js';
+import { startCustomerRankCron } from './modules/contacts/customer-rank-cron.js';
 import { startAppointmentReminder } from './modules/contacts/appointment-reminder.js';
 import { dashboardRoutes } from './modules/dashboard/dashboard-routes.js';
 import { reportRoutes } from './modules/dashboard/report-routes.js';
@@ -142,6 +144,7 @@ async function bootstrap() {
   await app.register(contactRoutes);
   await app.register(contactSubResourceRoutes);
   await app.register(contactAiInsightRoutes);
+  await app.register(contactCareRoutes);
   await app.register(appointmentRoutes);
   await app.register(dashboardRoutes);
   await app.register(reportRoutes);
@@ -252,6 +255,7 @@ async function bootstrap() {
     startTaskCronJobs();
     startOrderCronJobs();
     startInventoryCronJobs();
+    startCustomerRankCron();
   } catch (err) {
     logger.error('Failed to start server:', err);
     process.exit(1);

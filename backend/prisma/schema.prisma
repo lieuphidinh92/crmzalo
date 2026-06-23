@@ -79,6 +79,7 @@ model User {
   mktOrders        Order[]             @relation("MktOwnerOrders")
   assignedTasks    Task[]              @relation("AssignedTasks")
   learningProgress LearningProgress[]
+  careLogs         ContactCareLog[]    @relation("CareLogsCreated")
 
   @@map("users")
 }
@@ -145,6 +146,18 @@ model Contact {
   tags                  Json      @default("[]")
   metadata              Json      @default("{}")
 
+  // === PR2: KH-list refactor Phase 3+4 (birthday, care, rank) ================
+  // Sinh nhật KH — DATE-only (timezone-agnostic, không lưu giờ).
+  birthday               DateTime? @db.Date
+  // Ngày đặc biệt do anh Philip tự nhập (khai trương, kỷ niệm cưới…)
+  // Mảng `[{label: string, date: "YYYY-MM-DD"}]`. Validate ở service.
+  specialDates           Json      @default("[]") @map("special_dates")
+  // Hạng KH tự cấp theo cron daily (xem customer-rank-service.ts):
+  //   top_1 (80-100) | top_2 (50-79) | top_3 (20-49) | top_4 (0-19)
+  // NULL khi KH chưa từng có đơn → chưa có dữ liệu để tính.
+  customerRank           String?   @map("customer_rank")
+  rankScore              Decimal?  @map("rank_score") @db.Decimal(5, 2)
+  rankUpdatedAt          DateTime? @map("rank_updated_at")
   // === B2B sales fields (added for ngheduocsi.vn refactor) ====================
   // All fields nullable / default-empty so existing rows don't break.
   storeName              String?   @map("store_name")
@@ -181,13 +194,14 @@ model Contact {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  org           Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  assignedUser  User?          @relation("AssignedContacts", fields: [assignedUserId], references: [id])
+  org           Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignedUser  User?             @relation("AssignedContacts", fields: [assignedUserId], references: [id])
   conversations Conversation[]
   appointments  Appointment[]
   orders        Order[]
   stageHistory  StageHistory[]
   tasks         Task[]
+  careLogs      ContactCareLog[]
 
   @@index([orgId, customerType])
   @@index([orgId, stage])
@@ -195,11 +209,35 @@ model Contact {
   @@index([orgId, phone])
   @@index([orgId, misaCustomerCode])
   @@index([orgId, customerCode])
+  @@index([orgId, customerRank])
+  @@index([orgId, birthday])
   // Chặn trùng SĐT trong cùng org. NULL được phép nhiều (KH chưa xin SĐT)
   // — PostgreSQL unique cho phép multiple NULLs by default. Áp sau khi
   // backfill: dedup (16 nhóm merge) + normalize (chuẩn 10 số bắt đầu 0).
   @@unique([orgId, phone], map: "contacts_org_id_phone_unique")
   @@map("contacts")
+}
+
+// PR2 — Lịch sử chăm sóc trực tiếp do sale tự nhập (gọi điện, gặp mặt,
+// nhắn Zalo offline). KHÔNG auto-pull từ Zalo messages — anh Philip muốn
+// log riêng để khỏi loãng. Hiển thị trong ContactDetailDialog tab "Chăm sóc".
+model ContactCareLog {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  contactId       String   @map("contact_id")
+  // call | zalo | visit | sms | other — chỉ validate ở service layer
+  type            String
+  note            String?
+  careAt          DateTime @map("care_at")
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("CareLogsCreated", fields: [createdByUserId], references: [id])
+
+  @@index([orgId, contactId, careAt])
+  @@index([orgId, careAt])
+  @@map("contact_care_logs")
 }
 
 // Inbound webhook payloads (Pancake, future integrations).

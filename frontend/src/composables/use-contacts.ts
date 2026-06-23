@@ -23,6 +23,12 @@ export interface Contact {
   fullName: string | null;
   phone: string | null;
   avatarUrl?: string | null;
+  // PR2 — Phase 3+4
+  birthday?: string | null;
+  specialDates?: Array<{ label: string; date: string }>;
+  customerRank?: string | null;
+  rankScore?: number | string | null;
+  rankUpdatedAt?: string | null;
   source: string | null;
   notes: string | null;
   tags: string[];
@@ -58,6 +64,9 @@ export interface Contact {
   revenueMonth?: number;
   profitMonth?: number;
   revenueLifetime?: number;
+  profitLifetime?: number | null;
+  revenue60d?: number;
+  profit60d?: number | null;
 }
 
 export interface ContactFilters {
@@ -68,6 +77,34 @@ export interface ContactFilters {
   policyTier: string;
   province: string;
   daysInactiveBucket: string;
+  customerRank: string;
+}
+
+export const CUSTOMER_RANK_OPTIONS = [
+  { value: 'top_1', text: 'Top 1 — VIP (80-100đ)', color: 'amber' },
+  { value: 'top_2', text: 'Top 2 — Thân thiết (50-79đ)', color: 'success' },
+  { value: 'top_3', text: 'Top 3 — Thường (20-49đ)', color: 'info' },
+  { value: 'top_4', text: 'Top 4 — Ít hoạt động (0-19đ)', color: 'grey' },
+];
+
+export const CUSTOMER_RANK_FILTER_OPTIONS = [
+  ...CUSTOMER_RANK_OPTIONS.map(o => ({ value: o.value, text: o.text })),
+  { value: 'no_data', text: 'Chưa có dữ liệu' },
+];
+
+export function customerRankShortLabel(value: string | null | undefined): string {
+  if (!value) return '—';
+  const m: Record<string, string> = {
+    top_1: 'Top 1 VIP',
+    top_2: 'Top 2 Thân',
+    top_3: 'Top 3 Thường',
+    top_4: 'Top 4 Ít',
+  };
+  return m[value] ?? value;
+}
+
+export function customerRankColor(value: string | null | undefined): string {
+  return CUSTOMER_RANK_OPTIONS.find(o => o.value === value)?.color ?? 'grey';
 }
 
 export const DAYS_INACTIVE_OPTIONS = [
@@ -142,6 +179,7 @@ export function useContacts() {
     policyTier: '',
     province: '',
     daysInactiveBucket: '',
+    customerRank: '',
   });
 
   const pagination = reactive({ page: 1, limit: 50 });
@@ -161,6 +199,7 @@ export function useContacts() {
           policyTier: filters.policyTier || undefined,
           province: filters.province || undefined,
           daysInactiveBucket: filters.daysInactiveBucket || undefined,
+          customerRank: filters.customerRank || undefined,
           orderBy: sort.orderBy || undefined,
           order: sort.order || undefined,
         },
@@ -244,6 +283,7 @@ export function useContacts() {
     filters.policyTier = '';
     filters.province = '';
     filters.daysInactiveBucket = '';
+    filters.customerRank = '';
     pagination.page = 1;
     fetchContacts();
   }
