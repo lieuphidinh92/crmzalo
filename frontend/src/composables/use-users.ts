@@ -72,6 +72,25 @@ export function useUsers() {
     }
   }
 
+  /** Auto-generate password: backend sinh random + trả plaintext 1 lần. */
+  async function autoResetPassword(id: string): Promise<{
+    ok: boolean;
+    newPassword?: string;
+    userEmail?: string;
+    error?: string;
+  }> {
+    try {
+      const res = await api.post(`/users/${id}/reset-password`);
+      return {
+        ok: true,
+        newPassword: res.data.newPassword,
+        userEmail: res.data.user?.email,
+      };
+    } catch (err: any) {
+      return { ok: false, error: err.response?.data?.error || 'Lỗi reset mật khẩu' };
+    }
+  }
+
   async function deleteUser(id: string): Promise<{ ok: boolean; error?: string }> {
     try {
       await api.delete(`/users/${id}`);
@@ -82,5 +101,8 @@ export function useUsers() {
     }
   }
 
-  return { users, loading, error, fetchUsers, createUser, updateUser, resetPassword, deleteUser };
+  return {
+    users, loading, error,
+    fetchUsers, createUser, updateUser, resetPassword, autoResetPassword, deleteUser,
+  };
 }

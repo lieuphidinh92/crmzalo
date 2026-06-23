@@ -138,6 +138,52 @@ export async function userRoutes(app: FastifyInstance) {
     return { success: true };
   });
 
+  // POST /api/v1/users/:id/reset-password — generate random password,
+  // hash + save, trả plaintext về owner/admin để forward qua Zalo cho user.
+  // Plaintext CHỈ trả 1 lần — không lưu plaintext ở đâu cả (KHÔNG log).
+  app.post('/api/v1/users/:id/reset-password', async (request: FastifyRequest, reply: FastifyReply) => {
+    const currentUser = request.user!;
+    if (!['owner', 'admin'].includes(currentUser.role)) {
+      return reply.status(403).send({ error: 'Không có quyền' });
+    }
+    const { id } = request.params as { id: string };
+
+    // Sinh password 12 ký tự ngẫu nhiên: 6 chữ + 4 số + 2 đặc biệt.
+    // crypto.randomBytes để chống bias của Math.random().
+    const crypto = await import('node:crypto');
+    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+    const digits = '23456789';
+    const special = '@#$%';
+    function pick(pool: string, n: number) {
+      const buf = crypto.randomBytes(n);
+      let s = '';
+      for (let i = 0; i < n; i++) s += pool[buf[i] % pool.length];
+      return s;
+    }
+    // Shuffle để vị trí số/chữ/đặc biệt không cố định
+    const raw = (pick(charset, 6) + pick(digits, 4) + pick(special, 2)).split('');
+    for (let i = raw.length - 1; i > 0; i--) {
+      const j = crypto.randomBytes(1)[0] % (i + 1);
+      [raw[i], raw[j]] = [raw[j], raw[i]];
+    }
+    const newPassword = raw.join('');
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const updated = await prisma.user.update({
+      where: { id, orgId: currentUser.orgId },
+      data: { passwordHash },
+      select: { id: true, email: true, fullName: true },
+    });
+
+    // Plaintext password trả về 1 lần. Không log, không persist.
+    return {
+      success: true,
+      user: updated,
+      newPassword,
+      warning: 'Mật khẩu này chỉ hiện 1 lần — copy ngay gửi cho nhân viên qua Zalo.',
+    };
+  });
+
   // DELETE /api/v1/users/:id — deactivate user (owner only)
   app.delete('/api/v1/users/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const currentUser = request.user!;
