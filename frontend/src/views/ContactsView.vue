@@ -9,6 +9,16 @@
         :columns="columnDefs"
         class="mr-2"
       />
+      <v-btn
+        variant="outlined"
+        color="success"
+        prepend-icon="mdi-microsoft-excel"
+        :loading="exporting"
+        class="mr-2"
+        @click="exportExcel"
+      >
+        Xuất Excel
+      </v-btn>
       <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreate">
         Thêm KH
       </v-btn>
@@ -702,6 +712,55 @@ const showDialog = ref(false);
 const dialogContact = ref<Contact | null>(null);
 
 const toast = ref({ show: false, text: '', color: 'success' as string });
+const exporting = ref(false);
+
+/** PR3 — Xuất Excel theo filter hiện tại. Áp đúng query đang fetch, backend
+ *  trả file .xlsx (header Content-Disposition đặt sẵn tên file). */
+async function exportExcel() {
+  if (exporting.value) return;
+  exporting.value = true;
+  try {
+    // Cùng filter set với fetchContacts() — backend ignore page/limit khi export.
+    const params: Record<string, string> = {};
+    const f = filters as Record<string, any>;
+    for (const k of Object.keys(f)) {
+      const v = f[k];
+      if (v !== '' && v !== null && v !== undefined) params[k] = String(v);
+    }
+    const res = await api.get('/contacts/export', {
+      params,
+      responseType: 'blob',
+    });
+    // Lấy tên file từ Content-Disposition; nếu thiếu fallback timestamp client.
+    const cd = res.headers?.['content-disposition'] ?? '';
+    const match = /filename="?([^"]+)"?/.exec(cd);
+    const ts = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fallback = `Khach-hang-${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}.xlsx`;
+    const filename = match?.[1] ?? fallback;
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.value = { show: true, text: `Đã xuất ${filename}`, color: 'success' };
+  } catch (err: any) {
+    console.error('Export failed:', err);
+    toast.value = {
+      show: true,
+      text: err?.response?.data?.error ?? 'Xuất Excel thất bại',
+      color: 'error',
+    };
+  } finally {
+    exporting.value = false;
+  }
+}
 
 // ── Label helpers ────────────────────────────────────────────────────────
 function sourceLabelOf(value: string) {
