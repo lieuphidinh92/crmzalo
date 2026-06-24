@@ -18,6 +18,7 @@ const showNotifDrawer = ref(false);
 const notifCount = ref(0);
 const searchInputRef = ref(null);
 const searchWrapperRef = ref(null);
+const panelRef = ref(null);
 
 const userName = computed(() => auth.user?.fullName || auth.user?.email || 'Sale');
 const cartCount = computed(() => pos.itemCount);
@@ -41,6 +42,20 @@ function onSearchFocus() {
 function clearSearch() {
   searchQuery.value = '';
   showSearchPanel.value = false;
+}
+
+// Arrow ↑/↓ walk the suggestion list; open the panel first if it's closed.
+function onArrowNav(delta) {
+  if (!showSearchPanel.value) {
+    if ((searchQuery.value || '').trim().length >= 2) showSearchPanel.value = true;
+    return;
+  }
+  panelRef.value?.move(delta);
+}
+
+// Enter commits the highlighted suggestion (or the top hit if none highlighted).
+function onEnterSelect() {
+  if (showSearchPanel.value) panelRef.value?.selectActive();
 }
 
 function handleSelect() {
@@ -140,7 +155,13 @@ onBeforeUnmount(() => {
           v-model="searchQuery"
           @input="onSearchInput"
           @focus="onSearchFocus"
+          @keydown.down.prevent="onArrowNav(1)"
+          @keydown.up.prevent="onArrowNav(-1)"
+          @keydown.enter.prevent="onEnterSelect"
           type="search"
+          role="combobox"
+          aria-autocomplete="list"
+          :aria-expanded="showSearchPanel"
           placeholder="Tìm sản phẩm, khách hàng... (gõ / để focus)"
           class="w-full h-11 pl-11 pr-9 rounded-input bg-surface-soft border border-transparent focus:bg-white focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none text-sm"
         />
@@ -161,6 +182,7 @@ onBeforeUnmount(() => {
 
         <GlobalSearchPanel
           v-if="showSearchPanel"
+          ref="panelRef"
           :query="searchQuery"
           @select="handleSelect"
           @close="showSearchPanel = false"
