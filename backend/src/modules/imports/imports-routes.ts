@@ -592,9 +592,31 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
             createdBatchIds.push(batch.id);
           }
 
+          // Calculate payment due date from supplier's payment terms
+          let paymentDueDate: Date | null = null;
+          if (order.supplierId) {
+            const supplier = await tx.supplier.findUnique({
+              where: { id: order.supplierId },
+              select: { paymentTermDays: true },
+            });
+            if (supplier) {
+              const importDate = order.importDate ?? new Date();
+              paymentDueDate = new Date(importDate);
+              paymentDueDate.setDate(paymentDueDate.getDate() + supplier.paymentTermDays);
+            }
+          }
+
           await tx.importOrder.update({
             where: { id },
-            data: { status: 'confirmed', confirmedAt: new Date() },
+            data: {
+              status: 'confirmed',
+              confirmedAt: new Date(),
+              // ── Auto-set công nợ NCC khi confirm ──
+              debtAmount: order.totalAmount,
+              paidAmount: 0,
+              paymentStatus: 'unpaid',
+              paymentDueDate,
+            },
           });
           return { batchIds: createdBatchIds };
         });
