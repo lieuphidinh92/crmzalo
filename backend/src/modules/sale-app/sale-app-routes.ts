@@ -1511,17 +1511,19 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const term = q.trim();
       const tierName = TIER_NAME_MAP[tier] ?? null;
 
-      const where: any = { orgId: user.orgId, status: 'active' };
+      // Front-end bán hàng CHỈ hiện SP có DOANH SỐ (hasSales=true) — kể cả khi
+      // tìm kiếm: gõ tên/SKU chỉ ra SP đã từng bán, KHÔNG lòi SP chưa bán bao
+      // giờ (đúng ý CEO: "cái nào chưa có doanh số thì ẩn"). Status KHÔNG lọc:
+      // SP đã đánh "ngừng KD" vẫn hiện nếu có doanh số (status là dữ liệu
+      // backend; backend giữ đủ SP — đây là UX, không phải logic toán học).
+      const where: any = { orgId: user.orgId, hasSales: true };
       if (brand) where.brandId = brand;
-      // Accent-insensitive + fuzzy ranked search; a term also reveals
-      // never-sold products. No term → hide never-sold for a tidy catalog.
+      // Accent-insensitive + fuzzy ranked search trong phạm vi SP có doanh số.
       let searchOrder: string[] | null = null;
       if (term) {
-        searchOrder = await searchProductIds({ orgId: user.orgId, term, activeOnly: true, limit: 60 });
+        searchOrder = await searchProductIds({ orgId: user.orgId, term, activeOnly: false, limit: 60 });
         if (searchOrder.length === 0) return { products: [] };
         where.id = { in: searchOrder };
-      } else {
-        where.hasSales = true;
       }
 
       const productsRaw = await prisma.product.findMany({
@@ -1611,20 +1613,19 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const take = Math.min(50, Math.max(1, parseInt(limit) || 20));
       const skip = (Math.max(1, parseInt(page) || 1) - 1) * take;
 
-      const where: any = { orgId: user.orgId, status: 'active' };
+      // Catalog CHỈ hiện SP có doanh số (kể cả khi tìm), không lọc status —
+      // xem ghi chú ở /products/search.
+      const where: any = { orgId: user.orgId, hasSales: true };
       if (brand) where.brandId = brand;
-      // Accent-insensitive + fuzzy ranked search; a term reveals never-sold
-      // products too. No term → hide never-sold (incl. under filter chips).
+      // Accent-insensitive + fuzzy ranked search trong phạm vi SP có doanh số.
       let searchOrder: string[] | null = null;
       const hasSearch = !!q.trim();
       if (hasSearch) {
-        searchOrder = await searchProductIds({ orgId: user.orgId, term: q.trim(), activeOnly: true, limit: 200 });
+        searchOrder = await searchProductIds({ orgId: user.orgId, term: q.trim(), activeOnly: false, limit: 200 });
         if (searchOrder.length === 0) {
           return { products: [], total: 0, page: parseInt(page) || 1, limit: take };
         }
         where.id = { in: searchOrder };
-      } else {
-        where.hasSales = true;
       }
 
       // Filter chips
