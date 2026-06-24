@@ -208,6 +208,28 @@ export async function notificationRoutes(app: FastifyInstance) {
       }
     }
 
+    // 6c. Monthly stocktake reminder (nhắc kiểm kho) — owner/admin only.
+    //     Shows for the whole month until a session is created for it, so the
+    //     "kiểm 1 lần/tháng" cadence isn't missed. Persists once the month's
+    //     session exists in any state except cancelled.
+    if (isAdmin) {
+      const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const thisMonthSession = await prisma.stocktakeSession.findFirst({
+        where: { orgId: user.orgId, periodMonth, status: { not: 'cancelled' } },
+        select: { id: true },
+      });
+      if (!thisMonthSession) {
+        notifications.push({
+          id: `stocktake-${periodMonth}`,
+          type: 'info',
+          priority: 'medium',
+          title: `Đến kỳ kiểm kho tháng ${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`,
+          detail: 'Chưa có phiên kiểm kho tháng này — vào Quản lý kho › Kiểm kho để tạo phiên.',
+          createdAt: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
+        });
+      }
+    }
+
     // 6. Disconnected Zalo accounts
     const accounts = await prisma.zaloAccount.findMany({
       where: { orgId: user.orgId },

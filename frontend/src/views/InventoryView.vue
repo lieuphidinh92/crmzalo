@@ -12,6 +12,16 @@
         </div>
       </div>
       <v-spacer />
+      <v-btn
+        v-if="isAdmin"
+        color="info"
+        variant="tonal"
+        prepend-icon="mdi-clipboard-check-outline"
+        class="mr-2"
+        @click="tab = 'stocktake'"
+      >
+        Kiểm kho
+      </v-btn>
       <v-btn v-if="isAdmin" color="primary" prepend-icon="mdi-plus" @click="openCreate">
         Nhập lô mới
       </v-btn>
@@ -79,6 +89,10 @@
       <v-tab value="brand">
         <v-icon size="16" class="mr-1">mdi-tag-multiple</v-icon>
         Báo cáo theo brand
+      </v-tab>
+      <v-tab value="stocktake">
+        <v-icon size="16" class="mr-1">mdi-clipboard-check-outline</v-icon>
+        Kiểm kho
       </v-tab>
     </v-tabs>
 
@@ -409,6 +423,11 @@
           </v-table>
         </v-card>
       </v-window-item>
+
+      <!-- ── Tab 4: Kiểm kho (stocktaking) ────────────────────────── -->
+      <v-window-item value="stocktake">
+        <StocktakePanel />
+      </v-window-item>
     </v-window>
 
     <!-- Dialogs -->
@@ -480,6 +499,7 @@ import BatchFormDialog from '@/components/inventory/BatchFormDialog.vue';
 import BatchAdjustDialog from '@/components/inventory/BatchAdjustDialog.vue';
 import BatchAuditLogPanel from '@/components/inventory/BatchAuditLogPanel.vue';
 import InventoryAlertsBanner from '@/components/inventory/InventoryAlertsBanner.vue';
+import StocktakePanel from '@/components/inventory/StocktakePanel.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -490,7 +510,7 @@ const isAdmin = computed(() => {
   return r === 'owner' || r === 'admin';
 });
 
-const tab = ref<'batches' | 'audit' | 'brand'>('batches');
+const tab = ref<'batches' | 'audit' | 'brand' | 'stocktake'>('batches');
 
 const {
   batches,

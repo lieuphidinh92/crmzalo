@@ -37,6 +37,7 @@ model Organization {
   inventoryMovements  InventoryMovement[]
   importOrders        ImportOrder[]
   supplierPayments    SupplierPayment[]
+  stocktakeSessions   StocktakeSession[]
 
   @@map("organizations")
 }
@@ -696,8 +697,10 @@ model Warehouse {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  org     Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  batches InventoryBatch[]
+  org               Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  batches           InventoryBatch[]
+  importOrders      ImportOrder[]
+  stocktakeSessions StocktakeSession[]
 
   @@map("warehouses")
 }
@@ -738,6 +741,7 @@ model InventoryBatch {
   importOrder ImportOrder?        @relation(fields: [importOrderId], references: [id])
   supplier    Supplier?           @relation(fields: [supplierId], references: [id])
   fifoUsages  OrderItemBatch[]
+  stocktakeItems StocktakeItem[]
 
   @@unique([orgId, productId, batchCode])
   @@index([orgId, productId, status])
@@ -795,6 +799,66 @@ model InventoryMovement {
   @@index([batchId, createdAt])
   @@index([referenceType, referenceId])
   @@map("inventory_movements")
+}
+
+// Kiểm kho (stocktaking) — periodic physical count reconciled against the
+// system stock. Creating a session snapshots every active lot's system
+// quantity into stocktake_items; the counter records the physical count per
+// lot; on completion each lot whose physical count differs from the live
+// stock gets its currentQuantity corrected + an inventory_movements row
+// (type=adjust, referenceType=stocktake). Append-only after completion.
+model StocktakeSession {
+  id            String    @id @default(uuid())
+  orgId         String    @map("org_id")
+  warehouseId   String    @map("warehouse_id")
+  code          String // KK-YYYYMM-NNN
+  status        String    @default("counting") // counting | completed | cancelled
+  periodMonth   String    @map("period_month") // "YYYY-MM" — monthly cadence lookup
+  note          String?
+  itemCount     Int       @default(0) @map("item_count") // lots snapshotted
+  countedCount  Int       @default(0) @map("counted_count") // lots with a physical count entered
+  varianceQty   Int       @default(0) @map("variance_qty") // net signed sum of (counted − system)
+  varianceValue Decimal   @default(0) @map("variance_value") @db.Decimal(15, 2) // owner/admin only
+  createdById   String?   @map("created_by")
+  completedById String?   @map("completed_by")
+  completedAt   DateTime? @map("completed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  org       Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  warehouse Warehouse       @relation(fields: [warehouseId], references: [id])
+  items     StocktakeItem[]
+
+  @@unique([orgId, code])
+  @@index([orgId, status])
+  @@index([orgId, periodMonth])
+  @@map("stocktake_sessions")
+}
+
+// One row per lot inside a stocktake session. `systemQty` is the snapshot at
+// session creation; `countedQty` is the physical count (null until entered);
+// `variance` = countedQty − systemQty (display only — the real adjustment at
+// completion is recomputed against the live stock to stay correct if an order
+// packed mid-count).
+model StocktakeItem {
+  id         String   @id @default(uuid())
+  sessionId  String   @map("session_id")
+  batchId    String   @map("batch_id")
+  productId  String   @map("product_id")
+  systemQty  Int      @map("system_qty")
+  countedQty Int?     @map("counted_qty")
+  variance   Int      @default(0)
+  unitCost   Decimal? @map("unit_cost") @db.Decimal(15, 2) // batch importCost snapshot (owner/admin only)
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  session StocktakeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  batch   InventoryBatch   @relation(fields: [batchId], references: [id])
+
+  @@index([sessionId])
+  @@index([batchId])
+  @@map("stocktake_items")
 }
 
 // Quick-reply templates — single shared set per organization.
@@ -999,11 +1063,24 @@ model ImportOrder {
   paymentDueDate DateTime? @map("payment_due_date") @db.Date
   // ──────────────────────────────────────────────────────────────────
 
-  org      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  supplier Supplier?         @relation(fields: [supplierId], references: [id])
-  items    ImportOrderItem[]
-  batches  InventoryBatch[]
-  payments SupplierPayment[]
+  // ── Phiếu nhập kiểu POS (warehouse + phí/chiết khấu/VAT/cọc) ───────
+  warehouseId    String?  @map("warehouse_id")                            // kho nhập (null = kho mặc định)
+  shippingFee    Decimal  @default(0) @map("shipping_fee") @db.Decimal(15, 2)
+  discountType   String   @default("amount") @map("discount_type")        // amount | percent
+  discountValue  Decimal  @default(0) @map("discount_value") @db.Decimal(15, 2) // % hoặc VND tuỳ type
+  discountAmount Decimal  @default(0) @map("discount_amount") @db.Decimal(15, 2) // VND đã quy đổi
+  vatRate        Int      @default(0) @map("vat_rate")                     // % VAT (0/5/8/10...)
+  vatAmount      Decimal  @default(0) @map("vat_amount") @db.Decimal(15, 2)
+  grandTotal     Decimal  @default(0) @map("grand_total") @db.Decimal(15, 2) // cần thanh toán
+  depositAmount  Decimal  @default(0) @map("deposit_amount") @db.Decimal(15, 2) // đặt cọc khi nhập
+  // ──────────────────────────────────────────────────────────────────
+
+  org       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  supplier  Supplier?         @relation(fields: [supplierId], references: [id])
+  warehouse Warehouse?        @relation(fields: [warehouseId], references: [id])
+  items     ImportOrderItem[]
+  batches   InventoryBatch[]
+  payments  SupplierPayment[]
 
   @@unique([orgId, importCode])
   @@index([orgId, importDate])

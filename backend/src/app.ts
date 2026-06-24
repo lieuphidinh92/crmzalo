@@ -64,6 +64,7 @@ import { brandRoutes } from './modules/products/brand-routes.js';
 import { batchRoutes } from './modules/inventory/batch-routes.js';
 import { inventoryReportRoutes } from './modules/inventory/inventory-reports.js';
 import { inventoryAlertsRoutes } from './modules/inventory/alerts-routes.js';
+import { stocktakeRoutes } from './modules/inventory/stocktake-routes.js';
 import { startInventoryCronJobs } from './modules/inventory/inventory-cron.js';
 import { importsRoutes } from './modules/imports/imports-routes.js';
 import { supplierDebtRoutes } from './modules/imports/supplier-debt-routes.js';
@@ -178,6 +179,7 @@ async function bootstrap() {
   await app.register(batchRoutes);
   await app.register(inventoryReportRoutes);
   await app.register(inventoryAlertsRoutes);
+  await app.register(stocktakeRoutes);
   await app.register(importsRoutes);
   await app.register(supplierDebtRoutes);
   await app.register(quickReplyRoutes);
