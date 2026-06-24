@@ -3,17 +3,17 @@
  *
  *   - unaccent  : strip Vietnamese/Latin diacritics ("vitamin" ~ "Vitamín")
  *   - pg_trgm   : trigram similarity() + GIN index for fuzzy/typo-tolerant match
- *   - f_unaccent: IMMUTABLE wrapper (single-arg unaccent is only STABLE, so it
- *                 can't be indexed; the 2-arg form with an explicit dictionary
- *                 is immutable and indexable)
+ *   - f_unaccent: IMMUTABLE wrapper. The single-arg unaccent() is only STABLE
+ *                 (it resolves its dictionary via search_path), so we PIN the
+ *                 function's search_path with `SET search_path` — that makes it
+ *                 deterministic, hence safe to mark IMMUTABLE and index. Pinning
+ *                 both `public` and `extensions` makes it work whether the
+ *                 extension lives in public (local Postgres) or extensions
+ *                 (Supabase) — no per-env edits needed.
  *   - GIN trigram indexes on f_unaccent(name)/f_unaccent(sku)
  *
- * Idempotent — safe to re-run. Run after `db push`:
+ * Idempotent — safe to re-run. Run after the has_sales column exists:
  *   npx tsx --env-file=.env scripts/setup-fuzzy-search.ts
- *
- * NOTE (Supabase): extensions there live in the `extensions` schema. If the
- * f_unaccent body can't resolve 'unaccent', change it to
- * 'extensions.unaccent'::regdictionary (see DEPLOY notes).
  */
 import prismaPkg from '@prisma/client';
 const { PrismaClient } = prismaPkg;
@@ -29,7 +29,8 @@ const STATEMENTS = [
   `CREATE OR REPLACE FUNCTION f_unaccent(text)
      RETURNS text
      LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
-     AS $$ SELECT unaccent('unaccent', $1) $$`,
+     SET search_path = public, extensions, pg_catalog
+     AS $$ SELECT unaccent($1) $$`,
   `CREATE INDEX IF NOT EXISTS idx_products_name_unaccent_trgm
      ON products USING gin (f_unaccent(name) gin_trgm_ops)`,
   `CREATE INDEX IF NOT EXISTS idx_products_sku_unaccent_trgm
