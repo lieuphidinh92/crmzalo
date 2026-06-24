@@ -80,8 +80,19 @@
         </v-col>
       </v-row>
 
-      <div v-if="hasActiveFilters" class="mt-2 text-right">
+      <div class="mt-2 d-flex align-center">
+        <v-switch
+          v-if="isAdmin"
+          v-model="filters.showAll"
+          color="primary"
+          density="compact"
+          hide-details
+          label="Hiện cả SP chưa phát sinh doanh số"
+          @update:model-value="onFilterChange"
+        />
+        <v-spacer />
         <v-btn
+          v-if="hasActiveFilters"
           variant="text"
           size="small"
           prepend-icon="mdi-close"

@@ -11,6 +11,7 @@
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
+import { markProductsHasSales } from '../products/product-sales-flag.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import {
@@ -124,6 +125,7 @@ export async function orderItemsRoutes(app: FastifyInstance): Promise<void> {
         },
       });
 
+      await markProductsHasSales([product.id]);
       await recomputeOrderTotals(order.id);
       return reply.status(201).send(canSeeAllOrders(user.role) ? created : { ...created, unitCost: null, lineCost: null, profit: null, costValue: null });
     } catch (err) {

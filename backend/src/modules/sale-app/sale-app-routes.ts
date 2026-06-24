@@ -28,6 +28,8 @@ import pkg from '@prisma/client';
 const { Prisma } = pkg;
 import ExcelJS from 'exceljs';
 import { prisma } from '../../shared/database/prisma-client.js';
+import { markProductsHasSales } from '../products/product-sales-flag.js';
+import { searchProductIds } from '../products/product-search.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireRole } from '../auth/role-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
@@ -1511,14 +1513,18 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
 
       const where: any = { orgId: user.orgId, status: 'active' };
       if (brand) where.brandId = brand;
+      // Accent-insensitive + fuzzy ranked search; a term also reveals
+      // never-sold products. No term → hide never-sold for a tidy catalog.
+      let searchOrder: string[] | null = null;
       if (term) {
-        where.OR = [
-          { sku: { contains: term, mode: 'insensitive' } },
-          { name: { contains: term, mode: 'insensitive' } },
-        ];
+        searchOrder = await searchProductIds({ orgId: user.orgId, term, activeOnly: true, limit: 60 });
+        if (searchOrder.length === 0) return { products: [] };
+        where.id = { in: searchOrder };
+      } else {
+        where.hasSales = true;
       }
 
-      const products = await prisma.product.findMany({
+      const productsRaw = await prisma.product.findMany({
         where,
         select: {
           id: true,
@@ -1538,6 +1544,15 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { name: 'asc' },
         take: 60,
       });
+
+      // Preserve relevance order from the fuzzy search (findMany re-sorts by name).
+      let products = productsRaw;
+      if (searchOrder) {
+        const rank = new Map(searchOrder.map((id, i) => [id, i]));
+        products = [...productsRaw].sort(
+          (a: any, b: any) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9),
+        );
+      }
 
       // Pick a single price for the requested tier:
       //   1) exact match on tierName (e.g. "Đại lý cấp 1")
@@ -1598,12 +1613,18 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
 
       const where: any = { orgId: user.orgId, status: 'active' };
       if (brand) where.brandId = brand;
-      if (q.trim()) {
-        const term = q.trim();
-        where.OR = [
-          { sku: { contains: term, mode: 'insensitive' } },
-          { name: { contains: term, mode: 'insensitive' } },
-        ];
+      // Accent-insensitive + fuzzy ranked search; a term reveals never-sold
+      // products too. No term → hide never-sold (incl. under filter chips).
+      let searchOrder: string[] | null = null;
+      const hasSearch = !!q.trim();
+      if (hasSearch) {
+        searchOrder = await searchProductIds({ orgId: user.orgId, term: q.trim(), activeOnly: true, limit: 200 });
+        if (searchOrder.length === 0) {
+          return { products: [], total: 0, page: parseInt(page) || 1, limit: take };
+        }
+        where.id = { in: searchOrder };
+      } else {
+        where.hasSales = true;
       }
 
       // Filter chips
@@ -1677,10 +1698,10 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             },
           },
           orderBy,
-          skip: filter === 'low-stock' || filter === 'bestseller' ? 0 : skip,
-          take: filter === 'low-stock' || filter === 'bestseller' ? 200 : take,
+          skip: filter === 'low-stock' || filter === 'bestseller' || hasSearch ? 0 : skip,
+          take: filter === 'low-stock' || filter === 'bestseller' || hasSearch ? 200 : take,
         }),
-        filter === 'low-stock' || filter === 'bestseller'
+        filter === 'low-stock' || filter === 'bestseller' || hasSearch
           ? Promise.resolve(0)
           : prisma.product.count({ where }),
       ]);
@@ -1696,6 +1717,13 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       if (filter === 'bestseller' && bestsellerOrder) {
         const order = new Map<string, number>(bestsellerOrder.map((id, idx) => [id, idx]));
         rows.sort((a: any, b: any) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
+      }
+
+      // Search: preserve fuzzy relevance order unless the user picked an
+      // explicit sort (sort defaults to 'name').
+      if (hasSearch && searchOrder && sort === 'name') {
+        const order = new Map<string, number>(searchOrder.map((id, idx) => [id, idx]));
+        rows.sort((a: any, b: any) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
       }
 
       // "Đại lý cấp 1" reference price — independent of the selected tier.
@@ -1742,10 +1770,11 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         sorted = [...items].sort((a, b) => a.wholesale_price - b.wholesale_price);
       }
 
-      // Manual pagination for low-stock + bestseller modes
+      // Manual pagination for low-stock + bestseller + search modes (these
+      // fetch a broad window and rank/filter in code).
       let pageItems = sorted;
       let totalReturn = totalCount;
-      if (filter === 'low-stock' || filter === 'bestseller') {
+      if (filter === 'low-stock' || filter === 'bestseller' || hasSearch) {
         totalReturn = sorted.length;
         pageItems = sorted.slice(skip, skip + take);
       }
@@ -2389,6 +2418,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
+        await markProductsHasSales(body.items!.map((it: any) => it.productId), tx);
         await recomputeOrderTotals(order.id, tx);
         return order;
       });
