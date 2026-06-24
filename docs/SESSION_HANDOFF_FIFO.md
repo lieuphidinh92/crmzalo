@@ -5,6 +5,24 @@
 
 ---
 
+## 🆕 Cập nhật 24/06/2026 — Phiếu nhập kiểu POS (form mới)
+
+Dựng lại form nhập hàng theo mẫu KiotViet/Sapo (2 cột + thanh đáy), thêm: chọn **kho**, **phí giao hàng**, **chiết khấu (%/đ)**, **VAT**, **đặt cọc**, hiển thị **công nợ NCC** khi chọn NCC, nút **(+) thêm NCC nhanh**, tìm SP **inline** (bỏ popup ItemPicker — file còn nhưng không dùng), Mã lô/HSD ẩn trong **dòng mở rộng** (giữ FIFO + cảnh báo HSD).
+
+**Mô hình tiền:** `grandTotal (cần TT) = giá trị hàng − chiết khấu + ship + VAT`; `nợ = grandTotal − cọc`. Cọc > 0 → tạo 1 `SupplierPayment` (yêu cầu có NCC). VAT tính trên (hàng − chiết khấu). Tất cả số nguyên VND.
+
+**Schema** `ImportOrder` thêm: `warehouseId, shippingFee, discountType, discountValue, discountAmount, vatRate, vatAmount, grandTotal, depositAmount`. `Warehouse` thêm quan hệ `importOrders`. `db push` xong.
+
+**Backend:** create/update tính `computeCharges`; confirm dùng kho đã chọn + tạo bút toán cọc + `debt=grandTotal−cọc`. **Công nợ NCC đồng bộ**: `syncImportOrderDebt`, danh sách NCC (tổng mua), detail đơn dùng `payableOf` (grandTotal, fallback totalAmount cho đơn cũ). Endpoint mới: `GET /api/v1/warehouses`, `GET /api/v1/supplier-debt/suppliers/:id/balance`.
+
+**Frontend:** dựng lại `ImportFormView.vue` (2 cột, dark theme giữ nguyên); `use-imports.ts` thêm types + `fetchWarehouses/fetchSupplierBalance/createSupplierQuick`.
+
+**Test (script DB + curl thật, đã dọn data):** GĐ1 backend 18/18, GĐ3 tích hợp 16/16 (kho đồng bộ tồn+giá vốn+cảnh báo HSD, công nợ+cọc, sale-app không vỡ, dashboard 200). Frontend `vue-tsc` sạch. **Test click trực quan chờ CEO verify trên `/imports/new`.**
+
+Đơn nhập cũ (grandTotal=0) tự fallback dùng totalAmount → không vỡ.
+
+---
+
 ## 🎯 Mục tiêu module
 
 CRM hiện tính `line_cost` per line item dùng `cost_price` snapshot tại thời điểm tạo line. Vấn đề: cùng 1 SKU nhập nhiều lô giá khác nhau (240k, 245k, 250k) — cost trên đơn không phản ánh đúng lô nào thực sự xuất.

@@ -33,6 +33,14 @@ function debtImportWhere(orgId: string) {
   };
 }
 
+/** Tiền cần thanh toán cho NCC của 1 đơn nhập = grandTotal (đơn POS mới:
+ *  đã gồm phí ship − chiết khấu + VAT). Fallback totalAmount cho đơn cũ
+ *  (trước mô hình phí/VAT) khi grandTotal còn 0. */
+function payableOf(o: { grandTotal?: unknown; totalAmount?: unknown }): number {
+  const grand = toNumber(o.grandTotal);
+  return grand > 0 ? grand : toNumber(o.totalAmount);
+}
+
 /** Re-sync an ImportOrder's paid/debt/status from its SupplierPayment rows.
  *  Called after every payment create/delete. */
 async function syncImportOrderDebt(importOrderId: string): Promise<void> {
@@ -44,11 +52,11 @@ async function syncImportOrderDebt(importOrderId: string): Promise<void> {
 
   const order = await prisma.importOrder.findUnique({
     where: { id: importOrderId },
-    select: { totalAmount: true },
+    select: { totalAmount: true, grandTotal: true },
   });
   if (!order) return;
 
-  const total = toNumber(order.totalAmount);
+  const total = payableOf(order);
   const debt = Math.max(0, total - totalPaid);
   const status = debt <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid';
 
@@ -66,6 +74,32 @@ async function syncImportOrderDebt(importOrderId: string): Promise<void> {
 
 export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
+
+  // ── GET /api/v1/supplier-debt/suppliers/:id/balance ───────────────────
+  // Công nợ hiện tại của 1 NCC (nhẹ — cho form nhập hàng hiển thị nhanh).
+  app.get(
+    '/api/v1/supplier-debt/suppliers/:id/balance',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId } = reqUser(request);
+        const supplierId = (request.params as { id: string }).id;
+        const agg = await prisma.importOrder.aggregate({
+          where: { orgId, supplierId, status: 'confirmed', debtAmount: { gt: 0 } },
+          _sum: { debtAmount: true },
+          _count: true,
+        });
+        return {
+          supplier_id: supplierId,
+          debt: Math.round(toNumber(agg._sum.debtAmount ?? 0)),
+          order_count: agg._count,
+        };
+      } catch (err: any) {
+        logger.error('supplier-debt balance error', err);
+        return reply.status(500).send({ error: 'Lỗi tải công nợ NCC' });
+      }
+    },
+  );
 
   // ── GET /api/v1/supplier-debt/summary ─────────────────────────────────
   // KPI cards: tổng nợ NCC, nợ quá hạn, số NCC đang nợ
@@ -131,6 +165,7 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
             supplierId: true,
             debtAmount: true,
             totalAmount: true,
+            grandTotal: true,
             paidAmount: true,
             paymentDueDate: true,
             importCode: true,
@@ -170,7 +205,7 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
             bySupplier.set(sid, a);
           }
           a.debt += debt;
-          a.total += toNumber(o.totalAmount);
+          a.total += payableOf(o);
           a.paid += toNumber(o.paidAmount);
           a.order_count += 1;
           if (due && (!a.earliest_due || due < a.earliest_due)) a.earliest_due = due;
@@ -266,6 +301,7 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
             importDate: true,
             nccInvoiceNo: true,
             totalAmount: true,
+            grandTotal: true,
             paidAmount: true,
             debtAmount: true,
             paymentStatus: true,
@@ -281,7 +317,7 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
           import_code: o.importCode,
           import_date: o.importDate?.toISOString().slice(0, 10) ?? null,
           ncc_invoice_no: o.nccInvoiceNo,
-          total_amount: Math.round(toNumber(o.totalAmount)),
+          total_amount: Math.round(payableOf(o)),
           paid_amount: Math.round(toNumber(o.paidAmount)),
           debt_amount: Math.round(toNumber(o.debtAmount)),
           payment_status: o.paymentStatus,

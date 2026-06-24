@@ -21,6 +21,12 @@ export interface ImportSupplier {
   country: string | null;
 }
 
+export interface ImportWarehouse {
+  id: string;
+  name: string;
+  address?: string | null;
+}
+
 export interface ImportLineProduct {
   id: string;
   sku: string;
@@ -47,12 +53,22 @@ export interface ImportOrder {
   orgId: string;
   importCode: string;
   supplierId: string | null;
+  warehouseId: string | null;
   importDate: string;
   nccInvoiceNo: string | null;
   totalAmount: number | string;
   totalQuantity: number;
   status: 'draft' | 'confirmed';
   notes: string | null;
+  // ── Phiếu nhập POS: phí / chiết khấu / VAT / cọc ──
+  shippingFee: number | string;
+  discountType: 'amount' | 'percent';
+  discountValue: number | string;
+  discountAmount: number | string;
+  vatRate: number;
+  vatAmount: number | string;
+  grandTotal: number | string;
+  depositAmount: number | string;
   attachments: Array<{ name: string; url: string; type?: string }>;
   createdById: string | null;
   confirmedAt: string | null;
@@ -170,6 +186,46 @@ export function useImports() {
     return suppliers.value;
   }
 
+  /** Warehouses cached (single warehouse hiện tại, nhưng UI cho chọn). */
+  const warehouses = ref<ImportWarehouse[]>([]);
+  let warehousesLoaded = false;
+
+  async function fetchWarehouses(): Promise<ImportWarehouse[]> {
+    if (warehousesLoaded) return warehouses.value;
+    try {
+      const { data } = await api.get('/warehouses');
+      warehouses.value = data?.warehouses ?? [];
+      warehousesLoaded = true;
+    } catch (err) {
+      console.error('[imports] failed to load warehouses:', err);
+    }
+    return warehouses.value;
+  }
+
+  /** Công nợ hiện tại của 1 NCC (cho hiển thị "Công nợ" trên form). */
+  async function fetchSupplierBalance(supplierId: string): Promise<number> {
+    try {
+      const { data } = await api.get(`/supplier-debt/suppliers/${supplierId}/balance`);
+      return Number(data?.debt) || 0;
+    } catch (err) {
+      console.error('[imports] failed to load supplier balance:', err);
+      return 0;
+    }
+  }
+
+  /** Thêm nhanh NCC (nút + cạnh dropdown) — chỉ cần tên. */
+  async function createSupplierQuick(name: string): Promise<ImportSupplier | null> {
+    try {
+      const { data } = await api.post('/suppliers', { name: name.trim() });
+      const created: ImportSupplier = { id: data.id, name: data.name, country: data.country ?? null };
+      suppliers.value = [created, ...suppliers.value];
+      return created;
+    } catch (err: any) {
+      error.value = err?.response?.data?.error ?? 'Không thêm được NCC';
+      return null;
+    }
+  }
+
   async function fetchImports() {
     loading.value = true;
     error.value = null;
@@ -216,11 +272,18 @@ export function useImports() {
 
   interface SavePayload {
     supplierId?: string | null;
+    warehouseId?: string | null;
     importDate?: string | null;
     nccInvoiceNo?: string | null;
     notes?: string | null;
     attachments?: ImportOrder['attachments'];
     items: SaveItemPayload[];
+    // ── Phiếu nhập POS ──
+    shippingFee?: number | null;
+    discountType?: 'amount' | 'percent' | null;
+    discountValue?: number | null;
+    vatRate?: number | null;
+    depositAmount?: number | null;
   }
 
   async function createImport(payload: SavePayload): Promise<ImportOrder | null> {
@@ -357,8 +420,12 @@ export function useImports() {
     filters,
     pagination,
     suppliers,
+    warehouses,
     stats,
     fetchSuppliers,
+    fetchWarehouses,
+    fetchSupplierBalance,
+    createSupplierQuick,
     fetchImports,
     fetchImport,
     createImport,

@@ -38,14 +38,61 @@ interface ItemPayload {
 
 interface CreateImportBody {
   supplierId?: string | null;
+  warehouseId?: string | null;
   importDate?: string | null;
   nccInvoiceNo?: string | null;
   notes?: string | null;
   attachments?: Array<{ name: string; url: string; type?: string }>;
   items?: ItemPayload[];
+  // ── Phiếu nhập POS: phí / chiết khấu / VAT / cọc ──
+  shippingFee?: number | null;
+  discountType?: 'amount' | 'percent' | null;
+  discountValue?: number | null;
+  vatRate?: number | null;
+  depositAmount?: number | null;
 }
 
 interface UpdateImportBody extends CreateImportBody {}
+
+/** Ép về số nguyên VND >= 0 (an toàn với null/undefined/NaN). */
+function intVnd(v: unknown): number {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Tính khối tiền của phiếu nhập từ giá trị hàng + các khoản phí/chiết khấu/VAT/cọc.
+ *  Tất cả là số nguyên VND.
+ *    Cần thanh toán (grandTotal) = giá trị hàng − chiết khấu + phí ship + VAT
+ *    VAT tính trên (giá trị hàng − chiết khấu).
+ *    Cọc bị kẹp trong [0, grandTotal]. */
+function computeCharges(goodsValue: number, body: CreateImportBody) {
+  const shippingFee = intVnd(body.shippingFee);
+  const discountType = body.discountType === 'percent' ? 'percent' : 'amount';
+  const discountValueRaw = Number(body.discountValue);
+  const discountValue = Number.isFinite(discountValueRaw) && discountValueRaw > 0 ? discountValueRaw : 0;
+  let discountAmount =
+    discountType === 'percent'
+      ? Math.round((goodsValue * Math.min(discountValue, 100)) / 100)
+      : Math.round(discountValue);
+  discountAmount = Math.min(Math.max(0, discountAmount), goodsValue); // không vượt giá trị hàng
+  const vatRateRaw = Math.round(Number(body.vatRate));
+  const vatRate = Number.isFinite(vatRateRaw) && vatRateRaw > 0 ? vatRateRaw : 0;
+  const taxBase = goodsValue - discountAmount;
+  const vatAmount = Math.round((taxBase * vatRate) / 100);
+  const grandTotal = taxBase + shippingFee + vatAmount;
+  const depositAmount = Math.min(intVnd(body.depositAmount), grandTotal);
+  return { shippingFee, discountType, discountValue, discountAmount, vatRate, vatAmount, grandTotal, depositAmount };
+}
+
+/** Xác thực warehouseId thuộc org (nếu có). Trả về id hợp lệ hoặc null. */
+async function resolveWarehouseId(orgId: string, warehouseId?: string | null): Promise<string | null> {
+  if (!warehouseId) return null;
+  const w = await prisma.warehouse.findFirst({
+    where: { id: warehouseId, orgId, active: true },
+    select: { id: true },
+  });
+  return w?.id ?? null;
+}
 
 /** Generate the next sequential code for the current month. Format
  * `NK-YYYYMM-NNN`. Sequential per (orgId, YYYYMM) — multiple orgs can
@@ -141,6 +188,23 @@ function summarizeItems(items: ItemPayload[]): { totalQuantity: number; totalAmo
 
 export async function importsRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
+
+  // ── GET /api/v1/warehouses — list active warehouses (cho dropdown) ─
+  // Không nhạy cảm (chỉ tên kho) → mọi user đăng nhập đọc được.
+  app.get('/api/v1/warehouses', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const warehouses = await prisma.warehouse.findMany({
+        where: { orgId: user.orgId, active: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true, address: true },
+      });
+      return { warehouses };
+    } catch (err) {
+      logger.error('[imports] warehouses error:', err);
+      return reply.status(500).send({ error: 'Không tải được danh sách kho' });
+    }
+  });
 
   // ── GET /api/v1/imports — list with filters ───────────────────────
   app.get(
@@ -268,12 +332,15 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
 
         const importCode = await generateImportCode(user.orgId);
         const summary = summarizeItems(items);
+        const charges = computeCharges(summary.totalAmount, body);
+        const warehouseId = await resolveWarehouseId(user.orgId, body.warehouseId);
 
         const created = await prisma.importOrder.create({
           data: {
             orgId: user.orgId,
             importCode,
             supplierId: body.supplierId ?? null,
+            warehouseId,
             importDate: body.importDate ? new Date(body.importDate) : new Date(),
             nccInvoiceNo: body.nccInvoiceNo ?? null,
             notes: body.notes ?? null,
@@ -281,6 +348,14 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
             createdById: user.id,
             totalQuantity: summary.totalQuantity,
             totalAmount: new Prisma.Decimal(summary.totalAmount.toFixed(2)),
+            shippingFee: new Prisma.Decimal(charges.shippingFee.toFixed(2)),
+            discountType: charges.discountType,
+            discountValue: new Prisma.Decimal(charges.discountValue.toFixed(2)),
+            discountAmount: new Prisma.Decimal(charges.discountAmount.toFixed(2)),
+            vatRate: charges.vatRate,
+            vatAmount: new Prisma.Decimal(charges.vatAmount.toFixed(2)),
+            grandTotal: new Prisma.Decimal(charges.grandTotal.toFixed(2)),
+            depositAmount: new Prisma.Decimal(charges.depositAmount.toFixed(2)),
             items: {
               create: items.map((it) => ({
                 productId: it.productId,
@@ -338,6 +413,8 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
           }
         }
         const summary = summarizeItems(items);
+        const charges = computeCharges(summary.totalAmount, body);
+        const warehouseId = await resolveWarehouseId(user.orgId, body.warehouseId);
 
         const updated = await prisma.$transaction(async (tx: any) => {
           await tx.importOrderItem.deleteMany({ where: { importOrderId: id } });
@@ -345,12 +422,21 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
             where: { id },
             data: {
               supplierId: body.supplierId ?? null,
+              warehouseId,
               importDate: body.importDate ? new Date(body.importDate) : undefined,
               nccInvoiceNo: body.nccInvoiceNo ?? null,
               notes: body.notes ?? null,
               ...(body.attachments !== undefined ? { attachments: body.attachments as any } : {}),
               totalQuantity: summary.totalQuantity,
               totalAmount: new Prisma.Decimal(summary.totalAmount.toFixed(2)),
+              shippingFee: new Prisma.Decimal(charges.shippingFee.toFixed(2)),
+              discountType: charges.discountType,
+              discountValue: new Prisma.Decimal(charges.discountValue.toFixed(2)),
+              discountAmount: new Prisma.Decimal(charges.discountAmount.toFixed(2)),
+              vatRate: charges.vatRate,
+              vatAmount: new Prisma.Decimal(charges.vatAmount.toFixed(2)),
+              grandTotal: new Prisma.Decimal(charges.grandTotal.toFixed(2)),
+              depositAmount: new Prisma.Decimal(charges.depositAmount.toFixed(2)),
               items: {
                 create: items.map((it) => ({
                   productId: it.productId,
@@ -522,9 +608,22 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(400).send({ error: 'Đơn nhập chưa có sản phẩm' });
         }
 
-        const warehouseId = await getDefaultWarehouseId(user.orgId);
+        // Honour the warehouse chosen on the order; fall back to default.
+        const warehouseId = order.warehouseId ?? (await getDefaultWarehouseId(user.orgId));
         if (!warehouseId) {
           return reply.status(500).send({ error: 'Không tìm thấy kho mặc định' });
+        }
+
+        // Tiền cần thanh toán: ưu tiên grandTotal (đơn POS mới); fallback
+        // totalAmount cho draft cũ tạo trước khi có mô hình phí/VAT.
+        const payable =
+          Number(order.grandTotal) > 0 ? Number(order.grandTotal) : Number(order.totalAmount);
+        const deposit = Math.min(Math.max(0, Number(order.depositAmount)), payable);
+        // Đặt cọc phải trả cho 1 NCC cụ thể (bút toán SupplierPayment yêu cầu supplierId).
+        if (deposit > 0 && !order.supplierId) {
+          return reply.status(400).send({
+            error: 'Đơn có đặt cọc nhưng chưa chọn NCC — không ghi nhận được cọc.',
+          });
         }
 
         // Pre-flight: detect (productId, batchCode) collisions against
@@ -606,15 +705,33 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
             }
           }
 
+          // ── Đặt cọc → tạo bút toán thanh toán NCC (để công nợ khớp) ──
+          const debt = Math.max(0, payable - deposit);
+          const paymentStatus = debt <= 0 ? 'paid' : deposit > 0 ? 'partial' : 'unpaid';
+          if (deposit > 0 && order.supplierId) {
+            await tx.supplierPayment.create({
+              data: {
+                orgId: user.orgId,
+                importOrderId: order.id,
+                supplierId: order.supplierId,
+                amount: new Prisma.Decimal(deposit.toFixed(2)),
+                paymentMethod: 'bank_transfer',
+                paymentDate: order.importDate ?? new Date(),
+                note: `Đặt cọc khi nhập ${order.importCode}`,
+                createdById: user.id,
+              },
+            });
+          }
+
           await tx.importOrder.update({
             where: { id },
             data: {
               status: 'confirmed',
               confirmedAt: new Date(),
-              // ── Auto-set công nợ NCC khi confirm ──
-              debtAmount: order.totalAmount,
-              paidAmount: 0,
-              paymentStatus: 'unpaid',
+              // ── Auto-set công nợ NCC khi confirm (theo cần thanh toán − cọc) ──
+              debtAmount: new Prisma.Decimal(debt.toFixed(2)),
+              paidAmount: new Prisma.Decimal(deposit.toFixed(2)),
+              paymentStatus,
               paymentDueDate,
             },
           });
