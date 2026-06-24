@@ -273,6 +273,15 @@
                         <v-icon v-if="o.is_overdue" size="14" color="error" class="ml-1">mdi-alert</v-icon>
                       </span>
                       <span v-else class="text-medium-emphasis">—</span>
+                      <v-btn
+                        size="x-small"
+                        variant="text"
+                        icon="mdi-pencil-outline"
+                        density="comfortable"
+                        class="ml-1"
+                        title="Sửa hạn thanh toán"
+                        @click="openEditDue(o)"
+                      />
                     </td>
                     <td>
                       <v-chip size="x-small" :color="paymentStatusColor(o.payment_status)" variant="flat">
@@ -421,6 +430,40 @@
       </v-card>
     </v-dialog>
 
+    <!-- Edit Due Date Dialog -->
+    <v-dialog v-model="dueOpen" max-width="420" persistent>
+      <v-card>
+        <v-card-title class="pa-4">
+          <v-icon class="mr-2" color="primary">mdi-calendar-edit</v-icon>
+          Sửa hạn thanh toán
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="pa-4">
+          <v-alert v-if="dueError" type="error" variant="tonal" class="mb-3" closable>
+            {{ dueError }}
+          </v-alert>
+          <div v-if="dueOrder" class="mb-3">
+            <div class="text-caption text-medium-emphasis">Đơn nhập</div>
+            <div class="font-weight-bold font-mono">{{ dueOrder.import_code }}</div>
+          </div>
+          <v-text-field
+            v-model="dueForm.paymentDueDate"
+            label="Hạn thanh toán"
+            type="date"
+            density="comfortable"
+            hint="Để trống nếu muốn xoá hạn thanh toán"
+            persistent-hint
+          />
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="pa-4">
+          <v-spacer />
+          <v-btn variant="text" @click="dueOpen = false">Hủy</v-btn>
+          <v-btn color="primary" variant="flat" :loading="dueSaving" @click="submitEditDue">Lưu</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- Toast -->
     <v-snackbar v-model="showToast" :timeout="3000" color="success" location="top">
       {{ toastMsg }}
@@ -518,6 +561,13 @@ const paymentForm = ref({
   reference: '',
   note: '',
 });
+
+// Edit due date dialog
+const dueOpen = ref(false);
+const dueSaving = ref(false);
+const dueError = ref('');
+const dueOrder = ref<ImportOrderDebt | null>(null);
+const dueForm = ref({ paymentDueDate: '' });
 
 // Delete
 const deletingId = ref<string | null>(null);
@@ -674,6 +724,34 @@ async function submitPayment() {
     paymentError.value = err.response?.data?.error || 'Lỗi ghi nhận thanh toán';
   } finally {
     paymentSaving.value = false;
+  }
+}
+
+function openEditDue(order: ImportOrderDebt) {
+  dueOrder.value = order;
+  dueForm.value = { paymentDueDate: order.payment_due_date ?? '' };
+  dueError.value = '';
+  dueOpen.value = true;
+}
+
+async function submitEditDue() {
+  if (!dueOrder.value) return;
+  dueSaving.value = true;
+  dueError.value = '';
+  try {
+    await api.put(`/supplier-debt/orders/${dueOrder.value.id}/due-date`, {
+      paymentDueDate: dueForm.value.paymentDueDate || null,
+    });
+    toast('Đã cập nhật hạn thanh toán');
+    dueOpen.value = false;
+    if (selectedSupplier.value?.id) {
+      await openDetail(selectedSupplier.value);
+    }
+    await loadData();
+  } catch (err: any) {
+    dueError.value = err.response?.data?.error || 'Lỗi cập nhật hạn thanh toán';
+  } finally {
+    dueSaving.value = false;
   }
 }
 

@@ -164,6 +164,44 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // ── Suppliers ──────────────────────────────────────────────────────────
+  // Các field text công nợ/liên hệ (nullable) — trim, rỗng → null.
+  const SUPPLIER_TEXT_FIELDS = [
+    'country',
+    'contactInfo',
+    'bankName',
+    'bankAccount',
+    'bankHolder',
+    'taxCode',
+    'email',
+    'phone',
+    'address',
+    'notes',
+  ] as const;
+
+  // Dựng `data` Prisma từ body cho create/update. Khi update chỉ set field có gửi lên.
+  function buildSupplierData(body: Record<string, any>, partial: boolean): Record<string, any> {
+    const data: Record<string, any> = {};
+    if (body.name !== undefined) data.name = String(body.name).trim();
+    if (body.active !== undefined) data.active = !!body.active;
+    for (const f of SUPPLIER_TEXT_FIELDS) {
+      if (body[f] !== undefined) {
+        const v = body[f] == null ? '' : String(body[f]).trim();
+        data[f] = v === '' ? null : v;
+      }
+    }
+    // paymentTermDays: ép số nguyên >= 0; create không gửi → để Prisma dùng default 30.
+    if (body.paymentTermDays !== undefined && body.paymentTermDays !== null && body.paymentTermDays !== '') {
+      const n = Math.trunc(Number(body.paymentTermDays));
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error('Hạn thanh toán phải là số ngày >= 0');
+      }
+      data.paymentTermDays = n;
+    } else if (!partial && body.paymentTermDays === '') {
+      // create với chuỗi rỗng → bỏ qua, dùng default.
+    }
+    return data;
+  }
+
   app.get('/api/v1/suppliers', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -191,13 +229,18 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(400).send({ error: 'Tên NCC là bắt buộc' });
         }
 
+        let data: Record<string, any>;
+        try {
+          data = buildSupplierData(body, false);
+        } catch (e: any) {
+          return reply.status(400).send({ error: e?.message ?? 'Dữ liệu không hợp lệ' });
+        }
+
         const created = await prisma.supplier.create({
           data: {
             orgId: user.orgId,
-            name: body.name.trim(),
-            country: body.country ?? null,
-            contactInfo: body.contactInfo ?? null,
-            active: body.active ?? true,
+            active: true,
+            ...data,
           },
           include: { _count: { select: { brands: true } } },
         });
@@ -224,16 +267,15 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
         });
         if (!existing) return reply.status(404).send({ error: 'Supplier not found' });
 
-        const data: any = {};
-        const fields = ['name', 'country', 'contactInfo', 'active'];
-        for (const f of fields) {
-          if (body[f] !== undefined) data[f] = body[f];
+        if (body.name !== undefined && !String(body.name).trim()) {
+          return reply.status(400).send({ error: 'Tên NCC không được rỗng' });
         }
-        if (data.name !== undefined) {
-          if (!data.name.trim()) {
-            return reply.status(400).send({ error: 'Tên NCC không được rỗng' });
-          }
-          data.name = data.name.trim();
+
+        let data: Record<string, any>;
+        try {
+          data = buildSupplierData(body, true);
+        } catch (e: any) {
+          return reply.status(400).send({ error: e?.message ?? 'Dữ liệu không hợp lệ' });
         }
 
         const updated = await prisma.supplier.update({

@@ -12,6 +12,16 @@ export interface Supplier {
   country: string | null;
   contactInfo: string | null;
   active: boolean;
+  // Công nợ NCC — thông tin thanh toán & liên hệ
+  paymentTermDays?: number;
+  bankName?: string | null;
+  bankAccount?: string | null;
+  bankHolder?: string | null;
+  taxCode?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  notes?: string | null;
   createdAt?: string;
   _count?: { brands: number };
 }

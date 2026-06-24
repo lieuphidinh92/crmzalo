@@ -349,6 +349,51 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // ── PUT /api/v1/supplier-debt/orders/:id/due-date ─────────────────────
+  // Sửa lại hạn thanh toán của 1 đơn nhập đã chốt (nhập sai khi confirm).
+  // Body: { paymentDueDate: 'YYYY-MM-DD' | null }
+  app.put(
+    '/api/v1/supplier-debt/orders/:id/due-date',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId } = reqUser(request);
+        const orderId = (request.params as { id: string }).id;
+        const raw = (request.body as { paymentDueDate?: string | null } | undefined)?.paymentDueDate;
+
+        const order = await prisma.importOrder.findFirst({
+          where: { id: orderId, orgId },
+          select: { id: true, status: true },
+        });
+        if (!order) {
+          return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
+        }
+        if (order.status !== 'confirmed') {
+          return reply.status(400).send({ error: 'Chỉ sửa được hạn thanh toán của đơn đã chốt' });
+        }
+
+        let dueDate: Date | null = null;
+        if (raw != null && raw !== '') {
+          const d = new Date(raw);
+          if (Number.isNaN(d.getTime())) {
+            return reply.status(400).send({ error: 'Ngày không hợp lệ' });
+          }
+          dueDate = d;
+        }
+
+        await prisma.importOrder.update({
+          where: { id: orderId },
+          data: { paymentDueDate: dueDate },
+        });
+
+        return { id: orderId, payment_due_date: dueDate?.toISOString().slice(0, 10) ?? null };
+      } catch (err: any) {
+        logger.error('supplier-debt update due-date error', err);
+        return reply.status(500).send({ error: 'Lỗi cập nhật hạn thanh toán' });
+      }
+    },
+  );
+
   // ── POST /api/v1/supplier-debt/payments ───────────────────────────────
   // Ghi nhận thanh toán NCC. Body:
   //   importOrderId: string (required)

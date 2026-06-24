@@ -173,6 +173,41 @@ export async function notificationRoutes(app: FastifyInstance) {
       });
     }
 
+    // 6b. Overdue supplier payments (công nợ NCC quá hạn) — owner/admin only
+    //     (cost/debt-sensitive; member không thấy công nợ NCC).
+    if (isAdmin) {
+      const overdueImports = await prisma.importOrder.findMany({
+        where: {
+          orgId: user.orgId,
+          status: 'confirmed',
+          debtAmount: { gt: 0 },
+          paymentDueDate: { lt: new Date() },
+        },
+        select: {
+          id: true,
+          importCode: true,
+          debtAmount: true,
+          paymentDueDate: true,
+          supplier: { select: { name: true } },
+        },
+        orderBy: { paymentDueDate: 'asc' },
+        take: 5,
+      });
+      for (const o of overdueImports) {
+        const days = o.paymentDueDate
+          ? Math.ceil((Date.now() - o.paymentDueDate.getTime()) / (24 * 60 * 60 * 1000))
+          : 0;
+        notifications.push({
+          id: `supplier-overdue-${o.id}`,
+          type: 'error',
+          priority: 'high',
+          title: `Nợ NCC ${o.importCode} quá hạn ${days} ngày`,
+          detail: `${o.supplier?.name ?? 'NCC'} · còn ${Number(o.debtAmount).toLocaleString('vi-VN')} đ`,
+          createdAt: o.paymentDueDate?.toISOString() ?? new Date().toISOString(),
+        });
+      }
+    }
+
     // 6. Disconnected Zalo accounts
     const accounts = await prisma.zaloAccount.findMany({
       where: { orgId: user.orgId },
