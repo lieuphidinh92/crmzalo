@@ -66,6 +66,8 @@ import { inventoryReportRoutes } from './modules/inventory/inventory-reports.js'
 import { inventoryAlertsRoutes } from './modules/inventory/alerts-routes.js';
 import { startInventoryCronJobs } from './modules/inventory/inventory-cron.js';
 import { importsRoutes } from './modules/imports/imports-routes.js';
+import { supplierDebtRoutes } from './modules/imports/supplier-debt-routes.js';
+import { startSupplierDebtCron } from './modules/imports/supplier-debt-cron.js';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
 import { quickReplyRoutes } from './modules/quick-replies/quick-reply-routes.js';
 import { learningRoutes } from './modules/learning/learning-routes.js';
@@ -177,6 +179,7 @@ async function bootstrap() {
   await app.register(inventoryReportRoutes);
   await app.register(inventoryAlertsRoutes);
   await app.register(importsRoutes);
+  await app.register(supplierDebtRoutes);
   await app.register(quickReplyRoutes);
   await app.register(learningRoutes);
   await app.register(cadenceRoutes);
@@ -256,6 +259,7 @@ async function bootstrap() {
     startOrderCronJobs();
     startInventoryCronJobs();
     startCustomerRankCron();
+    startSupplierDebtCron();
   } catch (err) {
     logger.error('Failed to start server:', err);
     process.exit(1);

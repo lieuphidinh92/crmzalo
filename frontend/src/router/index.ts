@@ -115,6 +115,12 @@ const routes = [
     meta: { requiresAuth: true, adminOnly: true },
   },
   {
+    path: '/supplier-debt',
+    name: 'SupplierDebt',
+    component: () => import('@/views/SupplierDebtView.vue'),
+    meta: { requiresAuth: true, adminOnly: true },
+  },
+  {
     path: '/settings/brands',
     name: 'BrandSettings',
     component: () => import('@/views/BrandSettingsView.vue'),

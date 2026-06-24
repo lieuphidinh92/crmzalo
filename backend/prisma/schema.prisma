@@ -36,6 +36,7 @@ model Organization {
   inventoryBatches    InventoryBatch[]
   inventoryMovements  InventoryMovement[]
   importOrders        ImportOrder[]
+  supplierPayments    SupplierPayment[]
 
   @@map("organizations")
 }
@@ -946,10 +947,23 @@ model Supplier {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  org              Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // ── Công nợ NCC — thông tin thanh toán & liên hệ ──────────────────
+  paymentTermDays Int       @default(30) @map("payment_term_days")  // hạn TT mặc định (ngày)
+  bankName        String?   @map("bank_name")
+  bankAccount     String?   @map("bank_account")
+  bankHolder      String?   @map("bank_holder")
+  taxCode         String?   @map("tax_code")
+  email           String?
+  phone           String?
+  address         String?
+  notes           String?
+  // ──────────────────────────────────────────────────────────────────
+
+  org              Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   brands           Brand[]
   importOrders     ImportOrder[]
   inventoryBatches InventoryBatch[]
+  payments         SupplierPayment[]
 
   @@index([orgId, active])
   @@map("suppliers")
@@ -978,15 +992,24 @@ model ImportOrder {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
+  // ── Công nợ NCC tracking (Session Supplier Debt) ──────────────────
+  paymentStatus  String    @default("unpaid") @map("payment_status")    // unpaid | partial | paid
+  paidAmount     Decimal   @default(0) @map("paid_amount") @db.Decimal(15, 2)
+  debtAmount     Decimal   @default(0) @map("debt_amount") @db.Decimal(15, 2)
+  paymentDueDate DateTime? @map("payment_due_date") @db.Date
+  // ──────────────────────────────────────────────────────────────────
+
   org      Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   supplier Supplier?         @relation(fields: [supplierId], references: [id])
   items    ImportOrderItem[]
   batches  InventoryBatch[]
+  payments SupplierPayment[]
 
   @@unique([orgId, importCode])
   @@index([orgId, importDate])
   @@index([orgId, supplierId])
   @@index([orgId, status])
+  @@index([orgId, paymentStatus])
   @@map("import_orders")
 }
 
@@ -1014,6 +1037,33 @@ model ImportOrderItem {
   @@index([importOrderId])
   @@index([productId])
   @@map("import_order_items")
+}
+
+// ── Supplier Debt: Payment records (Session Công nợ NCC) ────────────
+// One row per payment made to a supplier for an import order. Append-only
+// log — delete allowed only for correction (admin). When a payment is
+// recorded, the parent ImportOrder's paidAmount/debtAmount/paymentStatus
+// are re-synced atomically.
+model SupplierPayment {
+  id             String   @id @default(uuid())
+  orgId          String   @map("org_id")
+  importOrderId  String   @map("import_order_id")
+  supplierId     String   @map("supplier_id")
+  amount         Decimal  @db.Decimal(15, 2)
+  paymentMethod  String?  @map("payment_method")  // bank_transfer | cash | other
+  paymentDate    DateTime @map("payment_date") @db.Date
+  reference      String?  // số UNC / số séc / mã giao dịch
+  note           String?
+  createdById    String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  importOrder ImportOrder  @relation(fields: [importOrderId], references: [id], onDelete: Cascade)
+  supplier    Supplier     @relation(fields: [supplierId], references: [id])
+
+  @@index([orgId, supplierId, paymentDate])
+  @@index([importOrderId])
+  @@map("supplier_payments")
 }
 
 // FIFO trace. Written by the FIFO allocator (Session 3.5B) when a new
