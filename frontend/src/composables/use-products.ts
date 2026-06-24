@@ -86,6 +86,9 @@ export interface ProductFilters {
   brandIds: string[];
   statuses: string[];
   stock: '' | 'in_stock' | 'low' | 'out';
+  // Admin-only: also show products that have never been sold (hidden by
+  // default). Ignored by the backend for non-admin roles.
+  showAll: boolean;
 }
 
 export function statusInfo(status: string) {
@@ -124,6 +127,7 @@ export function useProducts() {
     brandIds: [],
     statuses: [],
     stock: '',
+    showAll: false,
   });
 
   const pagination = reactive({ page: 1, limit: 50 });
@@ -139,6 +143,7 @@ export function useProducts() {
           brandId: filters.brandIds.length ? filters.brandIds.join(',') : undefined,
           status: filters.statuses.length ? filters.statuses.join(',') : undefined,
           stock: filters.stock || undefined,
+          showAll: filters.showAll ? '1' : undefined,
         },
       });
       products.value = res.data.products ?? [];
@@ -234,6 +239,7 @@ export function useProducts() {
     filters.brandIds = [];
     filters.statuses = [];
     filters.stock = '';
+    filters.showAll = false;
     pagination.page = 1;
     fetchProducts();
   }

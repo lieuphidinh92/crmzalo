@@ -23,6 +23,7 @@ import prismaPkg from '@prisma/client';
 const { PrismaClient } = prismaPkg;
 import { PrismaPg } from '@prisma/adapter-pg';
 import { getSkuCost } from './sku-cost-registry.js';
+import { resolveOrCreateProducts } from '../src/modules/products/product-import-resolver.js';
 
 const APPLY = process.argv.includes('--apply');
 const conn = process.env.DATABASE_URL;
@@ -314,14 +315,19 @@ async function main() {
     newContactIds.set(nc.key, created.id);
   }
 
-  const skus = [...new Set(ITEMS.map((i) => i.sku))];
-  const products = await prisma.product.findMany({ where: { orgId, sku: { in: skus } }, select: { id: true, sku: true } });
-  const productBySku = new Map(products.map((p: any) => [p.sku, p.id]));
-  const missingSkus = skus.filter((s) => !productBySku.has(s));
-  if (missingSkus.length) {
-    console.error('Missing SKUs in DB:', missingSkus);
+  // Mã SP mới → xác nhận trước khi tạo (CONFIRM_NEW_SKUS=1). Mặc định chỉ
+  // liệt kê + cảnh báo trùng tên rồi DỪNG (không tạo). SP nháp tạo ra KHÔNG
+  // có giá vốn — FIFO/cost-registry lo sau.
+  const resolveRes = await resolveOrCreateProducts(
+    prisma,
+    orgId,
+    ITEMS.map((i) => ({ sku: i.sku, name: i.productName })),
+    { confirm: process.env.CONFIRM_NEW_SKUS === '1', createdById: ownerUser?.id ?? null },
+  );
+  if (resolveRes.missing.length && process.env.CONFIRM_NEW_SKUS !== '1') {
     process.exit(1);
   }
+  const productBySku = resolveRes.productBySku;
 
   let createdOrders = 0, skipped = 0;
   let totalRevenue = 0n;
