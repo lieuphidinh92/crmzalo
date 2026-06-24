@@ -427,6 +427,20 @@ async function main() {
       WHERE c.id = sub.contact_id AND c.org_id = $1;
     `, orgId);
     console.log('[UPDATED] contacts.last_order_date');
+
+    // Bật cờ hasSales cho mọi SP vừa phát sinh đơn → hiện ngay trên sale-app
+    // ("bình thông nhau"). Tương đương markProductsHasSales(), inline để script
+    // tự chứa (không mở thêm prisma singleton). Idempotent: chỉ lật false→true.
+    // BẮT BUỘC ở mọi script import đơn — nếu thiếu, SP có doanh số sẽ bị ẩn oan
+    // tới khi chạy backfill-has-sales.ts.
+    const soldIds = [...new Set(ITEMS.map((it) => productBySku.get(it.sku)).filter(Boolean))] as string[];
+    if (soldIds.length) {
+      const flagged = await prisma.product.updateMany({
+        where: { id: { in: soldIds }, hasSales: false },
+        data: { hasSales: true },
+      });
+      console.log(`[UPDATED] products.hasSales → bật ${flagged.count}/${soldIds.length} SP hiện trên sale-app`);
+    }
   }
 
   console.log(`\n=== SUMMARY ===`);

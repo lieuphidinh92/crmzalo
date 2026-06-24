@@ -14,6 +14,12 @@
  *
  * Pass the script's own Prisma client as `client` so it shares the script's
  * connection/transaction context.
+ *
+ * ⚠️ SAU KHI tạo đơn (APPLY): script import PHẢI bật Product.hasSales=true cho
+ * các SP vừa bán (updateMany hasSales:false→true), nếu không SP có doanh số sẽ
+ * bị ẩn oan khỏi sale-app cho tới khi chạy scripts/backfill-has-sales.ts. Xem
+ * mẫu ở scripts/import-2026-06-23-halovn.ts (khối `if (APPLY)`). Resolver cố ý
+ * KHÔNG tự bật cờ — nó chạy cả trong DRY-RUN, bật ở đây sẽ đánh dấu nhầm.
  */
 import { buildDefaultTiers } from './product-seeds.js';
 
