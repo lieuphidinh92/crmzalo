@@ -24,6 +24,15 @@
       >
         Lưu thay đổi
       </v-btn>
+      <v-btn
+        v-if="canDelete"
+        color="error"
+        variant="outlined"
+        prepend-icon="mdi-trash-can-outline"
+        @click="deleteDialog = true"
+      >
+        Xoá đơn
+      </v-btn>
     </div>
 
     <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-3" />
@@ -420,6 +429,22 @@
       </v-card>
     </v-dialog>
 
+    <!-- Delete dialog (admin, chỉ đơn Nháp/Đã huỷ) -->
+    <v-dialog v-model="deleteDialog" max-width="440">
+      <v-card>
+        <v-card-title>Xoá đơn hàng?</v-card-title>
+        <v-card-text>
+          Đơn <strong>{{ order?.orderCode }}</strong> sẽ bị
+          <strong class="text-error">xoá vĩnh viễn</strong>, không khôi phục được.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="deleting" @click="deleteDialog = false">Quay lại</v-btn>
+          <v-btn color="error" :loading="deleting" @click="onDeleteOrder">Xoá vĩnh viễn</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- Tracking dialog (for shipping transition) -->
     <v-dialog v-model="trackingDialog" max-width="420" persistent>
       <v-card>
@@ -525,6 +550,7 @@ const {
   updateOrder,
   transitionOrder,
   cancelOrder,
+  deleteOrder,
   addItem,
   deleteItem,
   addGift,
@@ -560,6 +586,8 @@ const giftDialog = ref(false);
 const cancelDialog = ref(false);
 const cancelReason = ref('');
 const cancelTried = ref(false);
+const deleteDialog = ref(false);
+const deleting = ref(false);
 const trackingDialog = ref(false);
 const trackingForm = reactive({ provider: null as string | null, code: '' });
 
@@ -590,6 +618,15 @@ const canEditOrder = computed(() => {
 });
 
 const canAdvance = computed(() => canEditOrder.value);
+
+// Xoá đơn: chỉ admin/owner + đơn Nháp/Đã huỷ (backend chặn đơn đang chạy).
+const canDelete = computed(
+  () =>
+    isAdmin.value &&
+    !isNew.value &&
+    !!order.value &&
+    ['draft', 'cancelled'].includes(order.value.statusNormalized),
+);
 
 const totalQuantity = computed(() =>
   (order.value?.items ?? []).reduce((s, i) => s + i.quantity, 0),
@@ -813,6 +850,23 @@ async function onCancelOrder() {
     showSnack(err?.response?.data?.error ?? 'Huỷ thất bại', 'error');
   } finally {
     advancing.value = false;
+  }
+}
+
+// Xoá vĩnh viễn đơn (admin). Backend chỉ cho xoá Nháp/Đã huỷ; đơn đang chạy
+// trả lỗi hướng dẫn Huỷ trước — hiện thẳng qua snackbar.
+async function onDeleteOrder() {
+  if (!order.value) return;
+  deleting.value = true;
+  try {
+    await deleteOrder(order.value.id);
+    deleteDialog.value = false;
+    showSnack('Đã xoá đơn', 'info');
+    router.replace('/orders');
+  } catch (err: any) {
+    showSnack(err?.response?.data?.error ?? 'Xoá đơn thất bại', 'error');
+  } finally {
+    deleting.value = false;
   }
 }
 

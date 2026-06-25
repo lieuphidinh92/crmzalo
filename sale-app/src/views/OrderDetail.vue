@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 import html2canvas from 'html2canvas';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
+import { useAuthStore } from '../stores/auth';
+import SalesDocument from '../components/SalesDocument.vue';
 import {
   formatVND,
   statusLabel,
@@ -15,10 +17,43 @@ import {
 const route = useRoute();
 const router = useRouter();
 const pos = usePOSStore();
+const auth = useAuthStore();
+const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
 
 const order = ref(null);
 const loading = ref(true);
 const errorMsg = ref('');
+
+// ── Xoá đơn (admin) — chỉ đơn Nháp / Đã huỷ (backend chặn đơn đang chạy) ──
+const showDelete = ref(false);
+const deleting = ref(false);
+const deleteError = ref('');
+
+// ── Phiếu xuất kho / Biên bản bàn giao (giống màn Tạo đơn) ──
+const showDoc = ref(false);
+const docOrder = computed(() => {
+  const o = order.value;
+  if (!o) return null;
+  return {
+    order_code: o.orderCode || o.order_code || '',
+    saleName: o.assignedSale?.fullName || '',
+    customerName: o.contact?.fullName || '',
+    customerPhone: o.contact?.phone || '',
+    customerAddress: o.deliveryAddress || o.contact?.address || '',
+    deliveryAddress: o.deliveryAddress || o.contact?.address || '',
+    note: o.customerNote || o.internalNote || '',
+    items: (o.items || []).map((it) => ({
+      name: it.productName,
+      sku: it.sku,
+      unit: it.unit,
+      quantity: Number(it.quantity) || 0,
+      unitPrice: Number(it.unitPrice) || 0,
+      lineTotal: Number(it.lineTotal) || 0,
+    })),
+    subtotal: Number(o.subtotalAmount) || 0,
+    total: Number(o.totalAmountValue ?? o.totalAmount) || 0,
+  };
+});
 
 // ── Thông tin chuyển khoản (load từ backend, không chặn render) ──
 const paymentInfo = ref({ bankName: '', accountNumber: '', accountHolder: '', note: '' });
@@ -76,6 +111,8 @@ const activeStep = computed(() => TIMELINE.findIndex((s) => s.key === norm.value
 const debt = computed(() => Number(order.value?.debtAmountValue ?? 0));
 const canPay = computed(() => order.value && !isCancelled.value);
 const canCancel = computed(() => order.value && !isCancelled.value && !isCompleted.value);
+// Xoá: chỉ admin + đơn Nháp/Đã huỷ (khớp ràng buộc backend; đơn đang chạy phải Huỷ trước).
+const canDelete = computed(() => isAdmin.value && order.value && ['draft', 'cancelled'].includes(norm.value));
 
 const orderTotal = computed(() => Number(order.value?.totalAmountValue ?? order.value?.totalAmount ?? 0));
 const paid = computed(() => Number(order.value?.paidAmount ?? 0));
@@ -263,6 +300,22 @@ async function submitCancel() {
     cancelError.value = err.response?.data?.error || 'Lỗi huỷ đơn';
   } finally {
     cancelSaving.value = false;
+  }
+}
+
+// Xoá vĩnh viễn đơn (admin). Backend chỉ cho xoá đơn Nháp/Đã huỷ; nếu đơn
+// đang chạy sẽ trả lỗi hướng dẫn Huỷ trước — hiện thẳng cho người dùng.
+async function deleteOrder() {
+  deleting.value = true;
+  deleteError.value = '';
+  try {
+    await api.delete(`/orders/${route.params.id}`);
+    showDelete.value = false;
+    router.replace('/orders');
+  } catch (err) {
+    deleteError.value = err.response?.data?.error || 'Lỗi xoá đơn';
+  } finally {
+    deleting.value = false;
   }
 }
 </script>
@@ -470,15 +523,14 @@ async function submitCancel() {
         Gửi qua Zalo
       </button>
       <button
-        @click="downloadReceipt"
-        :disabled="generatingImage"
-        class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-semibold hover:bg-surface-50 flex items-center justify-center gap-2 disabled:opacity-50"
-        title="Tải ảnh phiếu đơn (PNG)"
+        @click="showDoc = true"
+        class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-semibold hover:bg-surface-50 flex items-center justify-center gap-2"
+        title="Phiếu xuất kho bán hàng / Biên bản bàn giao"
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
         </svg>
-        {{ generatingImage ? 'Đang tạo ảnh...' : 'Tải ảnh phiếu' }}
+        Tải ảnh phiếu
       </button>
     </div>
 
@@ -508,6 +560,43 @@ async function submitCancel() {
       >
         Ghi nhận thanh toán
       </button>
+    </div>
+
+    <!-- Xoá đơn (admin) — chỉ đơn Nháp / Đã huỷ -->
+    <button
+      v-if="canDelete"
+      @click="showDelete = true; deleteError = ''"
+      class="w-full h-11 mt-2 rounded-xl border border-rose-300 text-rose-600 font-semibold hover:bg-rose-50 flex items-center justify-center gap-2"
+    >
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      </svg>
+      Xoá đơn (admin)
+    </button>
+
+    <!-- Delete confirm dialog -->
+    <div v-if="showDelete" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-ink-primary">Xoá đơn hàng</h3>
+          <button @click="showDelete = false" class="text-ink-disabled hover:text-ink-primary text-xl leading-none">✕</button>
+        </div>
+        <p class="text-sm text-ink-secondary mb-3">
+          Đơn <span class="font-mono font-semibold">{{ order?.orderCode }}</span> sẽ bị
+          <span class="font-semibold text-rose-600">xoá vĩnh viễn</span>, không khôi phục được. Anh chắc chắn?
+        </p>
+        <div v-if="deleteError" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+          {{ deleteError }}
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button type="button" @click="showDelete = false" :disabled="deleting" class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50">
+            Quay lại
+          </button>
+          <button type="button" @click="deleteOrder" :disabled="deleting" class="flex-1 h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold disabled:opacity-50">
+            {{ deleting ? 'Đang xoá...' : 'Xoá vĩnh viễn' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Payment dialog -->
@@ -668,5 +757,15 @@ async function submitCancel() {
         </div>
       </div>
     </div>
+
+    <!-- Phiếu xuất kho bán hàng / Biên bản bàn giao (giống màn Tạo đơn) -->
+    <SalesDocument
+      v-if="showDoc && docOrder"
+      :order="docOrder"
+      type="export"
+      company-key="halovn"
+      @close="showDoc = false"
+      @done="showDoc = false"
+    />
   </div>
 </template>
