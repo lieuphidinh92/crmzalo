@@ -125,7 +125,12 @@ async function getDefaultWarehouseId(orgId: string): Promise<string | null> {
 /** Re-aggregate a product's totalStock + costPrice from its active
  * batches. costPrice = qty-weighted average of importCost across all
  * `active` lots with currentQuantity > 0. Skipped (left as-is) if no
- * active stock — the legacy MISA cost stays authoritative. */
+ * active stock — the legacy MISA cost stays authoritative.
+ *
+ * Quy tắc (anh Philip 25/06/2026): "khi nhập hàng có tồn thì auto bên CRM
+ * và Sale hiện ra". Khi totalStock > 0 thì bật hasSales=true để SP xuất
+ * hiện trong catalog cả 2 app. CHỈ bật, không bao giờ tắt — SP từng bán
+ * (hasSales=true) vẫn hiện kể cả khi bán hết tồn. */
 async function syncProductCostAndStock(productId: string): Promise<void> {
   const batches = await prisma.inventoryBatch.findMany({
     where: { productId, status: 'active', currentQuantity: { gt: 0 } },
@@ -152,6 +157,8 @@ async function syncProductCostAndStock(productId: string): Promise<void> {
     data: {
       totalStock,
       ...(costPrice !== null ? { costPrice: new Prisma.Decimal(costPrice.toFixed(2)) } : {}),
+      // Có tồn → tự hiện trong catalog (cả CRM lẫn Sale app dùng hasSales).
+      ...(totalStock > 0 ? { hasSales: true } : {}),
     },
   });
 }

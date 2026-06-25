@@ -66,9 +66,11 @@ async function syncProductTotalStock(productId: string, tx?: any): Promise<void>
     where: { productId, status: 'active' },
     _sum: { currentQuantity: true },
   });
+  const total = sum._sum.currentQuantity ?? 0;
   await client.product.update({
     where: { id: productId },
-    data: { totalStock: sum._sum.currentQuantity ?? 0 },
+    // Có tồn → tự hiện trong catalog (quy tắc "nhập hàng có tồn thì hiện").
+    data: { totalStock: total, ...(total > 0 ? { hasSales: true } : {}) },
   });
 }
 

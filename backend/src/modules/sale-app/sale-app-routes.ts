@@ -1516,7 +1516,8 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       // giờ (đúng ý CEO: "cái nào chưa có doanh số thì ẩn"). Status KHÔNG lọc:
       // SP đã đánh "ngừng KD" vẫn hiện nếu có doanh số (status là dữ liệu
       // backend; backend giữ đủ SP — đây là UX, không phải logic toán học).
-      const where: any = { orgId: user.orgId, hasSales: true };
+      // sellable=true: ẩn SP admin đã "Ngừng bán" (đè lên mọi quy tắc auto-hiện).
+      const where: any = { orgId: user.orgId, hasSales: true, sellable: true };
       if (brand) where.brandId = brand;
       // Accent-insensitive + fuzzy ranked search trong phạm vi SP có doanh số.
       let searchOrder: string[] | null = null;
@@ -1615,7 +1616,8 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
 
       // Catalog CHỈ hiện SP có doanh số (kể cả khi tìm), không lọc status —
       // xem ghi chú ở /products/search.
-      const where: any = { orgId: user.orgId, hasSales: true };
+      // sellable=true: ẩn SP admin đã "Ngừng bán" (đè lên mọi quy tắc auto-hiện).
+      const where: any = { orgId: user.orgId, hasSales: true, sellable: true };
       if (brand) where.brandId = brand;
       // Accent-insensitive + fuzzy ranked search trong phạm vi SP có doanh số.
       let searchOrder: string[] | null = null;
@@ -2332,12 +2334,16 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const productIds = body.items.map((it) => it.productId);
       const products = await prisma.product.findMany({
         where: { id: { in: productIds }, orgId: user.orgId },
-        select: { id: true, sku: true, name: true, unit: true, costPrice: true, totalStock: true, allowOversell: true },
+        select: { id: true, sku: true, name: true, unit: true, costPrice: true, totalStock: true, allowOversell: true, sellable: true },
       });
       const productMap = new Map<string, any>(products.map((p: any) => [p.id, p]));
       for (const it of body.items) {
         if (!productMap.has(it.productId)) {
           return reply.status(400).send({ error: `Sản phẩm không hợp lệ: ${it.productId}` });
+        }
+        const prod = productMap.get(it.productId);
+        if (prod.sellable === false) {
+          return reply.status(400).send({ error: `Sản phẩm "${prod.name}" đã ngừng bán` });
         }
         if (!it.quantity || it.quantity <= 0) {
           return reply.status(400).send({ error: 'Số lượng phải > 0' });

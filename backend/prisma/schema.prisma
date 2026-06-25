@@ -1213,6 +1213,10 @@ model Product {
   // hasSales=false are hidden from the default catalog browse (kept tidy) but
   // remain findable the moment the user searches (by SKU or name).
   hasSales           Boolean  @default(false) @map("has_sales")
+  // Admin "Ngừng bán" toggle. When false → SP bị ẩn khỏi catalog + tìm kiếm
+  // của sale-app và KHÔNG lên đơn được ở sale-app. Độc lập với hasSales: đây là
+  // tắt thủ công, đè lên quy tắc "có tồn → auto hiện". CRM vẫn hiện & bán bình thường.
+  sellable           Boolean  @default(true) @map("sellable")
   // Cost — sensitive, owner/admin only
   costPrice          Decimal? @map("cost_price") @db.Decimal(15, 2)
   // Marketing docs — list of { id, type, name, driveUrl, createdAt }
