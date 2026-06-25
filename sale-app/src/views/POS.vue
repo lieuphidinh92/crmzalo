@@ -9,6 +9,7 @@ import AdvancedOptions from '../components/AdvancedOptions.vue';
 import ProductFinder from '../components/ProductFinder.vue';
 import NewCustomerDialog from '../components/NewCustomerDialog.vue';
 import OrderSummaryDialog from '../components/OrderSummaryDialog.vue';
+import CompanyPickDialog from '../components/CompanyPickDialog.vue';
 
 const router = useRouter();
 const pos = usePOSStore();
@@ -17,6 +18,7 @@ const showNewCustomer = ref(false);
 const submitErr = ref('');
 const showSummary = ref(false);
 const summaryOrder = ref(null);
+const showCompanyPick = ref(false);
 
 const customerPanelRef = ref(null);
 const productFinderRef = ref(null);
@@ -45,6 +47,21 @@ const PAYMENT = [
   { v: 'bank_transfer', l: 'Chuyển khoản' },
   { v: 'credit', l: 'Công nợ' },
 ];
+
+// Xác nhận đơn: hỏi pháp nhân xuất hoá đơn TRƯỚC khi chốt.
+function requestConfirm() {
+  if (!canSubmit.value) return;
+  submitErr.value = '';
+  showCompanyPick.value = true;
+}
+
+// Đã chọn công ty trong popup → lưu lựa chọn rồi tạo đơn (confirmed).
+// Đóng popup sau khi xong: thành công → mở tóm tắt đơn; lỗi → hiện lỗi ở khối tổng tiền.
+async function onPickCompany(key) {
+  pos.invoicingCompany = key;
+  await submit('confirmed');
+  showCompanyPick.value = false;
+}
 
 // Lưu tạm (draft) / Xác nhận (confirmed) → tạo đơn rồi mở modal tóm tắt.
 async function submit(status) {
@@ -83,7 +100,7 @@ function onKeydown(e) {
     productFinderRef.value?.focusSearch?.();
   } else if (key === 'F9') {
     e.preventDefault();
-    submit('confirmed');
+    requestConfirm();
   } else if ((e.ctrlKey || e.metaKey) && (key === 'k' || key === 'K')) {
     e.preventDefault();
     customerPanelRef.value?.focusSearch?.();
@@ -207,7 +224,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
               ⤓ Lưu tạm
             </button>
             <button
-              @click="submit('confirmed')"
+              @click="requestConfirm"
               :disabled="!canSubmit"
               class="flex-1 h-12 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
@@ -242,6 +259,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
       v-if="showNewCustomer"
       @close="showNewCustomer = false"
       @created="onCustomerCreated"
+    />
+
+    <CompanyPickDialog
+      v-if="showCompanyPick"
+      :busy="pos.submitting"
+      @pick="onPickCompany"
+      @close="showCompanyPick = false"
     />
 
     <OrderSummaryDialog
