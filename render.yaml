@@ -11,7 +11,10 @@ services:
     region: singapore        # gần VN nhất
     rootDir: backend         # backend nằm trong thư mục con
     branch: feature/sale-app-nhom1   # đổi sang nhánh anh dùng để deploy
-    buildCommand: npm install && npx prisma generate
+    # db push: đồng bộ schema-first lên Supabase mỗi lần deploy (dự án không dùng
+    # migrations folder). Thêm cột mới (vd sellable) tự áp. Đổi destructive sẽ làm
+    # build FAIL (không có --accept-data-loss) → prod giữ bản cũ, an toàn.
+    buildCommand: npm install && npx prisma generate && npx prisma db push --url "$DATABASE_URL" --skip-generate
     startCommand: npm run start:prod # chạy bằng tsx (transpile, bỏ qua lỗi type như khi dev)
     # Đĩa lưu file upload (ảnh sản phẩm…) — giữ lại sau mỗi lần deploy
     disk:
