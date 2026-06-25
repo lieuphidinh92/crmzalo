@@ -101,18 +101,23 @@ export function toNumber(v: unknown): number {
   return 0;
 }
 
-// Order code: DH-YYYYMM-NNNN — sequential within (orgId, year-month).
-// Concurrent calls in the same minute may collide on `count + 1`; we
-// retry on unique-constraint violation up to 5 times. Acceptable for a
-// CRM with single-digit RPS.
+// Order code: DH-YYYYMM-NNNN — tăng dần theo (orgId, năm-tháng).
+// Lấy MÃ LỚN NHẤT hiện có rồi +1. KHÔNG dùng count(): dữ liệu có gap (import
+// MISA / đơn đã xoá / số nhảy cóc) → count+1 rơi trúng mã đã tồn tại → P2002
+// "Unique constraint (org_id, order_code)" và retry cũng vô ích vì count không
+// đổi. Suffix 4 chữ số zero-pad nên sort desc theo chuỗi = sort theo số (≤9999).
 export async function generateOrderCode(orgId: string): Promise<string> {
   const now = new Date();
   const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
   const prefix = `DH-${ym}-`;
-  const count = await prisma.order.count({
+  const last = await prisma.order.findFirst({
     where: { orgId, orderCode: { startsWith: prefix } },
+    orderBy: { orderCode: 'desc' },
+    select: { orderCode: true },
   });
-  return `${prefix}${String(count + 1).padStart(4, '0')}`;
+  const lastSeq = last ? parseInt(last.orderCode.slice(prefix.length), 10) : 0;
+  const next = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
+  return `${prefix}${String(next).padStart(4, '0')}`;
 }
 
 /**

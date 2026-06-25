@@ -19,7 +19,9 @@ const props = defineProps({
 });
 const emit = defineEmits(['close', 'done']);
 
-const isExport = computed(() => props.type === 'export');
+// Cho phép đổi loại phiếu ngay trên popup (in cả 2 phiếu không cần đóng lại).
+const activeType = ref(props.type === 'handover' ? 'handover' : 'export');
+const isExport = computed(() => activeType.value === 'export');
 const fileSlug = computed(() => (isExport.value ? 'phieu-xuat-kho' : 'bien-ban-ban-giao'));
 
 // Cho phép đổi pháp nhân ngay trên phiếu (phòng khi chọn nhầm / đơn nháp).
@@ -58,8 +60,9 @@ const cust = computed(() => ({
 const paper = ref(null);
 const downloading = ref(false);
 
+// ESC = quay lại (không đóng hẳn, tránh mất chỗ chọn phiếu kia).
 function onEsc(e) {
-  if (e.key === 'Escape') { e.preventDefault(); emit('done'); }
+  if (e.key === 'Escape') { e.preventDefault(); emit('close'); }
 }
 onMounted(() => window.addEventListener('keydown', onEsc));
 onUnmounted(() => window.removeEventListener('keydown', onEsc));
@@ -84,9 +87,22 @@ async function downloadImage() {
 </script>
 
 <template>
-  <div class="doc-overlay" @click.self="emit('done')">
+  <!-- Click ra ngoài KHÔNG tự tắt — chỉ đóng bằng nút "Quay lại". -->
+  <div class="doc-overlay">
     <!-- Thanh thao tác (không in) -->
     <div class="doc-actions">
+      <button @click="emit('close')" class="btn-back" title="Quay lại">← Quay lại</button>
+      <!-- Đổi loại phiếu ngay tại đây để in cả 2 mà không cần đóng popup -->
+      <div class="co-switch">
+        <button
+          @click="activeType = 'export'"
+          :class="['co-btn', { on: isExport }]"
+        >Phiếu xuất kho</button>
+        <button
+          @click="activeType = 'handover'"
+          :class="['co-btn', { on: !isExport }]"
+        >Biên bản bàn giao</button>
+      </div>
       <div class="co-switch">
         <button
           v-for="c in COMPANY_LIST"
@@ -97,7 +113,6 @@ async function downloadImage() {
       </div>
       <button @click="printDoc" class="btn-print" title="In / Lưu PDF">🖨 In / Lưu PDF</button>
       <button @click="downloadImage" :disabled="downloading" class="btn-ico" title="Tải ảnh PNG">⤓</button>
-      <button @click="emit('close')" class="btn-ico" title="Quay lại">✕</button>
     </div>
 
     <div ref="paper" class="page">
@@ -269,6 +284,9 @@ async function downloadImage() {
 .btn-ico{width:40px;height:40px;border:none;border-radius:50%;background:#fff;color:#1e293b;font-size:18px;
   cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.25);}
 .btn-ico:disabled{opacity:.5;}
+.btn-back{height:40px;padding:0 16px;border:none;border-radius:20px;background:#fff;color:#1e293b;
+  font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.25);font-family:inherit;}
+.btn-back:hover{background:#f1f5f9;}
 
 /* Tờ A4: 210 x 297mm → 720 x 1018px trên màn hình */
 .page{width:720px;min-height:1018px;background:#fff;color:#111;padding:34px 40px 30px;
