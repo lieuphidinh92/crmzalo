@@ -5,14 +5,14 @@
  */
 import { ref } from 'vue';
 import { formatVND } from '../composables/useFormat';
-import OrderDocument from './OrderDocument.vue';
+import SalesDocument from './SalesDocument.vue';
 
 const props = defineProps({
   order: { type: Object, required: true },
 });
 const emit = defineEmits(['close']);
 
-const docType = ref(null); // null | 'invoice' | 'handover'
+const docType = ref(null); // null | 'export' | 'handover'
 const isDraft = props.order.status === 'draft';
 </script>
 
@@ -68,10 +68,10 @@ const isDraft = props.order.status === 'draft';
       <!-- 2 nút phiếu -->
       <div class="px-5 pb-3 grid grid-cols-2 gap-2">
         <button
-          @click="docType = 'invoice'"
+          @click="docType = 'export'"
           class="h-12 rounded-xl bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold flex items-center justify-center gap-1.5"
         >
-          🧾 Hoá đơn bán hàng
+          🧾 Phiếu xuất kho bán hàng
         </button>
         <button
           @click="docType = 'handover'"
@@ -93,10 +93,11 @@ const isDraft = props.order.status === 'draft';
     </div>
 
     <!-- Phiếu (overlay trên cùng) -->
-    <OrderDocument
+    <SalesDocument
       v-if="docType"
       :order="order"
       :type="docType"
+      :company-key="order.invoicingCompany || 'halovn'"
       @close="docType = null"
       @done="emit('close')"
     />

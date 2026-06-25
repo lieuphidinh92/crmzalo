@@ -40,6 +40,8 @@ export const usePOSStore = defineStore('pos', () => {
   const staffList = ref([]);
   const assignedSaleId = ref(null);
   const referrerName = ref('');
+  // Pháp nhân xuất chứng từ (Phiếu xuất kho + Biên bản bàn giao): halovn | inocare
+  const invoicingCompany = ref('halovn');
   const submitting = ref(false);
 
   // Tải danh sách nhân viên (gọi 1 lần khi mở màn). Mặc định NV sale = NV đăng nhập.
@@ -275,6 +277,7 @@ export const usePOSStore = defineStore('pos', () => {
       debt: Math.max(0, total - paid),
       paymentMethod: paymentMethod.value,
       shippingMethod: shippingMethod.value,
+      invoicingCompany: invoicingCompany.value,
     };
   }
 
@@ -302,6 +305,7 @@ export const usePOSStore = defineStore('pos', () => {
     // Reset NV sale về NV đang đăng nhập (mặc định khách mới); giữ staffList đã tải.
     assignedSaleId.value = currentUserId();
     referrerName.value = '';
+    invoicingCompany.value = 'halovn';
   }
 
   function changeTier(tier) {
@@ -388,6 +392,7 @@ export const usePOSStore = defineStore('pos', () => {
     staffList,
     assignedSaleId,
     referrerName,
+    invoicingCompany,
     loadStaff,
     submitting,
     subtotal,
