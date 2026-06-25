@@ -7,10 +7,13 @@
 import { prisma } from '../src/shared/database/prisma-client.js';
 import { writeFileSync } from 'node:fs';
 
-const ORG = '7dc86328-624d-4e2d-b0b6-bc62b574a95a';
 const NEW_NAME = 'HKD Phạm Cường (Công ty TNHH Sắc Diện Mới)';
 
 async function main() {
+  // org-id lấy động (prod có thể khác local) — dự án chỉ có 1 org.
+  const org = await prisma.organization.findFirst({ select: { id: true } });
+  if (!org) throw new Error('Không tìm thấy organization');
+  const ORG = org.id;
   const keeper = await prisma.contact.findFirst({ where: { orgId: ORG, customerCode: 'KH057' } });
   const loser = await prisma.contact.findFirst({ where: { orgId: ORG, customerCode: 'KH253' } });
   if (!keeper) throw new Error('Không tìm thấy KH057');

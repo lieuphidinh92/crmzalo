@@ -165,12 +165,19 @@ async function main() {
     data: { hasSales: false },
   });
 
+  // ── 3) quy tắc "có tồn thì hiện": bật lại mọi SP còn tồn (kể cả ngoài DS 53) ──
+  const revealedStock = await prisma.product.updateMany({
+    where: { orgId, hasSales: false, totalStock: { gt: 0 } },
+    data: { hasSales: true },
+  });
+
   // ── verify ──
   const visibleAfter = await prisma.product.count({ where: { orgId, hasSales: true } });
   console.log(`\n✅ XONG:`);
   console.log(`  • Bật hiện thêm: ${nReveal} | cập nhật ảnh: ${nImg} | cập nhật giá lẻ: ${nPrice}`);
   console.log(`  • Đã ẩn: ${hidden.count} SKU`);
-  console.log(`  • Catalog giờ hiển thị: ${visibleAfter} SKU (mục tiêu: ${activeSkus.length})`);
+  console.log(`  • Hiện lại mã còn tồn (ngoài DS): ${revealedStock.count} SKU`);
+  console.log(`  • Catalog giờ hiển thị: ${visibleAfter} SKU (53 + mã còn tồn)`);
 }
 
 main().then(() => prisma.$disconnect()).catch((e) => { console.error(e); prisma.$disconnect(); process.exit(1); });
