@@ -66,6 +66,8 @@ export interface Product {
   mainImageUrl: string | null;
   galleryUrls: string[];
   status: 'active' | 'discontinued' | 'coming_soon';
+  // false = admin đã "Ngừng bán" → ẩn khỏi sale-app + không lên đơn được ở sale-app.
+  sellable: boolean;
   mainUse: string | null;
   targetAudience: string | null;
   usageMethod: string | null;

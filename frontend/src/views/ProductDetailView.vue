@@ -14,20 +14,40 @@
       <div>
         <h1 class="text-h6 mb-0">
           {{ isNew ? 'Thêm sản phẩm' : form.name || 'Chi tiết sản phẩm' }}
+          <v-chip
+            v-if="!isNew && form.sellable === false"
+            color="error"
+            size="small"
+            variant="flat"
+            class="ml-2"
+          >
+            Ngừng bán
+          </v-chip>
         </h1>
         <div v-if="!isNew && form.sku" class="text-caption text-medium-emphasis font-mono">
           {{ form.sku }}
         </div>
       </div>
       <v-spacer />
+      <!-- Đang bán → nút Ngừng bán; đã ngừng → nút Mở bán lại -->
       <v-btn
-        v-if="!isNew && canEdit"
+        v-if="!isNew && canEdit && form.sellable !== false"
         color="error"
         variant="text"
-        prepend-icon="mdi-archive-outline"
+        prepend-icon="mdi-cancel"
         @click="confirmArchive"
       >
         Ngừng bán
+      </v-btn>
+      <v-btn
+        v-if="!isNew && canEdit && form.sellable === false"
+        color="success"
+        variant="text"
+        prepend-icon="mdi-cart-arrow-up"
+        :loading="saving"
+        @click="onRestore"
+      >
+        Mở bán lại
       </v-btn>
       <v-btn
         v-if="canEdit"
@@ -403,7 +423,7 @@
       <v-card>
         <v-card-title>Ngừng bán sản phẩm?</v-card-title>
         <v-card-text>
-          Sản phẩm sẽ chuyển sang trạng thái <strong>Ngừng bán</strong> và ẩn khỏi các filter mặc định. Có thể khôi phục bất cứ lúc nào.
+          Sản phẩm sẽ <strong>ẩn khỏi danh mục Sale app</strong> và nhân viên <strong>không lên đơn được</strong> ở Sale app nữa (kể cả khi còn tồn). Bên CRM vẫn xem &amp; bán được. Bấm <strong>Mở bán lại</strong> để khôi phục bất cứ lúc nào.
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -482,6 +502,7 @@ const form = reactive<{
   packageSize: string;
   mainImageUrl: string;
   status: 'active' | 'discontinued' | 'coming_soon';
+  sellable: boolean;
   unit: string;
   mainUse: string;
   targetAudience: string;
@@ -499,6 +520,7 @@ const form = reactive<{
   packageSize: '',
   mainImageUrl: '',
   status: 'active',
+  sellable: true,
   unit: 'hộp',
   mainUse: '',
   targetAudience: '',
@@ -534,6 +556,7 @@ function applyProduct(p: Product) {
   form.packageSize = p.packageSize ?? '';
   form.mainImageUrl = p.mainImageUrl ?? '';
   form.status = p.status;
+  form.sellable = p.sellable ?? true;
   form.unit = p.unit;
   form.mainUse = p.mainUse ?? '';
   form.targetAudience = p.targetAudience ?? '';
@@ -653,10 +676,22 @@ async function onArchive() {
   const ok = await deleteProduct(productId.value);
   archiveDialog.value = false;
   if (ok) {
-    showSnackbar('Đã chuyển sang Ngừng bán', 'info');
-    router.push('/products');
+    form.sellable = false;
+    form.status = 'discontinued';
+    showSnackbar('Đã ngừng bán — sản phẩm ẩn khỏi Sale app', 'info');
   } else {
     showSnackbar('Ngừng bán thất bại', 'error');
+  }
+}
+
+async function onRestore() {
+  if (!productId.value) return;
+  const updated = await updateProduct(productId.value, { status: 'active', sellable: true });
+  if (updated) {
+    applyProduct(updated);
+    showSnackbar('Đã mở bán lại — sản phẩm hiện trên Sale app', 'success');
+  } else {
+    showSnackbar('Mở bán lại thất bại', 'error');
   }
 }
 

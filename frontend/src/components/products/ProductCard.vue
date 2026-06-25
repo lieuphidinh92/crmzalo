@@ -79,8 +79,13 @@ const props = defineProps<{ product: Product }>();
 defineEmits<{ (e: 'open', id: string): void }>();
 
 const statusInfoComputed = computed(() => statusInfo(props.product.status));
-const statusLabel = computed(() => statusInfoComputed.value.text);
-const statusColor = computed(() => statusInfoComputed.value.color);
+// "Ngừng bán" (sellable=false) đè lên nhãn status thường.
+const statusLabel = computed(() =>
+  props.product.sellable === false ? 'Ngừng bán' : statusInfoComputed.value.text,
+);
+const statusColor = computed(() =>
+  props.product.sellable === false ? 'error' : statusInfoComputed.value.color,
+);
 
 const stockClr = computed(() => stockColor(props.product));
 
