@@ -34,11 +34,10 @@ async function submit() {
 
 <template>
   <div class="min-h-[100dvh] lg:grid lg:grid-cols-2 bg-surface-50">
-    <!-- Sách hướng dẫn sử dụng — luôn mở được ở góc trên phải -->
+    <!-- Sách hướng dẫn sử dụng — bấm là tải PDF về máy -->
     <a
       href="/huong-dan-su-dung.pdf"
-      target="_blank"
-      rel="noopener"
+      download="Huong dan su dung Halo Sale.pdf"
       class="fixed top-4 right-4 z-50 inline-flex items-center gap-1.5 h-10 px-4 rounded-full bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold shadow-lg"
     >
       📖 Sách HDSD

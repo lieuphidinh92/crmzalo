@@ -122,8 +122,7 @@ onBeforeUnmount(() => {
       <div class="flex items-center gap-1">
         <a
           href="/huong-dan-su-dung.pdf"
-          target="_blank"
-          rel="noopener"
+          download="Huong dan su dung Halo Sale.pdf"
           class="w-10 h-10 flex items-center justify-center text-base"
           aria-label="Sách hướng dẫn sử dụng"
           title="Sách HDSD"
@@ -200,8 +199,7 @@ onBeforeUnmount(() => {
       <div class="ml-auto flex items-center gap-2">
         <a
           href="/huong-dan-su-dung.pdf"
-          target="_blank"
-          rel="noopener"
+          download="Huong dan su dung Halo Sale.pdf"
           class="h-11 px-3.5 rounded-btn bg-amber-50 hover:bg-amber-100 text-amber-700 flex items-center gap-2 text-sm font-semibold transition"
           title="Sách hướng dẫn sử dụng"
         >
