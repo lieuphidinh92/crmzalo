@@ -120,6 +120,14 @@ onBeforeUnmount(() => {
     <div class="lg:hidden h-14 px-4 flex items-center justify-between">
       <BrandLogo size="sm" theme="light" :show-tagline="true" />
       <div class="flex items-center gap-1">
+        <a
+          href="/huong-dan-su-dung.pdf"
+          target="_blank"
+          rel="noopener"
+          class="w-10 h-10 flex items-center justify-center text-base"
+          aria-label="Sách hướng dẫn sử dụng"
+          title="Sách HDSD"
+        >📖</a>
         <button
           @click="openCart"
           class="relative w-10 h-10 flex items-center justify-center text-ink-secondary hover:text-ink-primary"
@@ -190,6 +198,16 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="ml-auto flex items-center gap-2">
+        <a
+          href="/huong-dan-su-dung.pdf"
+          target="_blank"
+          rel="noopener"
+          class="h-11 px-3.5 rounded-btn bg-amber-50 hover:bg-amber-100 text-amber-700 flex items-center gap-2 text-sm font-semibold transition"
+          title="Sách hướng dẫn sử dụng"
+        >
+          <span class="text-base leading-none">📖</span>
+          <span>Sách HDSD</span>
+        </a>
         <button
           @click="openCart"
           class="relative h-11 px-3 rounded-btn hover:bg-surface-soft flex items-center gap-2 text-sm text-ink-primary transition"
