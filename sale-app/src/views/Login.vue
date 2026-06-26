@@ -34,6 +34,16 @@ async function submit() {
 
 <template>
   <div class="min-h-[100dvh] lg:grid lg:grid-cols-2 bg-surface-50">
+    <!-- Sách hướng dẫn sử dụng — luôn mở được ở góc trên phải -->
+    <a
+      href="/huong-dan-su-dung.pdf"
+      target="_blank"
+      rel="noopener"
+      class="fixed top-4 right-4 z-50 inline-flex items-center gap-1.5 h-10 px-4 rounded-full bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold shadow-lg"
+    >
+      📖 Sách HDSD
+    </a>
+
     <!-- Left brand panel (desktop only) -->
     <div class="hidden lg:flex bg-navy-900 text-white p-12 flex-col justify-between relative overflow-hidden">
       <div class="absolute -right-20 -top-20 w-72 h-72 rounded-full bg-royal-700/30 blur-3xl"></div>
