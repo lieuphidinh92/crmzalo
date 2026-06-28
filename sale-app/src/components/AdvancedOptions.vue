@@ -186,18 +186,10 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1.5'
         </div>
       </div>
 
-      <!-- Nhân viên sale & người giới thiệu -->
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <div :class="labelCls">Nhân viên sale</div>
-          <select v-model="pos.assignedSaleId" class="w-full h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm bg-white">
-            <option v-for="s in pos.staffList" :key="s.id" :value="s.id">{{ s.fullName }}</option>
-          </select>
-        </div>
-        <div>
-          <div :class="labelCls">Người giới thiệu</div>
-          <input v-model="pos.referrerName" type="text" placeholder="Tên người giới thiệu (nếu có)" :class="inputCls" />
-        </div>
+      <!-- Người giới thiệu (Nhân viên sale đã đưa lên đầu cột Giỏ hàng) -->
+      <div>
+        <div :class="labelCls">Người giới thiệu</div>
+        <input v-model="pos.referrerName" type="text" placeholder="Tên người giới thiệu (nếu có)" :class="inputCls" />
       </div>
     </div>
   </div>

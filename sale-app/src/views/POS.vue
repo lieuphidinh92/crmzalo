@@ -143,6 +143,22 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
           <span class="text-sm font-semibold text-ink-primary">Giỏ hàng</span>
         </div>
 
+        <!-- Nhân viên sale — ghim đầu cột cho dễ chọn -->
+        <div class="shrink-0 mb-2 bg-white border border-line-200 rounded-xl px-3 py-2 flex items-center gap-2.5">
+          <span class="text-[11px] uppercase tracking-wide text-ink-secondary shrink-0 flex items-center gap-1">
+            <svg class="w-4 h-4 text-royal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+            Nhân viên sale
+          </span>
+          <select
+            v-model="pos.assignedSaleId"
+            class="flex-1 min-w-0 h-9 px-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm font-medium bg-white"
+          >
+            <option v-for="s in pos.staffList" :key="s.id" :value="s.id">{{ s.fullName }}</option>
+          </select>
+        </div>
+
         <!-- vùng cuộn: bảng giỏ + vận chuyển/thanh toán + nâng cao -->
         <div class="flex-1 min-h-0 lg:overflow-y-auto space-y-3 pr-0.5">
           <CartTable />
