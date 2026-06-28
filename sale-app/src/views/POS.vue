@@ -119,14 +119,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
 
 <template>
   <div class="flex flex-col lg:h-[calc(100dvh-72px)] bg-[#F5F7FB]">
-    <!-- 3 cột: Khách hàng (320) | Giỏ hàng (co giãn) | Tìm sản phẩm (420) -->
-    <!-- Track cố định: cột khách + sản phẩm giữ gọn, chỉ giỏ hàng nở ra → -->
-    <!-- không còn khoảng trắng chết khi màn rộng. Canh giữa, cap 1720px. -->
+    <!-- 3 cột TỈ LỆ (fr) để scale đều theo zoom: Khách 23% | Giỏ 52% | SP 25%. -->
+    <!-- min-px chặn cột co quá nhỏ; min-w-0 trên mỗi cột chặn nội dung đẩy rộng -->
+    <!-- → cột KHÔNG đổi size theo nội dung, chỉ theo bề ngang viewport. -->
     <div
-      class="flex-1 min-h-0 w-full max-w-[1720px] mx-auto grid grid-cols-1 lg:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(360px,420px)] gap-4 p-4 lg:overflow-hidden"
+      class="flex-1 min-h-0 w-full grid grid-cols-1 lg:grid-cols-[minmax(240px,23fr)_minmax(0,52fr)_minmax(260px,25fr)] gap-4 p-4 lg:overflow-hidden"
     >
       <!-- CỘT 1 — Khách hàng -->
-      <section class="flex flex-col min-h-0 lg:h-full">
+      <section class="flex flex-col min-h-0 min-w-0 lg:h-full">
         <div class="flex items-center gap-2 mb-2 px-1 shrink-0">
           <span class="w-5 h-5 rounded-full bg-royal-700 text-white text-[11px] font-bold flex items-center justify-center">1</span>
           <span class="text-sm font-semibold text-ink-primary">Khách hàng</span>
@@ -137,7 +137,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
       </section>
 
       <!-- CỘT 2 — Giỏ hàng + vận chuyển/thanh toán + tổng tiền sticky -->
-      <section class="flex flex-col min-h-0 lg:h-full">
+      <section class="flex flex-col min-h-0 min-w-0 lg:h-full">
         <div class="flex items-center gap-2 mb-2 px-1 shrink-0">
           <span class="w-5 h-5 rounded-full bg-royal-700 text-white text-[11px] font-bold flex items-center justify-center">2</span>
           <span class="text-sm font-semibold text-ink-primary">Giỏ hàng</span>
@@ -235,7 +235,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
       </section>
 
       <!-- CỘT 3 — Tìm sản phẩm -->
-      <section class="flex flex-col min-h-0 lg:h-full">
+      <section class="flex flex-col min-h-0 min-w-0 lg:h-full">
         <div class="flex items-center gap-2 mb-2 px-1 shrink-0">
           <span class="w-5 h-5 rounded-full bg-royal-700 text-white text-[11px] font-bold flex items-center justify-center">3</span>
           <span class="text-sm font-semibold text-ink-primary">Tìm sản phẩm</span>
