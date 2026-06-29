@@ -16,7 +16,8 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
-import { toNumber, reqUser } from '../orders/order-service.js';
+import { toNumber, reqUser, recomputeOrderTotals } from '../orders/order-service.js';
+import { requireRole } from '../auth/role-middleware.js';
 
 // Orders that still owe money and aren't cancelled.
 function debtOrderWhere(user: { id: string; orgId: string; role: string }) {
@@ -256,6 +257,178 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
       } catch (err) {
         logger.error('[sale-app] debt/customers/:id/orders error:', err);
         return reply.status(500).send({ error: 'Lỗi tải đơn công nợ' });
+      }
+    },
+  );
+
+  // ── POST /api/v1/sale-app/debt/payments ─ ghi nhận khách trả nợ (FIFO) ──
+  // CHỈ owner/admin (kế toán). Nhập 1 số tiền → tự gạt vào các đơn nợ CŨ NHẤT
+  // trước. Chuyển khoản BẮT BUỘC ảnh chứng từ. Append-only + lưu allocations.
+  app.post(
+    '/api/v1/sale-app/debt/payments',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const body = request.body as {
+          contactId?: string; amount?: number; paymentMethod?: string;
+          paymentDate?: string; reference?: string; note?: string; proofUrl?: string;
+        };
+        const amount = Math.round(Number(body.amount) || 0);
+        const method = body.paymentMethod || 'bank_transfer';
+        if (!body.contactId) return reply.status(400).send({ error: 'Thiếu khách hàng' });
+        if (amount <= 0) return reply.status(400).send({ error: 'Số tiền phải lớn hơn 0' });
+        if (method === 'bank_transfer' && !body.proofUrl?.trim()) {
+          return reply.status(400).send({ error: 'Chuyển khoản bắt buộc đính ảnh chứng từ' });
+        }
+
+        const contact = await prisma.contact.findFirst({
+          where: { id: body.contactId, orgId: user.orgId },
+          select: { id: true },
+        });
+        if (!contact) return reply.status(404).send({ error: 'Khách hàng không tồn tại' });
+
+        const result = await prisma.$transaction(async (tx) => {
+          // Các đơn còn nợ, CŨ NHẤT trước (FIFO theo ngày đặt).
+          const orders = await tx.order.findMany({
+            where: {
+              orgId: user.orgId, contactId: contact.id,
+              debtAmountValue: { gt: 0 }, status: { notIn: ['cancelled'] },
+            },
+            select: { id: true, orderCode: true, debtAmountValue: true, paidAmount: true },
+            orderBy: [{ orderDate: 'asc' }, { createdAt: 'asc' }],
+          });
+          const totalDebt = orders.reduce((s, o) => s + toNumber(o.debtAmountValue), 0);
+          if (amount > totalDebt) {
+            throw Object.assign(
+              new Error(`Số tiền ${amount.toLocaleString('vi-VN')}đ vượt tổng nợ hiện tại ${totalDebt.toLocaleString('vi-VN')}đ`),
+              { statusCode: 400 },
+            );
+          }
+
+          let remaining = amount;
+          const allocations: { orderId: string; orderCode: string; applied: number }[] = [];
+          for (const o of orders) {
+            if (remaining <= 0) break;
+            const applied = Math.min(remaining, toNumber(o.debtAmountValue));
+            if (applied <= 0) continue;
+            await tx.order.update({
+              where: { id: o.id },
+              data: { paidAmount: toNumber(o.paidAmount) + applied },
+            });
+            await recomputeOrderTotals(o.id, tx);
+            allocations.push({ orderId: o.id, orderCode: o.orderCode, applied });
+            remaining -= applied;
+          }
+
+          const payment = await tx.customerPayment.create({
+            data: {
+              orgId: user.orgId, contactId: contact.id, amount,
+              paymentMethod: method,
+              paymentDate: body.paymentDate ? new Date(body.paymentDate) : new Date(),
+              reference: body.reference?.trim() || null,
+              note: body.note?.trim() || null,
+              proofUrl: body.proofUrl?.trim() || null,
+              allocations: allocations as any,
+              createdById: user.id,
+            },
+          });
+          return { paymentId: payment.id, allocations, remainingDebt: totalDebt - amount };
+        });
+
+        return reply.status(201).send({
+          payment_id: result.paymentId,
+          allocated: result.allocations,
+          remaining_debt: result.remainingDebt,
+        });
+      } catch (err: any) {
+        if (err?.statusCode === 400) return reply.status(400).send({ error: err.message });
+        logger.error('[sale-app] debt/payments create error:', err);
+        return reply.status(500).send({ error: 'Lỗi ghi nhận thanh toán' });
+      }
+    },
+  );
+
+  // ── POST /api/v1/sale-app/debt/payments/:id/reverse ─ đảo bút toán ─────
+  // Không xoá cứng: đánh dấu reversedAt + hoàn lại nợ các đơn đã gạt → truy được.
+  app.post(
+    '/api/v1/sale-app/debt/payments/:id/reverse',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const { id } = request.params as { id: string };
+        const pay = await prisma.customerPayment.findFirst({
+          where: { id, orgId: user.orgId },
+          select: { id: true, reversedAt: true, allocations: true },
+        });
+        if (!pay) return reply.status(404).send({ error: 'Không tìm thấy phiếu thu' });
+        if (pay.reversedAt) return reply.status(400).send({ error: 'Phiếu thu này đã được đảo trước đó' });
+
+        await prisma.$transaction(async (tx) => {
+          for (const a of (pay.allocations as any[]) || []) {
+            const o = await tx.order.findUnique({ where: { id: a.orderId }, select: { paidAmount: true } });
+            if (!o) continue;
+            await tx.order.update({
+              where: { id: a.orderId },
+              data: { paidAmount: Math.max(0, toNumber(o.paidAmount) - Number(a.applied)) },
+            });
+            await recomputeOrderTotals(a.orderId, tx);
+          }
+          await tx.customerPayment.update({
+            where: { id },
+            data: { reversedAt: new Date(), reversedById: user.id },
+          });
+        });
+
+        return { success: true };
+      } catch (err) {
+        logger.error('[sale-app] debt/payments reverse error:', err);
+        return reply.status(500).send({ error: 'Lỗi đảo phiếu thu' });
+      }
+    },
+  );
+
+  // ── GET /api/v1/sale-app/debt/customers/:id/payments ─ lịch sử thu nợ ──
+  app.get(
+    '/api/v1/sale-app/debt/customers/:id/payments',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const { id } = request.params as { id: string };
+        const rows = await prisma.customerPayment.findMany({
+          where: { orgId: user.orgId, contactId: id },
+          orderBy: [{ paymentDate: 'desc' }, { createdAt: 'desc' }],
+          take: 100,
+        });
+        const uids = [
+          ...new Set(rows.flatMap((r) => [r.createdById, r.reversedById]).filter(Boolean)),
+        ] as string[];
+        const users = uids.length
+          ? await prisma.user.findMany({ where: { id: { in: uids } }, select: { id: true, fullName: true } })
+          : [];
+        const uname = (uid: string | null) => (uid ? users.find((u) => u.id === uid)?.fullName ?? '—' : '—');
+
+        return {
+          payments: rows.map((r) => ({
+            id: r.id,
+            amount: toNumber(r.amount),
+            payment_method: r.paymentMethod,
+            payment_date: r.paymentDate,
+            reference: r.reference,
+            note: r.note,
+            proof_url: r.proofUrl,
+            allocations: r.allocations,
+            created_by: uname(r.createdById),
+            created_at: r.createdAt,
+            reversed: !!r.reversedAt,
+            reversed_at: r.reversedAt,
+            reversed_by: uname(r.reversedById),
+          })),
+        };
+      } catch (err) {
+        logger.error('[sale-app] debt/customers/:id/payments error:', err);
+        return reply.status(500).send({ error: 'Lỗi tải lịch sử thu nợ' });
       }
     },
   );

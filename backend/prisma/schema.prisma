@@ -37,6 +37,7 @@ model Organization {
   inventoryMovements  InventoryMovement[]
   importOrders        ImportOrder[]
   supplierPayments    SupplierPayment[]
+  customerPayments    CustomerPayment[]
   stocktakeSessions   StocktakeSession[]
 
   @@map("organizations")
@@ -204,6 +205,7 @@ model Contact {
   stageHistory  StageHistory[]
   tasks         Task[]
   careLogs      ContactCareLog[]
+  customerPayments CustomerPayment[]
 
   @@index([orgId, customerType])
   @@index([orgId, stage])
@@ -1141,6 +1143,33 @@ model SupplierPayment {
   @@index([orgId, supplierId, paymentDate])
   @@index([importOrderId])
   @@map("supplier_payments")
+}
+
+// Sổ thanh toán KHÁCH HÀNG (công nợ phải thu) — append-only, có audit + chứng từ.
+// 1 lần khách trả → tự gạt FIFO vào các đơn nợ cũ nhất; `allocations` lưu đã
+// gạt vào đơn nào (để truy vết + đảo). Sửa nhầm = đảo bút toán (reversedAt),
+// KHÔNG xoá cứng → luôn lần ra được. Chỉ owner/admin (kế toán) được ghi.
+model CustomerPayment {
+  id            String    @id @default(uuid())
+  orgId         String    @map("org_id")
+  contactId     String    @map("contact_id")
+  amount        Decimal   @db.Decimal(15, 2)
+  paymentMethod String?   @map("payment_method") // bank_transfer | cash | cod | other
+  paymentDate   DateTime  @map("payment_date") @db.Date
+  reference     String? // mã giao dịch / số UNC
+  note          String?
+  proofUrl      String?   @map("proof_url") // ảnh chứng từ (bắt buộc khi chuyển khoản)
+  allocations   Json      @default("[]") // [{orderId, orderCode, applied}]
+  reversedAt    DateTime? @map("reversed_at")
+  reversedById  String?   @map("reversed_by")
+  createdById   String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, contactId, paymentDate])
+  @@map("customer_payments")
 }
 
 // FIFO trace. Written by the FIFO allocator (Session 3.5B) when a new
