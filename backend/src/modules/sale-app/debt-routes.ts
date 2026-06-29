@@ -1,11 +1,16 @@
 /**
- * Sale Lite app — CÔNG NỢ (receivables) read-only views.
+ * Sale Lite app — CÔNG NỢ (receivables).
  *
- * Sale staff use these to chase outstanding debt. They never write here;
- * recording a payment lives in POST /orders/:id/payment (admin/kế toán).
+ * Sale (member) chỉ XEM để đi đòi nợ. Ghi nhận thu tiền là quyền owner/admin
+ * (kế toán): nhập 1 số tiền → tự gạt FIFO vào các đơn nợ cũ nhất, append-only,
+ * đảo bút toán được (không xoá cứng).
  *
- *  GET /api/v1/sale-app/debt/customers            → đại lý đang nợ (quá hạn lên đầu)
- *  GET /api/v1/sale-app/debt/customers/:id/orders → các đơn còn nợ của 1 KH
+ *  GET  /api/v1/sale-app/debt/customers              → đại lý đang nợ (quá hạn lên đầu)
+ *  GET  /api/v1/sale-app/debt/customers/:id/orders   → các đơn còn nợ của 1 KH
+ *  POST /api/v1/sale-app/debt/payments               → ghi thu nợ (FIFO) [owner/admin]
+ *  POST /api/v1/sale-app/debt/payments/:id/reverse   → đảo bút toán      [owner/admin]
+ *  GET  /api/v1/sale-app/debt/customers/:id/payments → lịch sử thu nợ
+ *  POST /api/v1/sale-app/uploads/proof               → upload ảnh chứng từ [owner/admin]
  *
  * Scope: member sees debt on orders they're assigned to / created
  * (assignedSaleId OR createdByUserId — mirrors /debt-summary). Owner/admin
@@ -18,6 +23,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { toNumber, reqUser, recomputeOrderTotals } from '../orders/order-service.js';
 import { requireRole } from '../auth/role-middleware.js';
+import { uploadToStorage, extForMime } from '../../shared/storage/supabase-storage.js';
 
 // Orders that still owe money and aren't cancelled.
 function debtOrderWhere(user: { id: string; orgId: string; role: string }) {
@@ -429,6 +435,38 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
       } catch (err) {
         logger.error('[sale-app] debt/customers/:id/payments error:', err);
         return reply.status(500).send({ error: 'Lỗi tải lịch sử thu nợ' });
+      }
+    },
+  );
+
+  // ── POST /api/v1/sale-app/uploads/proof ─ upload ảnh chứng từ thanh toán ─
+  // Nhận 1 ảnh (multipart, field "file") → đẩy lên Supabase Storage → trả URL.
+  // Owner/admin (kế toán) — cùng quyền với người ghi nhận thu tiền.
+  app.post(
+    '/api/v1/sale-app/uploads/proof',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const file = await (request as any).file?.();
+        if (!file) return reply.status(400).send({ error: 'Thiếu file ảnh chứng từ' });
+
+        const mime = String(file.mimetype || '');
+        if (!extForMime(mime)) {
+          return reply.status(400).send({ error: 'Chỉ nhận ảnh JPG/PNG/WEBP hoặc PDF' });
+        }
+        const buffer = await file.toBuffer();
+        if (buffer.length === 0) return reply.status(400).send({ error: 'File rỗng' });
+
+        const url = await uploadToStorage(buffer, mime, 'proofs', user.orgId);
+        return reply.status(201).send({ url });
+      } catch (err: any) {
+        const code = err?.statusCode;
+        if (code && code >= 400 && code < 600) {
+          return reply.status(code).send({ error: err.message });
+        }
+        logger.error('[sale-app] uploads/proof error:', err);
+        return reply.status(500).send({ error: 'Lỗi upload ảnh chứng từ' });
       }
     },
   );
