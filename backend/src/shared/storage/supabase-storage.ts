@@ -67,6 +67,9 @@ export async function uploadToStorage(
   const res = await fetch(url, {
     method: 'POST',
     headers: {
+      // Gửi cả `apikey` + `Authorization: Bearer` để tương thích cả key kiểu
+      // mới (sb_secret_…) lẫn service_role JWT cũ.
+      apikey: config.supabaseServiceKey,
       Authorization: `Bearer ${config.supabaseServiceKey}`,
       'Content-Type': mime,
       'x-upsert': 'false',
