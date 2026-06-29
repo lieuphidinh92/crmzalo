@@ -688,15 +688,11 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const term = q.trim();
 
       const where: any = { orgId: user.orgId };
-      // Member sees only their own contacts; admin/owner sees all.
-      if (user.role === 'member') where.assignedUserId = user.id;
+      // Tìm khách khi LÊN ĐƠN: mọi sale tìm được MỌI khách của công ty (để bán
+      // cho khách cũ / khách import gán lệch). Mục "Khách hàng" vẫn theo phân công.
       if (term) {
         // Tách từ + chuẩn hoá SĐT → gõ đảo thứ tự / số liền vẫn ra.
-        const ids = await searchContactIdsByTerm(
-          user.orgId,
-          user.role === 'member' ? user.id : null,
-          term,
-        );
+        const ids = await searchContactIdsByTerm(user.orgId, null, term);
         where.id = { in: ids ?? [] };
       }
 
@@ -784,6 +780,18 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       }
       if (!body.phone?.trim()) {
         return reply.status(400).send({ error: 'Số điện thoại là bắt buộc' });
+      }
+
+      // Trùng SĐT → báo rõ (thay vì lỗi 500 chung chung). Sale tìm là ra khách đó.
+      const phone = body.phone.trim();
+      const dup = await prisma.contact.findFirst({
+        where: { orgId: user.orgId, phone },
+        select: { fullName: true },
+      });
+      if (dup) {
+        return reply.status(409).send({
+          error: `SĐT ${phone} đã có khách: ${dup.fullName}. Hãy gõ SĐT vào ô tìm khách để chọn khách này.`,
+        });
       }
 
       const contact = await prisma.contact.create({
