@@ -162,6 +162,13 @@ function mineScope(user: { id: string; orgId: string }) {
   };
 }
 
+// Phạm vi cho dashboard KPI: chủ/admin xem CẢ CÔNG TY (khớp bảng xếp hạng),
+// member chỉ xem đơn của mình.
+function dashScope(user: { id: string; orgId: string; role: string }) {
+  if (user.role === 'owner' || user.role === 'admin') return { orgId: user.orgId };
+  return mineScope(user);
+}
+
 export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
@@ -174,8 +181,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const weekStart = startOfWeek(now);
       const monthStart = startOfMonth(now);
 
+      const scope = dashScope(user);
       const baseWhere = {
-        ...mineScope(user),
+        ...scope,
         status: { in: COUNTABLE_STATUSES },
       };
 
@@ -196,7 +204,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           _count: { id: true },
         }),
         prisma.order.findMany({
-          where: mineScope(user),
+          where: scope,
           select: {
             id: true,
             orderCode: true,
@@ -2547,7 +2555,22 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         return { rank, ...r, is_me };
       });
 
-      return { period: periodKey, period_label: periodLabel, rows, me_rank: meRank };
+      // "Chưa gán nhân viên": phần doanh số KHÔNG nằm trong dòng nào (đơn chưa
+      // gán sale, hoặc gán cho user inactive). Tính = tổng kỳ − tổng đã hiện →
+      // đảm bảo Tổng công ty = Σ nhân viên + Chưa gán (cộng luôn khớp).
+      const totalRevenue = orders.reduce((s, o) => s + toNumber(o.totalAmountValue ?? o.totalAmount), 0);
+      const shownRevenue = rows.reduce((s, r) => s + r.revenue, 0);
+      const shownCount = rows.reduce((s, r) => s + r.order_count, 0);
+      const unassignedRevenue = Math.round(totalRevenue - shownRevenue);
+      const unassignedCount = orders.length - shownCount;
+
+      return {
+        period: periodKey,
+        period_label: periodLabel,
+        rows,
+        me_rank: meRank,
+        unassigned: unassignedRevenue > 0 ? { revenue: unassignedRevenue, order_count: unassignedCount } : null,
+      };
     } catch (err) {
       logger.error('[sale-app] leaderboard error:', err);
       return reply.status(500).send({ error: 'Lỗi tải bảng xếp hạng' });
