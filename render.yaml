@@ -28,6 +28,10 @@ services:
         value: 0.0.0.0
       - key: UPLOAD_DIR
         value: /var/data/files
+      - key: TZ
+        value: Asia/Ho_Chi_Minh   # ÉP giờ VN — nếu KHÔNG có, Render chạy UTC → mốc
+                                   # "hôm nay/tuần/tháng" ở dashboard lệch 7h (home-stats,
+                                   # leaderboard...). Crons đã ép TZ riêng nên không bị.
       # --- Đặt THỦ CÔNG trong Render (Environment) — KHÔNG commit giá trị ---
       - key: DATABASE_URL          # chuỗi kết nối Supabase (mục Connection → URI)
         sync: false
