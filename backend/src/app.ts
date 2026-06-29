@@ -3,6 +3,7 @@
  * Bootstraps Fastify server with all plugins, Socket.IO, and route handlers.
  * The process never exits — all errors are caught and logged.
  */
+import './set-timezone.js'; // PHẢI đứng đầu: ép giờ VN trước mọi module dùng Date
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
