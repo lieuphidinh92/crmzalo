@@ -21,7 +21,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
-import { toNumber, reqUser, recomputeOrderTotals } from '../orders/order-service.js';
+import { toNumber, reqUser } from '../orders/order-service.js';
 import { requireRole } from '../auth/role-middleware.js';
 import { uploadToStorage, extForMime } from '../../shared/storage/supabase-storage.js';
 
@@ -318,11 +318,17 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             if (remaining <= 0) break;
             const applied = Math.min(remaining, toNumber(o.debtAmountValue));
             if (applied <= 0) continue;
+            // Trừ THẲNG vào nợ + cộng đã thu. KHÔNG dùng recomputeOrderTotals:
+            // hàm đó tính lại tổng từ DÒNG HÀNG, nên đơn "nợ đầu kỳ" (không có
+            // dòng hàng) sẽ bị xóa nợ oan. Với đơn thường, tổng không đổi khi
+            // thu tiền nên (debt - applied) == kết quả recompute → an toàn.
             await tx.order.update({
               where: { id: o.id },
-              data: { paidAmount: toNumber(o.paidAmount) + applied },
+              data: {
+                paidAmount: toNumber(o.paidAmount) + applied,
+                debtAmountValue: Math.max(0, toNumber(o.debtAmountValue) - applied),
+              },
             });
-            await recomputeOrderTotals(o.id, tx);
             allocations.push({ orderId: o.id, orderCode: o.orderCode, applied });
             remaining -= applied;
           }
@@ -373,13 +379,21 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
 
         await prisma.$transaction(async (tx) => {
           for (const a of (pay.allocations as any[]) || []) {
-            const o = await tx.order.findUnique({ where: { id: a.orderId }, select: { paidAmount: true } });
+            const o = await tx.order.findUnique({
+              where: { id: a.orderId },
+              select: { paidAmount: true, debtAmountValue: true },
+            });
             if (!o) continue;
+            const applied = Number(a.applied);
+            // Hoàn lại nợ đã gạt, trừ lại đã thu — không recompute (xem lý do ở
+            // handler tạo phiếu thu phía trên).
             await tx.order.update({
               where: { id: a.orderId },
-              data: { paidAmount: Math.max(0, toNumber(o.paidAmount) - Number(a.applied)) },
+              data: {
+                paidAmount: Math.max(0, toNumber(o.paidAmount) - applied),
+                debtAmountValue: toNumber(o.debtAmountValue) + applied,
+              },
             });
-            await recomputeOrderTotals(a.orderId, tx);
           }
           await tx.customerPayment.update({
             where: { id },
