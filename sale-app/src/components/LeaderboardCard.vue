@@ -21,6 +21,8 @@ const topRows = computed(() => rows.value.slice(0, TOP_N));
 const meRank = computed(() => data.value?.me_rank ?? null);
 const meOutsideTop = computed(() => meRank.value != null && meRank.value > TOP_N);
 const meRow = computed(() => (meOutsideTop.value ? rows.value.find((r) => r.is_me) : null));
+// Doanh số đơn chưa gán nhân viên — hiện riêng để Tổng = Σ nhân viên + Chưa gán.
+const unassigned = computed(() => data.value?.unassigned ?? null);
 
 function medal(rank) {
   if (rank === 1) return '🥇';
@@ -137,6 +139,21 @@ onMounted(load);
         </div>
         <div class="text-sm font-bold text-royal-700 tabular-nums shrink-0">
           {{ formatVND(meRow.revenue) }}
+        </div>
+      </div>
+
+      <!-- Đơn chưa gán nhân viên (để tổng công ty cộng khớp) -->
+      <div
+        v-if="unassigned && unassigned.revenue > 0"
+        class="flex items-center gap-3 rounded-lg px-2 py-1.5 mt-2 pt-2 border-t border-line-200"
+      >
+        <div class="w-7 shrink-0 text-center text-ink-disabled">–</div>
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-medium text-ink-secondary truncate">Chưa gán nhân viên</div>
+          <div class="text-[11px] text-ink-secondary tabular-nums">{{ unassigned.order_count }} đơn</div>
+        </div>
+        <div class="text-sm font-bold text-ink-secondary tabular-nums shrink-0">
+          {{ formatVND(unassigned.revenue) }}
         </div>
       </div>
     </template>
