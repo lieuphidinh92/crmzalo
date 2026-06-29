@@ -2,6 +2,9 @@
 node_modules/
 dist/
 .env
+.env.prod
+.env.*
+scripts/backup-*.json
 *.log
 var/
 prisma/migrations/
