@@ -21,7 +21,7 @@ const selected = ref(null); // customer object from the list
 const detail = ref(null); // { customer, orders, total_debt, ... }
 const detailLoading = ref(false);
 const detailError = ref('');
-const tab = ref('orders'); // 'orders' | 'payments'
+const tab = ref('orders'); // 'orders' | 'payments' | 'ledger'
 const toast = ref('');
 
 // Lịch sử thu nợ.
@@ -29,6 +29,17 @@ const payments = ref([]);
 const paymentsLoading = ref(false);
 const paymentsError = ref('');
 const reversingId = ref(null);
+
+// Sổ chi tiết công nợ (Nợ/Có + số dư luỹ kế).
+const ledger = ref(null);
+const ledgerLoading = ref(false);
+const ledgerError = ref('');
+
+// Số nguyên đồng, dạng 53.820.000 (không kèm 'đ') cho ô bảng sổ.
+const numVN = new Intl.NumberFormat('vi-VN');
+function ledgerNum(v) {
+  return v ? numVN.format(Math.round(v)) : '';
+}
 
 // Form thu tiền.
 const payOpen = ref(false);
@@ -92,6 +103,8 @@ async function openCustomer(c) {
   detailLoading.value = true;
   tab.value = 'orders';
   payments.value = [];
+  ledger.value = null;
+  ledgerError.value = '';
   try {
     const { data } = await api.get(`/sale-app/debt/customers/${c.id}/orders`);
     detail.value = data;
@@ -122,10 +135,27 @@ async function loadPayments() {
   }
 }
 
+async function loadLedger() {
+  if (!selected.value) return;
+  ledgerLoading.value = true;
+  ledgerError.value = '';
+  try {
+    const { data } = await api.get(`/sale-app/debt/customers/${selected.value.id}/ledger`);
+    ledger.value = data;
+  } catch (err) {
+    ledgerError.value = err.response?.data?.error || 'Không tải được sổ chi tiết';
+  } finally {
+    ledgerLoading.value = false;
+  }
+}
+
 function switchTab(t) {
   tab.value = t;
   if (t === 'payments' && payments.value.length === 0 && !paymentsLoading.value) {
     loadPayments();
+  }
+  if (t === 'ledger' && !ledger.value && !ledgerLoading.value) {
+    loadLedger();
   }
 }
 
@@ -403,6 +433,13 @@ onMounted(loadList);
           >
             Lịch sử thu
           </button>
+          <button
+            @click="switchTab('ledger')"
+            class="px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors"
+            :class="tab === 'ledger' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary'"
+          >
+            Sổ chi tiết
+          </button>
         </div>
 
         <!-- Drawer body -->
@@ -518,6 +555,68 @@ onMounted(loadList);
                   >
                     {{ reversingId === p.id ? 'Đang đảo…' : 'Đảo phiếu thu' }}
                   </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Tab: Sổ chi tiết công nợ ── -->
+            <div v-show="tab === 'ledger'">
+              <div v-if="ledgerLoading" class="space-y-2">
+                <div v-for="i in 5" :key="i" class="bg-surface-soft rounded h-8 animate-pulse"></div>
+              </div>
+              <div v-else-if="ledgerError" class="bg-red-50 border border-red-200 text-red-700 rounded-card p-3 text-sm">
+                {{ ledgerError }}
+              </div>
+              <div v-else-if="ledger">
+                <div class="flex items-center justify-between mb-1.5 text-sm">
+                  <span class="text-ink-secondary">Sổ chi tiết công nợ</span>
+                  <span class="font-bold text-rose-600 tabular-nums">{{ formatVND(ledger.totals.closing) }}</span>
+                </div>
+                <p class="text-[11px] text-ink-secondary mb-2">
+                  Nợ = bán hàng · Có = thu tiền · Số dư = còn nợ luỹ kế. Vuốt ngang để xem đủ cột.
+                </p>
+
+                <div v-if="ledger.rows.length === 0" class="text-center py-8 text-ink-secondary text-sm">
+                  Chưa có phát sinh công nợ.
+                </div>
+
+                <div v-else class="overflow-x-auto -mx-1 px-1">
+                  <table class="w-full min-w-[560px] text-[12px] border-collapse">
+                    <thead>
+                      <tr class="bg-royal-50 text-ink-secondary text-[11px]">
+                        <th class="text-left font-semibold px-2 py-2 whitespace-nowrap">Ngày</th>
+                        <th class="text-left font-semibold px-2 py-2 whitespace-nowrap">Chứng từ</th>
+                        <th class="text-left font-semibold px-2 py-2">Diễn giải</th>
+                        <th class="text-right font-semibold px-2 py-2 whitespace-nowrap">Nợ (bán)</th>
+                        <th class="text-right font-semibold px-2 py-2 whitespace-nowrap">Có (thu)</th>
+                        <th class="text-right font-semibold px-2 py-2 whitespace-nowrap">Số dư</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="border-b border-line-200 text-ink-secondary">
+                        <td class="px-2 py-1.5" colspan="5">Số dư đầu kỳ</td>
+                        <td class="px-2 py-1.5 text-right tabular-nums">{{ ledgerNum(ledger.opening_balance) || 0 }}</td>
+                      </tr>
+                      <tr v-for="(r, i) in ledger.rows" :key="i" class="border-b border-line-200">
+                        <td class="px-2 py-1.5 whitespace-nowrap text-ink-secondary">{{ formatDateVN(r.date) }}</td>
+                        <td class="px-2 py-1.5 whitespace-nowrap font-medium text-ink-primary">{{ r.code }}</td>
+                        <td class="px-2 py-1.5">
+                          {{ r.description }}<span v-if="r.method" class="text-ink-secondary"> ({{ methodLabel(r.method) }})</span>
+                        </td>
+                        <td class="px-2 py-1.5 text-right tabular-nums text-rose-600">{{ ledgerNum(r.debit) }}</td>
+                        <td class="px-2 py-1.5 text-right tabular-nums text-emerald-700">{{ ledgerNum(r.credit) }}</td>
+                        <td class="px-2 py-1.5 text-right tabular-nums font-semibold text-ink-primary">{{ ledgerNum(r.balance) }}</td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr class="bg-royal-50 font-bold text-ink-primary border-t-2 border-line-300">
+                        <td class="px-2 py-2" colspan="3">Cộng phát sinh</td>
+                        <td class="px-2 py-2 text-right tabular-nums text-rose-600">{{ ledgerNum(ledger.totals.debit) }}</td>
+                        <td class="px-2 py-2 text-right tabular-nums text-emerald-700">{{ ledgerNum(ledger.totals.credit) }}</td>
+                        <td class="px-2 py-2 text-right tabular-nums">{{ ledgerNum(ledger.totals.closing) }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               </div>
             </div>

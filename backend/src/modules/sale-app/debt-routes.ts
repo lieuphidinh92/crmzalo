@@ -10,6 +10,7 @@
  *  POST /api/v1/sale-app/debt/payments               → ghi thu nợ (FIFO) [owner/admin]
  *  POST /api/v1/sale-app/debt/payments/:id/reverse   → đảo bút toán      [owner/admin]
  *  GET  /api/v1/sale-app/debt/customers/:id/payments → lịch sử thu nợ
+ *  GET  /api/v1/sale-app/debt/customers/:id/ledger   → sổ chi tiết công nợ (Nợ/Có + số dư luỹ kế)
  *  POST /api/v1/sale-app/uploads/proof               → upload ảnh chứng từ [owner/admin]
  *
  * Scope: member sees debt on orders they're assigned to / created
@@ -449,6 +450,150 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
       } catch (err) {
         logger.error('[sale-app] debt/customers/:id/payments error:', err);
         return reply.status(500).send({ error: 'Lỗi tải lịch sử thu nợ' });
+      }
+    },
+  );
+
+  // ── GET /api/v1/sale-app/debt/customers/:id/ledger ─ sổ chi tiết công nợ ──
+  // Ghép đơn hàng (phát sinh NỢ) + phiếu thu (phát sinh CÓ) theo thời gian,
+  // tính số dư luỹ kế. Số dư cuối kỳ = công nợ hiện tại (khớp header drawer).
+  //   originalDebt(đơn) = debtAmount hiện tại + tổng đã gạt vào đơn đó
+  //   → 1 dòng "Bán hàng" / đơn (chỉ đơn từng phát sinh nợ). Đơn trả đủ ngay: bỏ.
+  app.get(
+    '/api/v1/sale-app/debt/customers/:id/ledger',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const { id } = request.params as { id: string };
+
+        const contact = await prisma.contact.findFirst({
+          where: { id, orgId: user.orgId },
+          select: { id: true, fullName: true, phone: true, storeName: true, misaCustomerCode: true },
+        });
+        if (!contact) return reply.status(404).send({ error: 'Không tìm thấy khách hàng' });
+
+        // Đơn của KH (bỏ đơn huỷ). Member chỉ thấy đơn mình phụ trách/tạo.
+        const orderWhere: any = { orgId: user.orgId, contactId: id, status: { notIn: ['cancelled'] } };
+        if (user.role === 'member') {
+          orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
+        }
+        const orders = await prisma.order.findMany({
+          where: orderWhere,
+          select: {
+            id: true,
+            orderCode: true,
+            orderDate: true,
+            createdAt: true,
+            debtAmountValue: true,
+          },
+        });
+        const inScope = new Set(orders.map((o: { id: string }) => o.id));
+
+        // Phiếu thu CHƯA ĐẢO. allocations = [{ orderId, orderCode, applied }].
+        const pays = await prisma.customerPayment.findMany({
+          where: { orgId: user.orgId, contactId: id, reversedAt: null },
+          select: {
+            id: true,
+            amount: true,
+            paymentDate: true,
+            paymentMethod: true,
+            reference: true,
+            allocations: true,
+          },
+        });
+
+        // Tổng đã gạt vào từng đơn (từ mọi phiếu thu chưa đảo).
+        const appliedByOrder = new Map<string, number>();
+        for (const p of pays) {
+          const allocs = Array.isArray(p.allocations) ? (p.allocations as any[]) : [];
+          for (const a of allocs) {
+            if (!a?.orderId) continue;
+            appliedByOrder.set(a.orderId, (appliedByOrder.get(a.orderId) || 0) + toNumber(a.applied));
+          }
+        }
+
+        const rows: any[] = [];
+        let opening = 0; // Số dư đầu kỳ = tổng nợ các đơn "NDK-" (nợ đầu kỳ chuyển sổ từ MISA).
+
+        // Dòng BÁN HÀNG (Nợ) — 1 dòng / đơn từng phát sinh nợ.
+        // Đơn mã NDK- là nợ đầu kỳ (chuyển sổ) → gộp vào số dư đầu kỳ, không phải bán hàng.
+        for (const o of orders) {
+          const originalDebt = toNumber(o.debtAmountValue) + (appliedByOrder.get(o.id) || 0);
+          if (originalDebt <= 0) continue;
+          if (String(o.orderCode || '').toUpperCase().startsWith('NDK')) {
+            opening += originalDebt;
+            continue;
+          }
+          rows.push({
+            date: o.orderDate || o.createdAt,
+            sort: 0, // bán hàng đứng trước thu tiền cùng ngày
+            type: 'sale',
+            code: o.orderCode,
+            description: 'Bán hàng',
+            debit: originalDebt,
+            credit: 0,
+          });
+        }
+
+        // Dòng THU TIỀN (Có). Member: chỉ tính phần gạt vào đơn trong phạm vi.
+        for (const p of pays) {
+          const allocs = Array.isArray(p.allocations) ? (p.allocations as any[]) : [];
+          let credit = 0;
+          if (user.role === 'member') {
+            for (const a of allocs) {
+              if (a?.orderId && inScope.has(a.orderId)) credit += toNumber(a.applied);
+            }
+          } else {
+            credit = allocs.reduce((s, a) => s + toNumber(a?.applied), 0);
+            if (credit <= 0) credit = toNumber(p.amount); // fallback phiếu cũ chưa có allocations
+          }
+          if (credit <= 0) continue;
+          rows.push({
+            date: p.paymentDate,
+            sort: 1,
+            type: 'payment',
+            code: p.reference || 'Thu tiền',
+            description: 'Thu tiền công nợ',
+            method: p.paymentMethod,
+            debit: 0,
+            credit,
+          });
+        }
+
+        // Sắp theo ngày tăng dần, cùng ngày: bán hàng trước thu tiền.
+        rows.sort((a, b) => {
+          const ta = new Date(a.date).getTime();
+          const tb = new Date(b.date).getTime();
+          if (ta !== tb) return ta - tb;
+          return a.sort - b.sort;
+        });
+
+        let balance = opening; // số dư chạy từ số dư đầu kỳ
+        let sumDebit = 0;
+        let sumCredit = 0;
+        for (const r of rows) {
+          balance += r.debit - r.credit;
+          r.balance = balance;
+          sumDebit += r.debit;
+          sumCredit += r.credit;
+          delete r.sort;
+        }
+
+        return {
+          customer: {
+            id: contact.id,
+            name: contact.fullName,
+            phone: contact.phone,
+            store_name: contact.storeName,
+            code: contact.misaCustomerCode,
+          },
+          opening_balance: opening,
+          rows,
+          totals: { debit: sumDebit, credit: sumCredit, closing: balance },
+        };
+      } catch (err) {
+        logger.error('[sale-app] debt/customers/:id/ledger error:', err);
+        return reply.status(500).send({ error: 'Lỗi tải sổ chi tiết công nợ' });
       }
     },
   );
