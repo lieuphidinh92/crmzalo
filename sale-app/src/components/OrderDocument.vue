@@ -1,7 +1,7 @@
 <script setup>
 /**
  * OrderDocument.vue — Chứng từ A5 Manhae (theo spec manhae-a5-documents-v2).
- *   type='invoice'  → HÓA ĐƠN BÁN HÀNG (mã ĐH-) — có đơn giá/thành tiền + thanh toán
+ *   type='invoice'  → HOÁ ĐƠN BÁN HÀNG (mã ĐH-) — có đơn giá/thành tiền + thanh toán
  *   type='handover' → BIÊN BẢN GIAO HÀNG (mã GH-) — KHÔNG giá, có cột Ghi chú
  * Pháp nhân: CÔNG TY TNHH HALOVN. Thương hiệu chính: Manhae.
  * In/PDF: nút "In" dùng window.print() (@page A5) — nét nhất. "Tải ảnh" dùng html2canvas.
@@ -17,7 +17,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'done']);
 
 const isInvoice = computed(() => props.type === 'invoice');
-const docTitle = computed(() => (isInvoice.value ? ['HÓA ĐƠN', 'BÁN HÀNG'] : ['BIÊN BẢN', 'GIAO HÀNG']));
+const docTitle = computed(() => (isInvoice.value ? ['HOÁ ĐƠN', 'BÁN HÀNG'] : ['BIÊN BẢN', 'GIAO HÀNG']));
 const codeLabel = computed(() => (isInvoice.value ? 'Số hóa đơn' : 'Số phiếu'));
 const fileSlug = computed(() => (isInvoice.value ? 'hoa-don' : 'bien-ban'));
 
@@ -55,11 +55,12 @@ const recv = computed(() => ({
   name: props.order.recipientName || props.order.customerName || '—',
   address: props.order.deliveryAddress || props.order.customerAddress || '—',
   phone: props.order.recipientPhone || props.order.customerPhone || '—',
-  note: props.order.note || '—',
+  note: props.order.note || '',
 }));
 
 const paper = ref(null);
 const downloading = ref(false);
+const logoOk = ref(true); // false → fallback chữ "manhaē" nếu thiếu file logo
 
 function onEsc(e) {
   if (e.key === 'Escape') { e.preventDefault(); emit('done'); }
@@ -95,66 +96,99 @@ async function downloadImage() {
       <button @click="emit('close')" class="btn-ico" title="Quay lại">✕</button>
     </div>
 
-    <div ref="paper" class="doc-paper">
-      <!-- HEADER sóng -->
-      <div class="dh-head">
-        <svg viewBox="0 0 559 222" preserveAspectRatio="none">
+    <div ref="paper" class="page">
+      <!-- ===== HEADER ===== -->
+      <div class="head">
+        <svg class="wave" viewBox="0 0 559 92" preserveAspectRatio="none">
           <defs>
-            <linearGradient :id="`g-${type}`" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stop-color="#2D0054" /><stop offset="100%" stop-color="#5B1FA6" />
+            <linearGradient id="wave-grad" x1="0" y1="0" x2="1" y2="0.9">
+              <stop offset="0%" stop-color="#2D0054" /><stop offset="55%" stop-color="#5B1FA6" /><stop offset="100%" stop-color="#7E45C9" />
             </linearGradient>
           </defs>
-          <path d="M0,0 H559 V34 C497,44 458,58 373,70 C310,80 261,176 181,176 C104,176 60,176 0,184 Z" fill="#9B6FE0" opacity="0.5" />
-          <path d="M0,0 H559 V20 C497,30 458,44 373,56 C310,66 261,160 181,160 C104,160 60,160 0,168 Z" :fill="`url(#g-${type})`" />
+          <!-- lớp sáng phía sau -->
+          <path d="M0,0 H210 C198,42 150,70 78,72 C50,73 22,72 0,70 Z" fill="#B79CE8" opacity="0.5" />
+          <!-- lobe tím chính ở góc trái -->
+          <path d="M0,0 H188 C178,36 130,62 66,64 C42,65 20,64 0,62 Z" fill="url(#wave-grad)" />
+          <!-- nét cong mảnh vuốt sang phải -->
+          <path d="M126,56 C 260,76 410,64 552,46" fill="none" stroke="#5B1FA6" stroke-width="1.4" opacity="0.6" stroke-linecap="round" />
         </svg>
-        <div class="dh-logo"><div class="mark">manhaē</div><div class="slogan">Sức khỏe là vẻ đẹp thật sự</div></div>
-        <div class="dh-title">
-          <h1>{{ docTitle[0] }}<br>{{ docTitle[1] }}</h1>
-          <div class="pill-code">{{ codeLabel }}: {{ docCode }}</div>
-          <div class="dh-date">Ngày: {{ dateStr }}</div>
+
+        <div class="hgrid">
+          <!-- Trái: logo + pháp nhân -->
+          <div class="h-left">
+            <div class="logo">
+              <img v-show="logoOk" class="logomark" src="/manhae-logo-white.png" @error="logoOk = false" alt="manhaē" />
+              <div v-if="!logoOk" class="mark">manhaē</div>
+              <div class="slogan">Sức khỏe là vẻ đẹp thật sự</div>
+            </div>
+            <div class="company">
+              <div class="name">CÔNG TY TNHH HALOVN</div>
+              <div class="meta">
+                MST: 0110086708<br>
+                Thôn Thiên Lộc, Xã Trung Chính,<br>Tỉnh Bắc Ninh, Việt Nam<br>
+                <i class="ic">✉</i>ketoanhalovn@gmail.com<br>
+                <i class="ic">☎</i>0362 431 998 / 0964 435 197
+              </div>
+            </div>
+          </div>
+
+          <!-- Giữa: tiêu đề chứng từ -->
+          <div class="h-center">
+            <h1>{{ docTitle[0] }}<br>{{ docTitle[1] }}</h1>
+            <div class="pill-code">{{ codeLabel }}: {{ docCode }}</div>
+            <div class="h-date">Ngày: {{ dateStr }}</div>
+          </div>
+
+          <!-- Phải: liên hệ + badge phân phối -->
+          <div class="h-right">
+            <div class="contact-line"><span>081.868.5222</span><span class="ico">☎</span></div>
+            <div class="divider"></div>
+            <div class="contact-line"><span>Manhae Việt Nam</span><span class="ico">f</span></div>
+            <div class="badge">
+              <span class="sh">🛡</span>
+              <span class="tx">PHÂN PHỐI CHÍNH THỨC<br>MANHAE TẠI VIỆT NAM</span>
+            </div>
+          </div>
         </div>
-        <div class="dh-badge">🛡 PHÂN PHỐI CHÍNH THỨC MANHAE TẠI VIỆT NAM</div>
       </div>
 
-      <div class="dh-body">
-        <!-- Pháp nhân -->
-        <div class="dh-company">
-          <div class="name">CÔNG TY TNHH HALOVN</div>
-          <div class="meta">MST: 0110086708<br>Thôn Thiên Lộc, Xã Trung Chính, Tỉnh Bắc Ninh, Việt Nam<br>✉ ketoanhalovn@gmail.com &nbsp; ☎ 0362431998 / 0964435197</div>
-        </div>
-
+      <!-- ===== BODY ===== -->
+      <div class="body">
         <!-- 2 thẻ thông tin -->
-        <div class="dh-info">
-          <div class="dh-card">
-            <div class="ttl">👤 Thông tin khách hàng</div>
+        <div class="cards">
+          <div class="card">
+            <div class="ttl"><span class="ico">👤</span> Thông tin khách hàng</div>
             <div class="kv">
-              <span class="k">Tên khách hàng</span><span class="v">{{ cust.name }}</span>
-              <template v-if="cust.company"><span class="k">Tên công ty</span><span class="v">{{ cust.company }}</span></template>
-              <template v-if="cust.taxCode"><span class="k">MST</span><span class="v">{{ cust.taxCode }}</span></template>
-              <span class="k">Địa chỉ</span><span class="v">{{ cust.address || '—' }}</span>
-              <span class="k">SĐT</span><span class="v">{{ cust.phone || '—' }}</span>
+              <span class="k">Tên khách hàng:</span><span class="v">{{ cust.name }}</span>
+              <template v-if="cust.company"><span class="k">Tên công ty:</span><span class="v">{{ cust.company }}</span></template>
+              <template v-if="cust.taxCode"><span class="k">MST:</span><span class="v">{{ cust.taxCode }}</span></template>
+              <span class="k">Địa chỉ:</span><span class="v">{{ cust.address || '—' }}</span>
+              <span class="k">SĐT:</span><span class="v">{{ cust.phone || '—' }}</span>
             </div>
           </div>
-          <div class="dh-card">
-            <div class="ttl">🚚 Thông tin nhận hàng</div>
+          <div class="card">
+            <div class="ttl"><span class="ico">🚚</span> Thông tin nhận hàng</div>
             <div class="kv">
-              <span class="k">Người nhận</span><span class="v">{{ recv.name }}</span>
-              <span class="k">Địa chỉ nhận</span><span class="v">{{ recv.address }}</span>
-              <span class="k">SĐT nhận</span><span class="v">{{ recv.phone }}</span>
-              <span class="k">Ghi chú giao</span><span class="v">{{ recv.note }}</span>
+              <span class="k">Người nhận:</span><span class="v">{{ recv.name }}</span>
+              <span class="k">Địa chỉ nhận hàng:</span><span class="v">{{ recv.address }}</span>
+              <span class="k">SĐT nhận hàng:</span><span class="v">{{ recv.phone }}</span>
+              <span class="k">Ghi chú:</span><span class="v">{{ recv.note || ' ' }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Bảng SP -->
-        <div class="dh-sec">🛒 Chi tiết sản phẩm</div>
-        <table class="dh-table">
+        <!-- Bảng sản phẩm -->
+        <div class="sec"><span class="ico">🛒</span> Chi tiết sản phẩm</div>
+        <table>
           <thead>
             <tr>
-              <th>STT</th><th class="l">Sản phẩm</th><th>SKU</th>
+              <th>STT</th>
+              <th class="l">Sản phẩm</th>
+              <th>SKU</th>
               <th>Số lượng<span class="u">(Hộp)</span></th>
               <template v-if="isInvoice">
-                <th>Đơn giá<span class="u">(VNĐ)</span></th><th>Thành tiền<span class="u">(VNĐ)</span></th>
+                <th>Đơn giá<span class="u">(VNĐ)</span></th>
+                <th>Thành tiền<span class="u">(VNĐ)</span></th>
               </template>
               <th v-else class="l">Ghi chú</th>
             </tr>
@@ -166,57 +200,63 @@ async function downloadImage() {
               <td>{{ it.sku }}</td>
               <td>{{ it.quantity }}</td>
               <template v-if="isInvoice">
-                <td class="r">{{ fmt.format(it.unitPrice) }}</td>
-                <td class="r">{{ fmt.format(it.lineTotal) }}</td>
+                <td class="r">{{ fmt.format(it.unitPrice) }}đ</td>
+                <td class="r">{{ fmt.format(it.lineTotal) }}đ</td>
               </template>
               <td v-else class="l"></td>
             </tr>
             <tr class="total">
               <td colspan="3">Tổng cộng</td>
               <td>{{ totalBoxes }}</td>
-              <template v-if="isInvoice"><td></td><td class="r">{{ fmt.format(subtotal) }}</td></template>
+              <template v-if="isInvoice"><td></td><td class="r">{{ fmt.format(subtotal) }}đ</td></template>
               <td v-else class="l"></td>
             </tr>
           </tbody>
         </table>
 
-        <!-- HÓA ĐƠN: thanh toán -->
+        <!-- HOÁ ĐƠN: thanh toán -->
         <template v-if="isInvoice">
-          <div class="dh-pay">
+          <div class="pay">
             <div class="row"><span>Tổng tiền hàng:</span><b>{{ fmt.format(subtotal) }}đ</b></div>
             <div v-if="discount > 0" class="row"><span>Chiết khấu:</span><b>− {{ fmt.format(discount) }}đ</b></div>
             <div class="row"><span>Thuế VAT (0%):</span><b>0đ</b></div>
-            <div class="total"><span>TỔNG CỘNG THANH TOÁN:</span><span>{{ fmt.format(total) }}đ</span></div>
+            <div class="grand"><span>Tổng cộng thanh toán:</span><span>{{ fmt.format(total) }}đ</span></div>
           </div>
-          <div class="dh-words"><span class="k">Bằng chữ:</span><span><i>{{ amountWords }}</i></span></div>
-          <div class="dh-words"><span class="k">Hình thức thanh toán:</span><span><b>{{ PAY_LABEL[order.paymentMethod] || '—' }}</b></span></div>
+          <div class="words"><span class="k">Bằng chữ:</span><span><i>{{ amountWords }}</i></span></div>
+          <div class="words pm"><span class="k">Hình thức thanh toán:</span><span class="v">{{ PAY_LABEL[order.paymentMethod] || '—' }}</span></div>
         </template>
 
         <!-- BIÊN BẢN: tổng số hộp -->
         <template v-else>
-          <div class="dh-summary">Tổng số hộp: {{ totalBoxes }}</div>
-          <div class="dh-ghi">Ghi chú giao hàng: {{ order.note || '..........................................................................................' }}</div>
+          <div class="words"><span class="k">Tổng số hộp:</span><span class="v">{{ totalBoxes }} Hộp</span></div>
+          <div class="words pm"><span class="k">Ghi chú giao hàng:</span><span>{{ order.note || '...........................................................' }}</span></div>
         </template>
 
-        <div class="dh-grow"></div>
+        <div class="grow"></div>
 
-        <div class="dh-sign">
+        <!-- Chữ ký -->
+        <div class="sign">
           <div>
             <div class="role">{{ isInvoice ? 'NGƯỜI MUA HÀNG' : 'NGƯỜI GIAO HÀNG' }}</div>
-            <div class="sub">(Ký, ghi rõ họ tên)</div><div class="box"></div>
+            <div class="sub">(Ký, ghi rõ họ tên)</div>
+            <div class="box"></div>
           </div>
           <div>
             <div class="role">{{ isInvoice ? 'NGƯỜI BÁN HÀNG' : 'NGƯỜI NHẬN HÀNG' }}</div>
-            <div class="sub">(Ký, ghi rõ họ tên)</div><div class="box"></div>
+            <div class="sub">(Ký, ghi rõ họ tên)</div>
+            <div class="box"></div>
           </div>
         </div>
-        <div style="height:10px"></div>
       </div>
 
-      <!-- FOOTER 2 dải -->
-      <div class="dh-foot">
-        <div class="contact"><span>🌐 www.manhae.com.vn</span><span class="sep">|</span><span>📞 081.868.5222</span><span class="sep">|</span><span>f Manhae Việt Nam</span></div>
-        <div class="commit">CAM KẾT PHÂN PHỐI CHÍNH HÃNG MANHAE TẠI VIỆT NAM</div>
+      <!-- ===== FOOTER ===== -->
+      <div class="foot">
+        <div class="cbar">
+          <div class="citem"><span class="ico">🌐</span><span><span class="lb">Website</span><br><span class="vl">www.manhae.com.vn</span></span></div>
+          <div class="citem"><span class="ico">📞</span><span><span class="lb">Hotline</span><br><span class="vl">081.868.5222</span></span></div>
+          <div class="citem"><span class="ico">f</span><span><span class="lb">Fanpage</span><br><span class="vl">Manhae Việt Nam</span></span></div>
+        </div>
+        <div class="commit"><span>🛡</span> CAM KẾT PHÂN PHỐI CHÍNH HÃNG MANHAE TẠI VIỆT NAM</div>
       </div>
     </div>
   </div>
@@ -233,69 +273,95 @@ async function downloadImage() {
   cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.25);}
 .btn-ico:disabled{opacity:.5;}
 
-.doc-paper{width:559px;min-height:794px;background:#fff;display:flex;flex-direction:column;
-  font-family:'Be Vietnam Pro','Inter',Arial,sans-serif;color:#1F1A2E;border-radius:4px;overflow:hidden;
-  box-shadow:0 16px 50px rgba(0,0,0,.4);}
-.dh-body{flex:1;padding:0 26px;display:flex;flex-direction:column;}
+/* A5 ratio 148:210 → 559 x 793 */
+.page{width:559px;height:793px;background:#fff;border-radius:4px;overflow:hidden;position:relative;
+  display:flex;flex-direction:column;color:#1F1A2E;
+  font-family:'Be Vietnam Pro','Inter',Arial,sans-serif;box-shadow:0 16px 50px rgba(0,0,0,.4);}
+.body{flex:1;padding:0 30px;display:flex;flex-direction:column;}
 
-.dh-head{position:relative;height:222px;flex-shrink:0;}
-.dh-head svg{position:absolute;inset:0;width:100%;height:222px;}
-.dh-logo{position:absolute;left:26px;top:40px;color:#fff;z-index:2;}
-.dh-logo .mark{font-weight:300;font-size:43px;letter-spacing:2px;line-height:1;}
-.dh-logo .slogan{font-size:11px;letter-spacing:.4px;opacity:.95;margin-top:6px;}
-.dh-title{position:absolute;right:26px;top:56px;text-align:right;z-index:2;}
-.dh-title h1{color:#2D0054;font-weight:800;font-size:32px;line-height:1.05;letter-spacing:.5px;text-transform:uppercase;}
-.pill-code{display:inline-block;margin-top:12px;background:#5B1FA6;color:#fff;font-size:12px;font-weight:600;padding:6px 16px;border-radius:22px;}
-.dh-date{font-size:12px;color:#4a4360;margin-top:8px;font-weight:600;}
-.dh-badge{position:absolute;right:26px;top:184px;z-index:2;background:#2D0054;color:#fff;font-size:11px;font-weight:700;
-  letter-spacing:.3px;padding:8px 18px;border-radius:22px;box-shadow:0 6px 16px rgba(45,0,84,.3);}
+/* ===== HEADER ===== */
+.head{position:relative;flex-shrink:0;padding:0 30px 2px;}
+.wave{position:absolute;top:0;left:0;width:100%;height:92px;z-index:0;}
+.hgrid{position:relative;z-index:2;display:grid;grid-template-columns:142px 1fr 156px;
+  column-gap:6px;padding-top:14px;align-items:start;}
 
-.dh-company{padding:4px 0 12px;}
-.dh-company .name{color:#2D0054;font-weight:800;font-size:15px;}
-.dh-company .meta{font-size:11px;color:#6B6178;line-height:1.65;margin-top:3px;}
+.logo{padding-top:2px;}
+.logo .logomark{height:34px;width:auto;max-width:160px;display:block;}
+.logo .mark{font-weight:300;font-size:25px;letter-spacing:1px;line-height:1;color:#fff;}
+.logo .slogan{font-size:8.5px;letter-spacing:.2px;color:#fff;margin-top:4px;opacity:.92;}
+.company{margin-top:18px;}
+.company .name{color:#2D0054;font-weight:800;font-size:12.5px;letter-spacing:.2px;line-height:1.25;}
+.company .meta{font-size:8.5px;color:#6B6178;line-height:1.5;margin-top:4px;}
+.company .meta .ic{color:#5B1FA6;font-style:normal;margin-right:4px;}
 
-.dh-info{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-.dh-card{border:1px solid #D8C8EF;border-radius:8px;padding:12px 14px;}
-.dh-card .ttl{display:flex;align-items:center;gap:7px;color:#2D0054;font-weight:700;font-size:11.5px;
-  text-transform:uppercase;letter-spacing:.3px;margin-bottom:9px;}
-.kv{display:grid;grid-template-columns:84px 1fr;gap:7px 8px;font-size:10.5px;line-height:1.4;}
+.h-center{text-align:center;padding-top:24px;}
+.h-center h1{color:#2D0054;font-weight:800;font-size:29px;line-height:1.08;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;}
+.pill-code{display:inline-block;margin-top:12px;background:#5B1FA6;color:#fff;white-space:nowrap;
+  font-size:11px;font-weight:600;padding:6px 16px;border-radius:22px;}
+.h-date{font-size:12px;color:#1F1A2E;margin-top:9px;font-weight:700;}
+
+.h-right{text-align:right;padding-top:2px;}
+.contact-line{display:flex;align-items:center;justify-content:flex-end;gap:7px;font-size:12px;font-weight:600;color:#1F1A2E;}
+.contact-line .ico{width:20px;height:20px;border-radius:50%;background:#5B1FA6;color:#fff;
+  display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;}
+.h-right .divider{width:1px;height:14px;background:#D8C8EF;margin:5px 9px 5px auto;}
+.badge{display:inline-flex;align-items:center;gap:7px;margin-top:18px;background:#2D0054;color:#fff;
+  border-radius:11px;padding:8px 12px;text-align:left;box-shadow:0 6px 16px rgba(45,0,84,.28);}
+.badge .sh{font-size:14px;flex-shrink:0;}
+.badge .tx{font-size:8px;font-weight:700;line-height:1.3;letter-spacing:.2px;white-space:nowrap;}
+
+/* ===== INFO CARDS ===== */
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:4px;}
+.card{border:1px solid #D8C8EF;border-radius:10px;padding:8px 13px;}
+.card .ttl{display:flex;align-items:center;gap:8px;color:#2D0054;font-weight:700;font-size:10.5px;
+  text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px;}
+.card .ttl .ico{color:#5B1FA6;font-size:12px;}
+.kv{display:grid;grid-template-columns:90px 1fr;row-gap:4px;column-gap:8px;font-size:9.5px;line-height:1.35;}
 .kv .k{color:#4B3D5A;}
 .kv .v{color:#1F1A2E;font-weight:700;}
 
-.dh-sec{display:flex;align-items:center;gap:8px;color:#2D0054;font-weight:700;font-size:12.5px;
-  text-transform:uppercase;letter-spacing:.3px;margin:15px 0 8px;}
-.dh-table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border-radius:8px;overflow:hidden;}
-.dh-table thead th{background:#2D0054;color:#fff;font-weight:700;padding:10px 7px;text-align:center;font-size:10.5px;line-height:1.15;}
-.dh-table thead th.l{text-align:left;}
-.dh-table thead th .u{display:block;font-weight:400;opacity:.78;font-size:8px;font-style:italic;}
-.dh-table tbody td{padding:10px 7px;text-align:center;border-bottom:1px solid #D8C8EF;}
-.dh-table tbody td.l{text-align:left;}
-.dh-table tbody td.r{text-align:right;}
-.dh-table tr.total td{background:#F3E8FF;font-weight:800;color:#2D0054;border:none;padding:9px 7px;}
-.dh-table tr.total td.r{text-align:right;}
+/* ===== PRODUCT TABLE ===== */
+.sec{display:flex;align-items:center;gap:8px;color:#2D0054;font-weight:700;font-size:12px;
+  text-transform:uppercase;letter-spacing:.3px;margin:9px 0 6px;}
+.sec .ico{color:#5B1FA6;}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border-radius:10px;overflow:hidden;}
+thead th{background:#2D0054;color:#fff;font-weight:700;padding:7px 8px;text-align:center;font-size:10.5px;line-height:1.15;}
+thead th.l{text-align:left;}
+thead th .u{display:block;font-weight:400;opacity:.78;font-size:8.5px;margin-top:1px;}
+tbody td{padding:8px;text-align:center;border-bottom:1px solid #D8C8EF;}
+tbody td.l{text-align:left;}
+tbody td.r{text-align:right;}
+tr.total td{background:#F3E8FF;font-weight:800;color:#2D0054;border:none;padding:8px;}
+tr.total td.r{text-align:right;}
 
-.dh-pay{margin-top:14px;margin-left:auto;width:58%;}
-.dh-pay .row{display:flex;justify-content:space-between;font-size:12px;padding:5px 6px;color:#4a4360;}
-.dh-pay .row b{color:#1F1A2E;font-weight:700;}
-.dh-pay .total{display:flex;justify-content:space-between;align-items:center;background:#2D0054;color:#fff;
-  border-radius:10px;padding:12px 16px;margin-top:6px;font-weight:800;font-size:14px;}
-.dh-words{font-size:11.5px;margin-top:12px;color:#4a4360;display:flex;gap:10px;}
-.dh-words .k{color:#6B6178;white-space:nowrap;}
+/* ===== PAYMENT ===== */
+.pay{margin-top:9px;margin-left:auto;width:55%;}
+.pay .row{display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 14px;color:#1F1A2E;font-weight:600;}
+.pay .grand{display:flex;justify-content:space-between;align-items:center;background:#2D0054;color:#fff;
+  border-radius:10px;padding:9px 16px;margin-top:5px;font-weight:800;font-size:13px;}
 
-.dh-summary{margin-top:12px;font-size:12.5px;color:#2D0054;font-weight:700;}
-.dh-ghi{font-size:11px;color:#6B6178;margin-top:11px;}
+.words{font-size:11px;margin-top:8px;color:#1F1A2E;display:flex;gap:8px;}
+.words .k{color:#4B3D5A;white-space:nowrap;font-weight:600;}
+.words.pm{margin-top:5px;}
+.words.pm .v{font-weight:700;}
 
-.dh-sign{display:grid;grid-template-columns:1fr 1fr;gap:36px;margin-top:18px;text-align:center;}
-.dh-sign .role{font-weight:800;font-size:12px;color:#1F1A2E;}
-.dh-sign .sub{font-size:10px;font-style:italic;color:#6B6178;margin-top:2px;}
-.dh-sign .box{height:80px;border:1px dashed #D8C8EF;border-radius:8px;margin-top:9px;}
-.dh-grow{flex:1;min-height:8px;}
+/* ===== SIGNATURE ===== */
+.grow{flex:1;min-height:4px;}
+.sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:4px;text-align:center;}
+.sign .role{font-weight:800;font-size:12px;color:#1F1A2E;letter-spacing:.3px;}
+.sign .sub{font-size:10px;font-style:italic;color:#6B6178;margin-top:2px;}
+.sign .box{height:36px;border:1px dashed #D8C8EF;border-radius:8px;margin-top:6px;}
 
-.dh-foot{flex-shrink:0;}
-.dh-foot .contact{background:#F7F1FF;color:#2D0054;text-align:center;font-size:10px;font-weight:600;
-  padding:9px 16px;display:flex;align-items:center;justify-content:center;gap:18px;}
-.dh-foot .contact .sep{color:#D8C8EF;}
-.dh-foot .commit{background:#2D0054;color:#fff;text-align:center;font-size:9.5px;font-weight:700;letter-spacing:.4px;padding:7px;}
+/* ===== FOOTER ===== */
+.foot{flex-shrink:0;margin-top:8px;}
+.foot .cbar{background:#F7F1FF;display:flex;align-items:center;justify-content:center;gap:40px;padding:6px 16px;}
+.foot .citem{display:flex;align-items:center;gap:9px;}
+.foot .citem .ico{width:23px;height:23px;border-radius:50%;background:#fff;color:#5B1FA6;
+  display:inline-flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(91,31,166,.18);}
+.foot .citem .lb{font-size:8px;color:#6B6178;line-height:1.2;}
+.foot .citem .vl{font-size:10.5px;color:#2D0054;font-weight:700;line-height:1.2;}
+.foot .commit{background:#2D0054;color:#fff;text-align:center;font-size:10px;font-weight:700;
+  letter-spacing:.4px;padding:6px;display:flex;align-items:center;justify-content:center;gap:8px;}
 </style>
 
 <!-- Print: chỉ in tờ chứng từ, khổ A5 -->
@@ -306,7 +372,7 @@ async function downloadImage() {
   .doc-overlay, .doc-overlay * { visibility: visible !important; }
   .doc-overlay { position: absolute !important; inset: 0 !important; background: #fff !important; padding: 0 !important; display: block !important; }
   .doc-actions { display: none !important; }
-  .doc-paper { width: 148mm !important; min-height: 210mm !important; box-shadow: none !important; border-radius: 0 !important; margin: 0 !important; }
+  .doc-overlay .page { width: 148mm !important; height: 210mm !important; box-shadow: none !important; border-radius: 0 !important; margin: 0 !important; }
   html, body { background: #fff !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 </style>

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HOÁ ĐƠN BÁN HÀNG — preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --dark:#2D0054; --secondary:#5B1FA6; --light:#F3E8FF; --contact:#F7F1FF;
+    --border:#D8C8EF; --ink:#1F1A2E; --muted:#6B6178;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#6f6a7d;font-family:'Be Vietnam Pro',sans-serif;color:var(--ink);
+    display:flex;justify-content:center;padding:28px;}
+
+  /* A5 ratio 148:210 → 559 x 793 */
+  .page{width:559px;height:793px;background:#fff;border-radius:6px;overflow:hidden;
+    display:flex;flex-direction:column;box-shadow:0 16px 50px rgba(0,0,0,.4);position:relative;}
+  .body{flex:1;padding:0 30px;display:flex;flex-direction:column;}
+
+  /* ===== HEADER ===== */
+  .head{position:relative;flex-shrink:0;padding:0 30px 2px;}
+  .wave{position:absolute;top:0;left:0;width:100%;height:92px;z-index:0;}
+
+  .hgrid{position:relative;z-index:2;display:grid;grid-template-columns:142px 1fr 156px;
+    column-gap:6px;padding-top:14px;align-items:start;}
+
+  /* left column: logo + company */
+  .logo{padding-top:2px;}
+  .logo .logomark{height:34px;width:auto;max-width:160px;display:block;}
+  .logo .mark{font-weight:300;font-size:25px;letter-spacing:1px;line-height:1;color:#fff;}
+  .logo .slogan{font-size:8.5px;letter-spacing:.2px;color:#fff;margin-top:4px;opacity:.92;}
+  .company{margin-top:18px;}
+  .company .name{color:var(--dark);font-weight:800;font-size:12.5px;letter-spacing:.2px;line-height:1.25;}
+  .company .meta{font-size:8.5px;color:var(--muted);line-height:1.5;margin-top:4px;}
+  .company .meta .ic{color:var(--secondary);font-style:normal;margin-right:4px;}
+
+  /* center column: title */
+  .h-center{text-align:center;padding-top:24px;}
+  .h-center h1{color:var(--dark);font-weight:800;font-size:29px;line-height:1.08;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;}
+  .pill-code{display:inline-block;margin-top:12px;background:var(--secondary);color:#fff;white-space:nowrap;
+    font-size:11px;font-weight:600;padding:6px 16px;border-radius:22px;}
+  .h-date{font-size:12px;color:var(--ink);margin-top:9px;font-weight:700;}
+
+  /* right column: contact + badge */
+  .h-right{text-align:right;padding-top:2px;}
+  .contact-line{display:flex;align-items:center;justify-content:flex-end;gap:7px;font-size:12px;font-weight:600;color:var(--ink);}
+  .contact-line .ico{width:20px;height:20px;border-radius:50%;background:var(--secondary);color:#fff;
+    display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;}
+  .h-right .divider{width:1px;height:14px;background:var(--border);margin:5px 9px 5px auto;}
+  .badge{display:inline-flex;align-items:center;gap:7px;margin-top:18px;background:var(--dark);color:#fff;
+    border-radius:11px;padding:8px 12px;text-align:left;box-shadow:0 6px 16px rgba(45,0,84,.28);}
+  .badge .sh{font-size:14px;flex-shrink:0;}
+  .badge .tx{font-size:8px;font-weight:700;line-height:1.3;letter-spacing:.2px;white-space:nowrap;}
+
+  /* ===== INFO CARDS ===== */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:4px;}
+  .card{border:1px solid var(--border);border-radius:10px;padding:8px 13px;}
+  .card .ttl{display:flex;align-items:center;gap:8px;color:var(--dark);font-weight:700;font-size:10.5px;
+    text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px;}
+  .card .ttl .ico{color:var(--secondary);font-size:12px;}
+  .kv{display:grid;grid-template-columns:90px 1fr;row-gap:4px;column-gap:8px;font-size:9.5px;line-height:1.35;}
+  .kv .k{color:#4B3D5A;}
+  .kv .v{color:var(--ink);font-weight:700;}
+
+  /* ===== PRODUCT TABLE ===== */
+  .sec{display:flex;align-items:center;gap:8px;color:var(--dark);font-weight:700;font-size:12px;
+    text-transform:uppercase;letter-spacing:.3px;margin:9px 0 6px;}
+  .sec .ico{color:var(--secondary);}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border-radius:10px;overflow:hidden;}
+  thead th{background:var(--dark);color:#fff;font-weight:700;padding:7px 8px;text-align:center;font-size:10.5px;line-height:1.15;}
+  thead th.l{text-align:left;}
+  thead th .u{display:block;font-weight:400;opacity:.78;font-size:8.5px;margin-top:1px;}
+  tbody td{padding:8px 8px;text-align:center;border-bottom:1px solid var(--border);}
+  tbody td.l{text-align:left;}
+  tbody td.r{text-align:right;}
+  tr.total td{background:var(--light);font-weight:800;color:var(--dark);border:none;padding:8px 8px;}
+  tr.total td.r{text-align:right;}
+
+  /* ===== PAYMENT ===== */
+  .pay{margin-top:9px;margin-left:auto;width:55%;}
+  .pay .row{display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 14px;color:var(--ink);font-weight:600;}
+  .pay .grand{display:flex;justify-content:space-between;align-items:center;background:var(--dark);color:#fff;
+    border-radius:10px;padding:9px 16px;margin-top:5px;font-weight:800;font-size:13px;}
+
+  .words{font-size:11px;margin-top:8px;color:var(--ink);display:flex;gap:8px;}
+  .words .k{color:#4B3D5A;white-space:nowrap;font-weight:600;}
+  .words.pm{margin-top:5px;}
+  .words.pm .v{font-weight:700;}
+
+  /* ===== SIGNATURE ===== */
+  .grow{flex:1;min-height:4px;}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:4px;text-align:center;}
+  .sign .role{font-weight:800;font-size:12px;color:var(--ink);letter-spacing:.3px;}
+  .sign .sub{font-size:10px;font-style:italic;color:var(--muted);margin-top:2px;}
+  .sign .box{height:36px;border:1px dashed var(--border);border-radius:8px;margin-top:6px;}
+
+  /* ===== FOOTER ===== */
+  .foot{flex-shrink:0;margin-top:8px;}
+  .foot .cbar{background:var(--contact);display:flex;align-items:center;justify-content:center;gap:40px;padding:6px 16px;}
+  .foot .citem{display:flex;align-items:center;gap:9px;}
+  .foot .citem .ico{width:23px;height:23px;border-radius:50%;background:#fff;color:var(--secondary);
+    display:inline-flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(91,31,166,.18);}
+  .foot .citem .lb{font-size:8px;color:var(--muted);line-height:1.2;}
+  .foot .citem .vl{font-size:10.5px;color:var(--dark);font-weight:700;line-height:1.2;}
+  .foot .commit{background:var(--dark);color:#fff;text-align:center;font-size:10px;font-weight:700;
+    letter-spacing:.4px;padding:6px;display:flex;align-items:center;justify-content:center;gap:8px;}
+</style>
+</head>
+<body>
+  <div class="page">
+    <!-- HEADER -->
+    <div class="head">
+      <svg class="wave" viewBox="0 0 559 92" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="wg" x1="0" y1="0" x2="1" y2="0.9">
+            <stop offset="0%" stop-color="#2D0054" /><stop offset="55%" stop-color="#5B1FA6" /><stop offset="100%" stop-color="#7E45C9" />
+          </linearGradient>
+        </defs>
+        <!-- lớp sáng phía sau -->
+        <path d="M0,0 H210 C198,42 150,70 78,72 C50,73 22,72 0,70 Z" fill="#B79CE8" opacity="0.5" />
+        <!-- lobe tím chính ở góc trái -->
+        <path d="M0,0 H188 C178,36 130,62 66,64 C42,65 20,64 0,62 Z" fill="url(#wg)" />
+        <!-- nét cong mảnh vuốt sang phải -->
+        <path d="M126,56 C 260,76 410,64 552,46" fill="none" stroke="#5B1FA6" stroke-width="1.4" opacity="0.6" stroke-linecap="round" />
+      </svg>
+
+      <div class="hgrid">
+        <div class="h-left">
+          <div class="logo">
+            <img class="logomark" src="/manhae-logo-white.png" alt="manhaē"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='block'" />
+            <div class="mark" style="display:none">manhaē</div>
+            <div class="slogan">Sức khỏe là vẻ đẹp thật sự</div>
+          </div>
+          <div class="company">
+            <div class="name">CÔNG TY TNHH HALOVN</div>
+            <div class="meta">
+              MST: 0110086708<br>
+              Thôn Thiên Lộc, Xã Trung Chính,<br>Tỉnh Bắc Ninh, Việt Nam<br>
+              <i class="ic">✉</i>ketoanhalovn@gmail.com<br>
+              <i class="ic">☎</i>0362 431 998 / 0964 435 197
+            </div>
+          </div>
+        </div>
+
+        <div class="h-center">
+          <h1>BIÊN BẢN<br>GIAO HÀNG</h1>
+          <div class="pill-code">Số phiếu: GH-202206-0015</div>
+          <div class="h-date">Ngày: 04/06/2026</div>
+        </div>
+
+        <div class="h-right">
+          <div class="contact-line"><span>081.868.5222</span><span class="ico">☎</span></div>
+          <div class="divider"></div>
+          <div class="contact-line"><span>Manhae Việt Nam</span><span class="ico">f</span></div>
+          <div class="badge">
+            <span class="sh">🛡</span>
+            <span class="tx">PHÂN PHỐI CHÍNH THỨC<br>MANHAE TẠI VIỆT NAM</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BODY -->
+    <div class="body">
+      <div class="cards">
+        <div class="card">
+          <div class="ttl"><span class="ico">👤</span> Thông tin khách hàng</div>
+          <div class="kv">
+            <span class="k">Tên khách hàng:</span><span class="v">Chị Kim Ngân</span>
+            <span class="k">Tên công ty:</span><span class="v">Công ty TNHH Kim Ngân</span>
+            <span class="k">MST:</span><span class="v">0312345678</span>
+            <span class="k">Địa chỉ:</span><span class="v">11 ngách 35 ngõ 97 Văn Cao, Liễu Giai, Ba Đình, Hà Nội</span>
+            <span class="k">SĐT:</span><span class="v">0343796560</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ttl"><span class="ico">🚚</span> Thông tin nhận hàng</div>
+          <div class="kv">
+            <span class="k">Người nhận:</span><span class="v">Chị Kim Ngân</span>
+            <span class="k">Địa chỉ nhận hàng:</span><span class="v">11 ngách 35 ngõ 97 Văn Cao, Liễu Giai, Ba Đình, Hà Nội</span>
+            <span class="k">SĐT nhận hàng:</span><span class="v">0343796560</span>
+            <span class="k">Ghi chú:</span><span class="v">&nbsp;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec"><span class="ico">🛒</span> Chi tiết sản phẩm</div>
+      <table>
+        <thead>
+          <tr>
+            <th>STT</th>
+            <th class="l">Sản phẩm</th>
+            <th>SKU</th>
+            <th>Số lượng<span class="u">(Hộp)</span></th>
+            <th class="l">Ghi chú</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td class="l">Manhae Menopause 90 viên</td>
+            <td>MH_03</td>
+            <td>24</td>
+            <td class="l"></td>
+          </tr>
+          <tr class="total">
+            <td colspan="3">Tổng cộng</td>
+            <td>24</td>
+            <td class="l"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="words"><span class="k">Tổng số hộp:</span><span class="v">24 Hộp</span></div>
+      <div class="words pm"><span class="k">Ghi chú giao hàng:</span><span>...........................................................</span></div>
+
+      <div class="grow"></div>
+
+      <div class="sign">
+        <div>
+          <div class="role">NGƯỜI GIAO HÀNG</div>
+          <div class="sub">(Ký, ghi rõ họ tên)</div>
+          <div class="box"></div>
+        </div>
+        <div>
+          <div class="role">NGƯỜI NHẬN HÀNG</div>
+          <div class="sub">(Ký, ghi rõ họ tên)</div>
+          <div class="box"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="foot">
+      <div class="cbar">
+        <div class="citem"><span class="ico">🌐</span><span><span class="lb">Website</span><br><span class="vl">www.manhae.com.vn</span></span></div>
+        <div class="citem"><span class="ico">📞</span><span><span class="lb">Hotline</span><br><span class="vl">081.868.5222</span></span></div>
+        <div class="citem"><span class="ico">f</span><span><span class="lb">Fanpage</span><br><span class="vl">Manhae Việt Nam</span></span></div>
+      </div>
+      <div class="commit"><span>🛡</span> CAM KẾT PHÂN PHỐI CHÍNH HÃNG MANHAE TẠI VIỆT NAM</div>
+    </div>
+  </div>
+</body>
+</html>
