@@ -46,9 +46,10 @@ const payOpen = ref(false);
 const paySaving = ref(false);
 const payError = ref('');
 const payForm = ref(emptyPayForm());
-const proofFile = ref(null); // File đã nén
-const proofPreview = ref(''); // dataURL để xem trước
+// Nhiều chứng từ: KH có thể chia 1 lần thu thành nhiều lệnh chuyển khoản.
+const proofItems = ref([]); // [{ file, preview, isPdf }]
 const proofProcessing = ref(false);
+const MAX_PROOFS = 10;
 
 function emptyPayForm() {
   return {
@@ -163,8 +164,7 @@ function switchTab(t) {
 function openPayForm() {
   if (!canRecordPayment.value || !detail.value) return;
   payForm.value = { ...emptyPayForm(), amount: detail.value.total_debt || 0 };
-  proofFile.value = null;
-  proofPreview.value = '';
+  proofItems.value = [];
   payError.value = '';
   payOpen.value = true;
 }
@@ -174,42 +174,48 @@ function closePayForm() {
 }
 
 // Nén ảnh client-side: max cạnh 1280px, JPEG ~0.8 → file nhỏ trước khi upload.
+// Nhận nhiều file 1 lần; PDF giữ nguyên, ảnh thì nén.
 async function onPickProof(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
+  const files = Array.from(e.target.files || []);
+  e.target.value = ''; // reset để chọn lại cùng file được
+  if (!files.length) return;
   payError.value = '';
 
-  // PDF: giữ nguyên, không nén.
-  if (file.type === 'application/pdf') {
-    if (file.size > 5 * 1024 * 1024) {
-      payError.value = 'File PDF quá lớn (tối đa 5MB)';
-      return;
+  for (const file of files) {
+    if (proofItems.value.length >= MAX_PROOFS) {
+      payError.value = `Tối đa ${MAX_PROOFS} chứng từ mỗi lần thu`;
+      break;
     }
-    proofFile.value = file;
-    proofPreview.value = '';
-    return;
-  }
 
-  if (!file.type.startsWith('image/')) {
-    payError.value = 'Chỉ nhận ảnh (JPG/PNG/WEBP) hoặc PDF';
-    return;
-  }
-
-  proofProcessing.value = true;
-  try {
-    const compressed = await compressImage(file, 1280, 0.8);
-    proofFile.value = compressed.file;
-    proofPreview.value = compressed.dataUrl;
-  } catch (err) {
-    // Nén lỗi → dùng file gốc nếu không quá lớn.
-    if (file.size <= 5 * 1024 * 1024) {
-      proofFile.value = file;
-      proofPreview.value = URL.createObjectURL(file);
-    } else {
-      payError.value = 'Không xử lý được ảnh, thử ảnh khác';
+    // PDF: giữ nguyên, không nén.
+    if (file.type === 'application/pdf') {
+      if (file.size > 5 * 1024 * 1024) {
+        payError.value = 'File PDF quá lớn (tối đa 5MB)';
+        continue;
+      }
+      proofItems.value.push({ file, preview: '', isPdf: true });
+      continue;
     }
-  } finally {
-    proofProcessing.value = false;
+
+    if (!file.type.startsWith('image/')) {
+      payError.value = 'Chỉ nhận ảnh (JPG/PNG/WEBP) hoặc PDF';
+      continue;
+    }
+
+    proofProcessing.value = true;
+    try {
+      const compressed = await compressImage(file, 1280, 0.8);
+      proofItems.value.push({ file: compressed.file, preview: compressed.dataUrl, isPdf: false });
+    } catch (err) {
+      // Nén lỗi → dùng file gốc nếu không quá lớn.
+      if (file.size <= 5 * 1024 * 1024) {
+        proofItems.value.push({ file, preview: URL.createObjectURL(file), isPdf: false });
+      } else {
+        payError.value = 'Không xử lý được ảnh, thử ảnh khác';
+      }
+    } finally {
+      proofProcessing.value = false;
+    }
   }
 }
 
@@ -248,9 +254,8 @@ function compressImage(file, maxEdge, quality) {
   });
 }
 
-function clearProof() {
-  proofFile.value = null;
-  proofPreview.value = '';
+function clearProof(idx) {
+  proofItems.value.splice(idx, 1);
 }
 
 async function submitPayment() {
@@ -264,7 +269,7 @@ async function submitPayment() {
     payError.value = `Số tiền vượt tổng nợ hiện tại (${formatVND(detail.value.total_debt)})`;
     return;
   }
-  if (requiresProof.value && !proofFile.value) {
+  if (requiresProof.value && proofItems.value.length === 0) {
     payError.value = 'Chuyển khoản bắt buộc đính ảnh chứng từ';
     return;
   }
@@ -272,13 +277,13 @@ async function submitPayment() {
   paySaving.value = true;
   payError.value = '';
   try {
-    // 1) Upload ảnh chứng từ trước (nếu có) → lấy URL.
-    let proofUrl = null;
-    if (proofFile.value) {
+    // 1) Upload từng chứng từ (nếu có) → thu danh sách URL.
+    const proofUrls = [];
+    for (const item of proofItems.value) {
       const fd = new FormData();
-      fd.append('file', proofFile.value);
+      fd.append('file', item.file);
       const { data: up } = await api.post('/sale-app/uploads/proof', fd);
-      proofUrl = up.url;
+      if (up?.url) proofUrls.push(up.url);
     }
 
     // 2) Ghi nhận thu tiền (FIFO tự gạt vào đơn nợ cũ nhất).
@@ -289,7 +294,7 @@ async function submitPayment() {
       paymentDate: payForm.value.paymentDate || undefined,
       reference: payForm.value.reference || undefined,
       note: payForm.value.note || undefined,
-      proofUrl: proofUrl || undefined,
+      proofUrls: proofUrls.length ? proofUrls : undefined,
     });
 
     const n = data.allocated?.length || 0;
@@ -529,13 +534,28 @@ onMounted(loadList);
                     <span v-if="p.reversed" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
                       Đã đảo
                     </span>
-                    <a
-                      v-if="p.proof_url"
-                      :href="p.proof_url"
-                      target="_blank"
-                      rel="noopener"
-                      class="ml-auto text-[11px] text-royal-700 underline"
-                    >Xem chứng từ</a>
+                    <span
+                      v-if="(p.proof_urls && p.proof_urls.length) || p.proof_url"
+                      class="ml-auto flex items-center gap-2 flex-wrap justify-end"
+                    >
+                      <template v-if="p.proof_urls && p.proof_urls.length">
+                        <a
+                          v-for="(u, i) in p.proof_urls"
+                          :key="i"
+                          :href="u"
+                          target="_blank"
+                          rel="noopener"
+                          class="text-[11px] text-royal-700 underline"
+                        >Chứng từ{{ p.proof_urls.length > 1 ? ' ' + (i + 1) : '' }}</a>
+                      </template>
+                      <a
+                        v-else
+                        :href="p.proof_url"
+                        target="_blank"
+                        rel="noopener"
+                        class="text-[11px] text-royal-700 underline"
+                      >Xem chứng từ</a>
+                    </span>
                   </div>
                   <div class="text-[11px] text-ink-secondary mt-1">
                     {{ formatDateVN(p.payment_date) }}
@@ -683,26 +703,47 @@ onMounted(loadList);
             </div>
           </div>
 
-          <!-- Ảnh chứng từ -->
+          <!-- Ảnh chứng từ (nhiều file — KH chia nhiều lệnh chuyển khoản) -->
           <div>
             <label class="block text-xs font-medium text-ink-secondary mb-1">
               Ảnh chứng từ <span v-if="requiresProof" class="text-rose-600">* (bắt buộc khi chuyển khoản)</span>
+              <span v-if="proofItems.length" class="text-ink-secondary font-normal">— đã chọn {{ proofItems.length }}</span>
             </label>
-            <div v-if="!proofFile" class="flex items-center gap-2">
-              <label class="flex-1 h-11 rounded-btn border border-dashed border-line-300 flex items-center justify-center gap-2 text-sm text-ink-secondary cursor-pointer hover:bg-surface-soft">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-                </svg>
-                {{ proofProcessing ? 'Đang xử lý ảnh…' : 'Chọn ảnh / PDF' }}
-                <input type="file" accept="image/*,application/pdf" class="hidden" @change="onPickProof" />
-              </label>
+
+            <!-- Lưới các chứng từ đã chọn -->
+            <div v-if="proofItems.length" class="grid grid-cols-4 gap-2 mb-2">
+              <div
+                v-for="(item, idx) in proofItems"
+                :key="idx"
+                class="relative aspect-square border border-line-200 rounded-card overflow-hidden bg-surface-soft flex items-center justify-center"
+              >
+                <img v-if="!item.isPdf && item.preview" :src="item.preview" class="w-full h-full object-cover" />
+                <div v-else class="text-ink-secondary text-[10px] font-bold">PDF</div>
+                <button
+                  type="button"
+                  @click="clearProof(idx)"
+                  class="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  title="Xóa chứng từ"
+                >
+                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
             </div>
-            <div v-else class="flex items-center gap-3 border border-line-200 rounded-card p-2">
-              <img v-if="proofPreview" :src="proofPreview" class="w-12 h-12 rounded object-cover" />
-              <div v-else class="w-12 h-12 rounded bg-surface-soft flex items-center justify-center text-ink-secondary text-[10px] font-bold">PDF</div>
-              <div class="text-xs text-ink-secondary flex-1 min-w-0 truncate">Đã chọn chứng từ</div>
-              <button @click="clearProof" class="text-xs text-rose-600 font-medium">Xóa</button>
-            </div>
+
+            <!-- Nút chọn thêm -->
+            <label
+              v-if="proofItems.length < MAX_PROOFS"
+              class="w-full h-11 rounded-btn border border-dashed border-line-300 flex items-center justify-center gap-2 text-sm text-ink-secondary cursor-pointer hover:bg-surface-soft"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              {{ proofProcessing ? 'Đang xử lý ảnh…' : proofItems.length ? 'Thêm chứng từ' : 'Chọn ảnh / PDF' }}
+              <input type="file" accept="image/*,application/pdf" multiple class="hidden" @change="onPickProof" />
+            </label>
+            <p v-if="proofItems.length" class="text-[10px] text-ink-secondary mt-1">
+              Có thể chọn nhiều ảnh nếu khách chia thành nhiều lệnh chuyển khoản (tối đa {{ MAX_PROOFS }}).
+            </p>
           </div>
 
           <!-- Tham chiếu -->
