@@ -10,6 +10,7 @@ import ProductTable from '../components/ProductTable.vue';
 import ProductDetailDrawer from '../components/ProductDetailDrawer.vue';
 import BrandFilterSelect from '../components/BrandFilterSelect.vue';
 import ProductImportDialog from '../components/ProductImportDialog.vue';
+import ProductCreateDialog from '../components/ProductCreateDialog.vue';
 
 const router = useRouter();
 const pos = usePOSStore();
@@ -45,6 +46,16 @@ watch(viewMode, (v) => {
 const exporting = ref(false);
 const exportError = ref('');
 const showImport = ref(false);
+const showCreate = ref(false);
+
+// When a product is created or discontinued, reload the list.
+function onProductCreated() {
+  load();
+}
+function onProductDeleted() {
+  detailId.value = null;
+  load();
+}
 
 async function exportExcel() {
   if (exporting.value) return;
@@ -218,6 +229,18 @@ const pageNumbers = computed(() => {
           </svg>
           <span class="hidden sm:inline">Nhập Excel</span>
           <span class="sm:hidden">Nhập</span>
+        </button>
+        <button
+          v-if="isAdmin"
+          @click="showCreate = true"
+          class="h-10 px-3 lg:px-4 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold flex items-center gap-2"
+          title="Thêm 1 sản phẩm mới"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span class="hidden sm:inline">Thêm SP</span>
+          <span class="sm:hidden">Thêm</span>
         </button>
         <button
           v-if="isAdmin"
@@ -412,6 +435,7 @@ const pageNumbers = computed(() => {
       @close="detailId = null"
       @add="addToCart"
       @updated="onProductUpdated"
+      @deleted="onProductDeleted"
     />
 
     <!-- Bulk import dialog (admin) -->
@@ -419,6 +443,13 @@ const pageNumbers = computed(() => {
       v-if="showImport"
       @close="showImport = false"
       @done="load"
+    />
+
+    <!-- Create single product (admin) -->
+    <ProductCreateDialog
+      v-if="showCreate"
+      @close="showCreate = false"
+      @created="onProductCreated"
     />
   </div>
 </template>
