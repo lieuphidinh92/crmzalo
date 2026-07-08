@@ -37,6 +37,106 @@ function isHttpUrl(url: unknown): boolean {
 export async function productEditRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
+  // ── POST /api/v1/sale-app/products ─ ADMIN ONLY — tạo sản phẩm mới ────
+  // Tạo 1 sản phẩm rồi gắn sẵn 4 bậc giá theo thùng (10/5/1/<1 thùng) —
+  // đúng convention của catalog + màn Chỉnh sửa. Nếu có nhập "giá niêm yết"
+  // thì cả 4 bậc để chung mức đó (admin tinh chỉnh lại từng bậc sau).
+  app.post('/api/v1/sale-app/products', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      if (!['owner', 'admin'].includes(user.role)) {
+        return reply.status(403).send({ error: 'Chỉ admin được thêm sản phẩm' });
+      }
+      const body = request.body as {
+        sku?: string;
+        name?: string;
+        brandId?: string | null;
+        packageSize?: string | null;
+        price?: number | null;
+      };
+
+      const sku = (body.sku || '').trim();
+      const name = (body.name || '').trim();
+      if (!sku || !name) {
+        return reply.status(400).send({ error: 'Mã SP (SKU) và tên sản phẩm là bắt buộc' });
+      }
+
+      let price = 0;
+      if (body.price !== undefined && body.price !== null && body.price !== ('' as any)) {
+        const n = Math.round(Number(body.price));
+        if (!Number.isFinite(n) || n < 0) {
+          return reply.status(400).send({ error: 'Giá phải là số nguyên ≥ 0 (đồng)' });
+        }
+        price = n;
+      }
+
+      const clash = await prisma.product.findFirst({
+        where: { orgId: user.orgId, sku },
+        select: { id: true },
+      });
+      if (clash) return reply.status(400).send({ error: 'Mã SP (SKU) đã tồn tại trong tổ chức' });
+
+      let brandId: string | null = null;
+      if (body.brandId) {
+        const brand = await prisma.brand.findFirst({
+          where: { id: body.brandId, orgId: user.orgId },
+          select: { id: true },
+        });
+        if (!brand) return reply.status(400).send({ error: 'Thương hiệu không hợp lệ' });
+        brandId = brand.id;
+      }
+
+      const created = await prisma.product.create({
+        data: {
+          orgId: user.orgId,
+          sku,
+          name,
+          brandId,
+          packageSize: (body.packageSize || '').trim() || null,
+          status: 'active',
+          sellable: true,
+          hasSales: true, // hiện luôn trong catalog + tìm kiếm lên đơn
+          marketingDocs: [],
+          createdById: user.id,
+          updatedById: user.id,
+        },
+        select: { id: true },
+      });
+
+      // 4 bậc giá theo thùng — khớp POST /_backfill-tier-prices
+      const tierDefs = [
+        { tierName: '10 thùng', displayOrder: 1, isDefault: false },
+        { tierName: '5 thùng', displayOrder: 2, isDefault: false },
+        { tierName: '1 thùng', displayOrder: 3, isDefault: true },
+        { tierName: '<1 thùng', displayOrder: 4, isDefault: false },
+      ];
+      await prisma.productPrice.createMany({
+        data: tierDefs.map((t) => ({
+          productId: created.id,
+          tierName: t.tierName,
+          price,
+          active: true,
+          displayOrder: t.displayOrder,
+          isDefault: t.isDefault,
+        })),
+      });
+
+      const full = await prisma.product.findUnique({
+        where: { id: created.id },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          brand: { select: { id: true, name: true } },
+        },
+      });
+      return reply.status(201).send({ product: full });
+    } catch (err) {
+      logger.error('[sale-app] product create error:', err);
+      return reply.status(500).send({ error: 'Lỗi tạo sản phẩm' });
+    }
+  });
+
   // ── PUT /api/v1/sale-app/products/:id/media ───────────────────────────
   // Updates ONLY mainImageUrl + galleryUrls. Gallery is capped at 4 images.
   // mainImageUrl null/'' clears the cover image.
