@@ -26,6 +26,29 @@ import { toNumber, reqUser } from '../orders/order-service.js';
 import { requireRole } from '../auth/role-middleware.js';
 import { uploadToStorage, extForMime } from '../../shared/storage/supabase-storage.js';
 
+// Chứng từ thanh toán được lưu trong cột proof_url dạng:
+//   - bản ghi cũ: 1 URL thuần ("https://...")
+//   - bản ghi mới (nhiều chứng từ): chuỗi JSON mảng ("[\"https://a\",\"https://b\"]")
+// parseProofUrls chuẩn hoá về mảng URL để trả cho FE; serializeProofUrls đóng gói khi ghi.
+function parseProofUrls(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  const s = String(raw).trim();
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s);
+      return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()) : [];
+    } catch {
+      return [s];
+    }
+  }
+  return [s];
+}
+function serializeProofUrls(urls: string[]): string | null {
+  const clean = urls.filter((u) => typeof u === 'string' && u.trim()).map((u) => u.trim());
+  if (clean.length === 0) return null;
+  return JSON.stringify(clean);
+}
+
 // Orders that still owe money and aren't cancelled.
 function debtOrderWhere(user: { id: string; orgId: string; role: string }) {
   const where: any = {
@@ -279,13 +302,21 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
         const user = reqUser(request);
         const body = request.body as {
           contactId?: string; amount?: number; paymentMethod?: string;
-          paymentDate?: string; reference?: string; note?: string; proofUrl?: string;
+          paymentDate?: string; reference?: string; note?: string;
+          proofUrl?: string; proofUrls?: string[];
         };
         const amount = Math.round(Number(body.amount) || 0);
         const method = body.paymentMethod || 'bank_transfer';
+        // Gộp cả proofUrls (mảng, mới) lẫn proofUrl (chuỗi, tương thích cũ).
+        const proofUrls = [
+          ...(Array.isArray(body.proofUrls) ? body.proofUrls : []),
+          ...(body.proofUrl ? [body.proofUrl] : []),
+        ]
+          .filter((u) => typeof u === 'string' && u.trim())
+          .map((u) => u.trim());
         if (!body.contactId) return reply.status(400).send({ error: 'Thiếu khách hàng' });
         if (amount <= 0) return reply.status(400).send({ error: 'Số tiền phải lớn hơn 0' });
-        if (method === 'bank_transfer' && !body.proofUrl?.trim()) {
+        if (method === 'bank_transfer' && proofUrls.length === 0) {
           return reply.status(400).send({ error: 'Chuyển khoản bắt buộc đính ảnh chứng từ' });
         }
 
@@ -341,7 +372,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
               paymentDate: body.paymentDate ? new Date(body.paymentDate) : new Date(),
               reference: body.reference?.trim() || null,
               note: body.note?.trim() || null,
-              proofUrl: body.proofUrl?.trim() || null,
+              proofUrl: serializeProofUrls(proofUrls),
               allocations: allocations as any,
               createdById: user.id,
             },
@@ -438,7 +469,8 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             payment_date: r.paymentDate,
             reference: r.reference,
             note: r.note,
-            proof_url: r.proofUrl,
+            proof_url: parseProofUrls(r.proofUrl)[0] || null, // tương thích cũ: ảnh đầu tiên
+            proof_urls: parseProofUrls(r.proofUrl), // mảng đầy đủ chứng từ
             allocations: r.allocations,
             created_by: uname(r.createdById),
             created_at: r.createdAt,
