@@ -8,7 +8,7 @@ const props = defineProps({
   productId: { type: String, default: null },
   tier: { type: String, default: 'thung_1' },
 });
-const emit = defineEmits(['close', 'add', 'updated']);
+const emit = defineEmits(['close', 'add', 'updated', 'deleted']);
 
 const auth = useAuthStore();
 const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
@@ -38,6 +38,7 @@ const DOC_CATEGORIES = [
 
 // ---- Edit field state ----
 const editSku = ref('');
+const editName = ref('');
 const editBrandId = ref('');
 const editAllowOversell = ref(false);
 
@@ -59,6 +60,7 @@ const brandsLoaded = ref(false);
 // ---- Per-section busy + message ----
 const savingBasic = ref(false); // sku/brand/oversell (PUT /products/:id)
 const basicMsg = ref(null);
+const deleting = ref(false);
 const savingPrice = ref(false);
 const syncingFifo = ref(false);
 const priceMsg = ref(null);
@@ -81,6 +83,7 @@ function resetEditState() {
   const p = product.value;
   // basic
   editSku.value = p?.sku || '';
+  editName.value = p?.name || '';
   editBrandId.value = p?.brand?.id || '';
   editAllowOversell.value = !!p?.allow_oversell;
   // prices theo nhóm thùng
@@ -159,14 +162,22 @@ async function saveBasic() {
   savingBasic.value = true;
   basicMsg.value = null;
   try {
+    const nameTrimmed = (editName.value || '').trim();
+    if (!nameTrimmed) {
+      basicMsg.value = { type: 'error', text: 'Tên sản phẩm không được để trống' };
+      savingBasic.value = false;
+      return;
+    }
     const body = {
       sku: (editSku.value || '').trim(),
+      name: nameTrimmed,
       brandId: editBrandId.value || null,
       allowOversell: !!editAllowOversell.value,
     };
     const { data } = await api.put(`/products/${props.productId}`, body);
     // backend returns full product (camelCase). Sync the fields we show.
     product.value.sku = data.sku ?? product.value.sku;
+    product.value.name = data.name ?? product.value.name;
     product.value.allow_oversell = data.allowOversell ?? body.allowOversell;
     if (data.brand) product.value.brand = { id: data.brand.id, name: data.brand.name };
     else if (!body.brandId) product.value.brand = null;
@@ -180,6 +191,29 @@ async function saveBasic() {
     };
   } finally {
     savingBasic.value = false;
+  }
+}
+
+// ── Ngừng bán (soft delete) — ADMIN, DELETE /products/:id ──
+async function deleteProduct() {
+  if (!props.productId || !isAdmin.value || deleting.value) return;
+  const ok = window.confirm(
+    `Ngừng bán sản phẩm "${product.value?.name || ''}"?\n\nSản phẩm sẽ bị ẩn khỏi danh mục và không lên đơn được nữa. Bạn có thể bật lại sau bằng cách import/sửa.`,
+  );
+  if (!ok) return;
+  deleting.value = true;
+  basicMsg.value = null;
+  try {
+    await api.delete(`/products/${props.productId}`);
+    emit('deleted', { id: props.productId });
+    emit('close');
+  } catch (err) {
+    const code = err.response?.status;
+    basicMsg.value = {
+      type: 'error',
+      text: code === 403 ? 'Chỉ admin' : err.response?.data?.error || 'Ngừng bán thất bại',
+    };
+    deleting.value = false;
   }
 }
 
@@ -426,6 +460,17 @@ function batchLevel(days) {
               <section v-if="isAdmin" class="space-y-4">
                 <h3 class="text-sm font-bold text-ink-primary">Thông tin cơ bản</h3>
 
+                <!-- Tên sản phẩm -->
+                <div>
+                  <label class="block text-xs font-semibold text-ink-secondary mb-1.5">Tên sản phẩm</label>
+                  <input
+                    v-model="editName"
+                    type="text"
+                    placeholder="Nhập tên sản phẩm..."
+                    class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none text-sm"
+                  />
+                </div>
+
                 <!-- SKU -->
                 <div>
                   <label class="block text-xs font-semibold text-ink-secondary mb-1.5">Mã SP (SKU)</label>
@@ -478,6 +523,16 @@ function batchLevel(days) {
                   class="h-10 w-full rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold disabled:opacity-50"
                 >
                   {{ savingBasic ? 'Đang lưu...' : 'Lưu thông tin cơ bản' }}
+                </button>
+
+                <!-- Ngừng bán (soft delete) -->
+                <button
+                  @click="deleteProduct"
+                  :disabled="deleting"
+                  class="h-10 w-full rounded-btn border border-red-300 text-red-600 hover:bg-red-50 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>
+                  {{ deleting ? 'Đang xử lý...' : 'Ngừng bán sản phẩm' }}
                 </button>
               </section>
 
