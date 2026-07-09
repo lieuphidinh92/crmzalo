@@ -5,6 +5,7 @@
  * LƯU Ý: MST / SĐT / email của INOCARE đang chờ anh Philip cung cấp.
  *        Điền vào đúng 3 trường `taxCode` / `phone` / `email` bên dưới là xong.
  */
+// Ngân hàng nhận tiền — cả 2 pháp nhân đều dùng MB Bank (BIN 970422 cho VietQR).
 export const COMPANIES = {
   halovn: {
     key: 'halovn',
@@ -14,6 +15,10 @@ export const COMPANIES = {
     taxCode: '0110086708',
     phone: '0362 431 998 / 0964 435 197',
     email: 'ketoanhalovn@gmail.com',
+    bankName: 'MB Bank (NH Quân Đội)',
+    bankBin: '970422',
+    accountNo: '238668999999',
+    accountName: 'CONG TY TNHH HALOVN',
   },
   inocare: {
     key: 'inocare',
@@ -23,6 +28,10 @@ export const COMPANIES = {
     taxCode: '0111344856',
     phone: '', // anh Philip chưa gửi SĐT Inocare — để trống
     email: 'inocare.ketoan@gmail.com',
+    bankName: 'MB Bank (NH Quân Đội)',
+    bankBin: '970422',
+    accountNo: '547969999',
+    accountName: 'CTY TNHH THUONG MAI VA XNK INOCARE',
   },
 };
 
