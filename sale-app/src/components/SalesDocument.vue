@@ -28,6 +28,18 @@ const fileSlug = computed(() => (isExport.value ? 'phieu-xuat-kho' : 'bien-ban-b
 const activeKey = ref(props.companyKey || 'halovn');
 const co = computed(() => getCompany(activeKey.value));
 
+// Mã VietQR động: tự điền số tiền + nội dung CK = số đơn. Ảnh từ img.vietqr.io.
+const qrOk = ref(true);
+const qrUrl = computed(() => {
+  const c = co.value;
+  if (!c.bankBin || !c.accountNo) return '';
+  const p = new URLSearchParams();
+  if (total.value > 0) p.set('amount', String(total.value));
+  if (docNo.value) p.set('addInfo', String(docNo.value));
+  if (c.accountName) p.set('accountName', c.accountName);
+  return `https://img.vietqr.io/image/${c.bankBin}-${c.accountNo}-qr_only.png?${p.toString()}`;
+});
+
 const fmt = new Intl.NumberFormat('vi-VN');
 const fillNum = (n) => (Number(n) > 0 ? fmt.format(Number(n)) : '');
 
@@ -116,14 +128,33 @@ async function downloadImage() {
     </div>
 
     <div ref="paper" class="page">
-      <!-- ===== HEADER PHÁP NHÂN ===== -->
-      <div class="org">
-        <div class="org-name">{{ co.name }}</div>
-        <div class="org-addr">{{ co.address }}</div>
-        <div v-if="co.taxCode || co.phone || co.email" class="org-meta">
-          <template v-if="co.taxCode">MST: {{ co.taxCode }}</template>
-          <template v-if="co.phone"> &nbsp;·&nbsp; ĐT: {{ co.phone }}</template>
-          <template v-if="co.email"> &nbsp;·&nbsp; {{ co.email }}</template>
+      <!-- ===== HEADER PHÁP NHÂN + THANH TOÁN ===== -->
+      <div class="head">
+        <div class="org">
+          <div class="org-name">{{ co.name }}</div>
+          <div class="org-addr">{{ co.address }}</div>
+          <div v-if="co.taxCode || co.phone || co.email" class="org-meta">
+            <template v-if="co.taxCode">MST: {{ co.taxCode }}</template>
+            <template v-if="co.phone"> &nbsp;·&nbsp; ĐT: {{ co.phone }}</template>
+            <template v-if="co.email"> &nbsp;·&nbsp; {{ co.email }}</template>
+          </div>
+        </div>
+
+        <!-- Khối thanh toán (chỉ phiếu xuất/hoá đơn) -->
+        <div v-if="isExport && co.accountNo" class="pay">
+          <div class="pay-title">THANH TOÁN CHUYỂN KHOẢN</div>
+          <img
+            v-if="qrUrl"
+            v-show="qrOk"
+            :src="qrUrl"
+            crossorigin="anonymous"
+            class="pay-qr"
+            alt="VietQR"
+            @error="qrOk = false"
+          />
+          <div class="pay-line">{{ co.bankName }}</div>
+          <div class="pay-line">STK: <b>{{ co.accountNo }}</b></div>
+          <div class="pay-line">{{ co.accountName }}</div>
         </div>
       </div>
 
@@ -294,9 +325,17 @@ async function downloadImage() {
   font-family:'Times New Roman',Times,serif;font-size:14px;line-height:1.4;}
 
 /* ===== Header pháp nhân ===== */
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;}
+.org{flex:1;min-width:0;}
 .org-name{font-weight:700;font-size:16px;text-transform:uppercase;}
 .org-addr{font-size:13.5px;font-style:italic;margin-top:2px;}
 .org-meta{font-size:12.5px;margin-top:2px;color:#222;}
+
+/* ===== Khối thanh toán chuyển khoản (góc phải) ===== */
+.pay{flex:0 0 auto;width:158px;text-align:center;border:1px solid #000;border-radius:6px;padding:6px 8px;}
+.pay-title{font-weight:700;font-size:10.5px;letter-spacing:.2px;}
+.pay-qr{width:120px;height:120px;object-fit:contain;margin:4px auto 3px;display:block;}
+.pay-line{font-size:11px;line-height:1.4;word-wrap:break-word;overflow-wrap:break-word;}
 
 /* ===== Tiêu đề ===== */
 .title{text-align:center;font-weight:700;font-size:26px;letter-spacing:.5px;
