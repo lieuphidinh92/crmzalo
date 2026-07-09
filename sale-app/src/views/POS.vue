@@ -237,7 +237,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
               type="button"
               class="h-12 px-4 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50 transition whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              ⤓ Lưu tạm
+              ⤓ Lưu tạm / Đơn nháp
             </button>
             <button
               @click="requestConfirm"
