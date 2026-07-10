@@ -28,7 +28,7 @@ export const COMPANIES = {
     name: 'CÔNG TY TNHH THƯƠNG MẠI VÀ XNK INOCARE',
     address: 'Số 58 Nv1 - Tổng cục 5, Yên Xá, Phường Thanh Liệt, Thành phố Hà Nội, Việt Nam',
     taxCode: '0111344856',
-    phone: '', // anh Philip chưa gửi SĐT Inocare — để trống
+    phone: '0362 431 998 / 0964 435 197', // dùng chung SĐT với HALOVN (theo yêu cầu)
     email: 'inocare.ketoan@gmail.com',
     bankName: 'MB Bank (NH Quân Đội)',
     bankBin: '970422',
