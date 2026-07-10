@@ -19,6 +19,8 @@ export const COMPANIES = {
     bankBin: '970422',
     accountNo: '238668999999',
     accountName: 'CONG TY TNHH HALOVN',
+    logo: '/halovn-logo.png',
+    theme: 'halovn', // xanh dương
   },
   inocare: {
     key: 'inocare',
@@ -32,6 +34,8 @@ export const COMPANIES = {
     bankBin: '970422',
     accountNo: '547969999',
     accountName: 'CTY TNHH THUONG MAI VA XNK INOCARE',
+    logo: '/inocare-logo.png',
+    theme: 'inocare', // xanh mint
   },
 };
 
