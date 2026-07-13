@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { formatVND, formatDateVN, tierLabel } from '../composables/useFormat';
+import { canZaloRemind, openZaloReminder } from '../composables/useDebtReminder';
 
 const props = defineProps({
   customer: { type: Object, required: true },
@@ -39,30 +40,11 @@ const dueBadge = computed(() => {
   return { cls: 'bg-emerald-50 text-emerald-700', label: `Hạn ${formatDateVN(props.customer.due_date)}` };
 });
 
-const canZalo = computed(() => !!(props.customer.zalo_uid || props.customer.phone));
+const canZalo = computed(() => canZaloRemind(props.customer));
 
-// Soạn link Zalo nhắc thu nợ: ưu tiên zalo_uid, fallback số điện thoại.
+// Mở Zalo + soạn sẵn tin nhắc thu nợ (dùng helper chung).
 function openZalo() {
-  const c = props.customer;
-  const name = c.full_name || c.store_name || 'anh/chị';
-  const amount = formatVND(c.debt || 0);
-  const dueText = c.due_date ? ` (hạn thanh toán ${formatDateVN(c.due_date)})` : '';
-  const msg =
-    `Dạ em chào ${name} ạ. Em xin phép nhắc nhẹ bên mình về khoản công nợ ` +
-    `còn lại là ${amount}${dueText} ạ. Khi nào thuận tiện mình hỗ trợ em ` +
-    `thanh toán giúp nhé, có gì cần đối chiếu lại em gửi sao kê cho mình ạ. Em cảm ơn nhiều!`;
-
-  let url;
-  if (c.zalo_uid) {
-    url = `https://zalo.me/${c.zalo_uid}`;
-  } else if (c.phone) {
-    const phone = String(c.phone).replace(/\D/g, '');
-    url = `https://zalo.me/${phone}`;
-  } else {
-    return;
-  }
-  url += `?message=${encodeURIComponent(msg)}`;
-  window.open(url, '_blank', 'noopener');
+  openZaloReminder(props.customer);
 }
 </script>
 
