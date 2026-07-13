@@ -87,6 +87,38 @@ const cancelReason = ref('');
 const cancelSaving = ref(false);
 const cancelError = ref('');
 
+// ── Return dialog (đánh dấu đơn hoàn — chỉ admin, đơn đã Giao thành công) ──
+const showReturn = ref(false);
+const returnReason = ref('');
+const returnSaving = ref(false);
+const returnError = ref('');
+
+// ── Chuyển trạng thái tiến bước (advance) ──
+const showAdvance = ref(false);
+const advanceSaving = ref(false);
+const advanceError = ref('');
+const shipTracking = ref('');
+const shipProvider = ref('');
+// Gợi ý đơn vị vận chuyển hay dùng (datalist — vẫn gõ tự do được)
+const SHIP_PROVIDERS = [
+  'Green SM',
+  'Giao Hàng Nhanh (GHN)',
+  'Giao Hàng Tiết Kiệm (GHTK)',
+  'Viettel Post',
+  'J&T Express',
+  'Ahamove',
+  'Grab',
+  'Nhất Tín',
+  'Khách tự lấy tại kho',
+];
+// Bước kế tiếp theo trạng thái hiện tại. Khớp FORWARD của backend order-service.
+const NEXT_STEP = {
+  draft: { to: 'confirmed', label: 'Xác nhận đơn' },
+  confirmed: { to: 'packing', label: 'Đóng gói / Chuẩn bị hàng' },
+  packing: { to: 'shipping', label: 'Chuyển sang Giao hàng' },
+  shipping: { to: 'completed', label: 'Hoàn tất đơn' },
+};
+
 const TIMELINE = [
   { key: 'draft', label: 'Nháp' },
   { key: 'confirmed', label: 'Xác nhận' },
@@ -106,13 +138,27 @@ const PAY_METHODS = [
 const norm = computed(() => order.value?.statusNormalized || order.value?.status || 'draft');
 const isCancelled = computed(() => norm.value === 'cancelled');
 const isCompleted = computed(() => norm.value === 'completed');
+const isReturned = computed(() => norm.value === 'returned');
 const activeStep = computed(() => TIMELINE.findIndex((s) => s.key === norm.value));
 
 const debt = computed(() => Number(order.value?.debtAmountValue ?? 0));
-const canPay = computed(() => order.value && !isCancelled.value);
-const canCancel = computed(() => order.value && !isCancelled.value && !isCompleted.value);
+const canPay = computed(() => order.value && !isCancelled.value && !isReturned.value);
+const canCancel = computed(
+  () => order.value && !isCancelled.value && !isCompleted.value && !isReturned.value,
+);
+// Đánh dấu hoàn: chỉ admin + đơn đã "Giao thành công" (backend cũng chặn tương tự).
+const canReturn = computed(() => isAdmin.value && order.value && isCompleted.value);
 // Xoá: chỉ admin + đơn Nháp/Đã huỷ (khớp ràng buộc backend; đơn đang chạy phải Huỷ trước).
 const canDelete = computed(() => isAdmin.value && order.value && ['draft', 'cancelled'].includes(norm.value));
+
+// Bước chuyển trạng thái kế tiếp (null nếu đơn đã hoàn tất/huỷ/hoàn hoặc trạng thái lạ).
+const nextStep = computed(() =>
+  order.value && !isCancelled.value && !isCompleted.value && !isReturned.value
+    ? NEXT_STEP[norm.value] || null
+    : null,
+);
+// Đơn khách tự lấy tại kho → không bắt buộc mã vận đơn khi chuyển "Đang giao".
+const isPickup = computed(() => order.value?.shippingMethod === 'pickup_at_warehouse');
 
 const orderTotal = computed(() => Number(order.value?.totalAmountValue ?? order.value?.totalAmount ?? 0));
 const paid = computed(() => Number(order.value?.paidAmount ?? 0));
@@ -285,6 +331,42 @@ async function submitPay() {
   }
 }
 
+function openAdvance() {
+  advanceError.value = '';
+  if (nextStep.value?.to === 'shipping') {
+    shipTracking.value = order.value?.trackingCode || '';
+    shipProvider.value = order.value?.shippingProvider || '';
+  }
+  showAdvance.value = true;
+}
+
+async function submitAdvance() {
+  const step = nextStep.value;
+  if (!step) return;
+  // "Đang giao" bắt buộc mã vận đơn, trừ đơn khách tự lấy tại kho.
+  if (step.to === 'shipping' && !isPickup.value && !shipTracking.value.trim()) {
+    advanceError.value = 'Vui lòng nhập mã vận đơn (hoặc đơn khách tự lấy tại kho).';
+    return;
+  }
+  advanceSaving.value = true;
+  advanceError.value = '';
+  try {
+    const body = { to_status: step.to };
+    if (step.to === 'shipping') {
+      if (shipTracking.value.trim()) body.trackingCode = shipTracking.value.trim();
+      if (shipProvider.value.trim()) body.shippingProvider = shipProvider.value.trim();
+    }
+    await api.post(`/orders/${route.params.id}/transition`, body);
+    showAdvance.value = false;
+    await load();
+    flashShareMsg(`Đã chuyển đơn sang "${statusLabel(step.to)}"`);
+  } catch (err) {
+    advanceError.value = err.response?.data?.error || 'Lỗi chuyển trạng thái';
+  } finally {
+    advanceSaving.value = false;
+  }
+}
+
 async function submitCancel() {
   if (!cancelReason.value.trim()) {
     cancelError.value = 'Vui lòng nhập lý do huỷ';
@@ -300,6 +382,25 @@ async function submitCancel() {
     cancelError.value = err.response?.data?.error || 'Lỗi huỷ đơn';
   } finally {
     cancelSaving.value = false;
+  }
+}
+
+async function submitReturn() {
+  if (!returnReason.value.trim()) {
+    returnError.value = 'Vui lòng nhập lý do hoàn';
+    return;
+  }
+  returnSaving.value = true;
+  returnError.value = '';
+  try {
+    await api.post(`/orders/${route.params.id}/return`, { returnReason: returnReason.value.trim() });
+    showReturn.value = false;
+    await load();
+    flashShareMsg('Đã đánh dấu đơn hoàn, kho đã được cộng lại');
+  } catch (err) {
+    returnError.value = err.response?.data?.error || 'Lỗi đánh dấu hoàn đơn';
+  } finally {
+    returnSaving.value = false;
   }
 }
 
@@ -371,6 +472,16 @@ async function deleteOrder() {
           <span v-if="order.cancelReason"> Lý do: {{ order.cancelReason }}</span>
         </div>
 
+        <!-- Returned banner -->
+        <div
+          v-else-if="isReturned"
+          class="bg-orange-50 border border-orange-200 text-orange-700 rounded-lg px-3 py-2 text-sm"
+        >
+          <span class="font-semibold">Đơn đã hoàn.</span>
+          <span v-if="order.returnReason"> Lý do: {{ order.returnReason }}</span>
+          <span class="block text-[11px] text-orange-600 mt-0.5">Hàng đã được cộng lại kho; đơn không tính vào doanh thu.</span>
+        </div>
+
         <!-- Status timeline -->
         <div v-else class="flex items-center">
           <template v-for="(s, idx) in TIMELINE" :key="s.key">
@@ -395,6 +506,18 @@ async function deleteOrder() {
             ></div>
           </template>
         </div>
+
+        <!-- Nút chuyển sang bước kế tiếp (Xác nhận → Đóng gói → Giao → Hoàn tất) -->
+        <button
+          v-if="nextStep"
+          @click="openAdvance"
+          class="mt-4 w-full h-11 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold shadow-pop flex items-center justify-center gap-2"
+        >
+          {{ nextStep.label }}
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+          </svg>
+        </button>
       </div>
 
       <!-- Customer -->
@@ -562,6 +685,18 @@ async function deleteOrder() {
       </button>
     </div>
 
+    <!-- Đánh dấu hoàn (admin) — chỉ đơn đã Giao thành công -->
+    <button
+      v-if="canReturn"
+      @click="showReturn = true; returnReason = ''; returnError = ''"
+      class="w-full h-11 mt-2 rounded-xl border border-orange-300 text-orange-700 font-semibold hover:bg-orange-50 flex items-center justify-center gap-2"
+    >
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+      </svg>
+      Đánh dấu đơn hoàn
+    </button>
+
     <!-- Xoá đơn (admin) — chỉ đơn Nháp / Đã huỷ -->
     <button
       v-if="canDelete"
@@ -673,6 +808,115 @@ async function deleteOrder() {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Return dialog -->
+    <div v-if="showReturn" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-ink-primary">Đánh dấu đơn hoàn</h3>
+          <button @click="showReturn = false" class="text-ink-disabled hover:text-ink-primary text-xl leading-none">✕</button>
+        </div>
+        <p class="text-sm text-ink-secondary mb-3">
+          Đơn <span class="font-mono font-semibold">{{ order?.orderCode }}</span> sẽ chuyển sang
+          <span class="font-semibold text-orange-700">Đơn hoàn</span>. Hàng đã bán sẽ được
+          <span class="font-semibold">cộng lại kho</span> và đơn <span class="font-semibold">không tính vào doanh thu</span>.
+        </p>
+        <form @submit.prevent="submitReturn" class="space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-ink-primary mb-1">Lý do hoàn *</label>
+            <textarea
+              v-model="returnReason"
+              rows="3"
+              placeholder="VD: Khách trả hàng, hàng lỗi, giao sai..."
+              class="w-full px-3 py-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm resize-none"
+            ></textarea>
+          </div>
+          <div v-if="returnError" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {{ returnError }}
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button type="button" @click="showReturn = false" :disabled="returnSaving" class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50">
+              Quay lại
+            </button>
+            <button type="submit" :disabled="returnSaving" class="flex-1 h-11 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold disabled:opacity-50">
+              {{ returnSaving ? 'Đang xử lý...' : 'Xác nhận hoàn' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Advance status dialog -->
+    <div v-if="showAdvance && nextStep" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-ink-primary">{{ nextStep.label }}</h3>
+          <button @click="showAdvance = false" class="text-ink-disabled hover:text-ink-primary text-xl leading-none">✕</button>
+        </div>
+
+        <!-- Ghi chú theo từng bước -->
+        <div v-if="nextStep.to === 'confirmed'" class="text-sm text-ink-secondary mb-3">
+          Xác nhận đơn <span class="font-mono font-semibold">{{ orderCode }}</span> đã đủ sản phẩm và có sale phụ trách.
+        </div>
+        <div
+          v-else-if="nextStep.to === 'packing'"
+          class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3"
+        >
+          ⚠️ Đóng gói sẽ <span class="font-semibold">trừ kho</span> theo số lượng trong đơn. Đơn cũ nhập từ MISA cần chọn lô trên CRM trước khi đóng gói.
+        </div>
+        <div v-else-if="nextStep.to === 'completed'" class="text-sm text-ink-secondary mb-3">
+          Hoàn tất đơn yêu cầu <span class="font-semibold">đã thu đủ tiền</span> (đơn công nợ được miễn).
+          <template v-if="debt > 0">
+            Còn nợ: <span class="font-bold text-red-600">{{ formatVND(debt) }}</span>.
+          </template>
+        </div>
+
+        <!-- Bước Giao hàng: nhập đơn vị VC + mã vận đơn -->
+        <template v-else-if="nextStep.to === 'shipping'">
+          <div v-if="isPickup" class="text-sm text-ink-secondary mb-3">
+            Đơn khách tự lấy tại kho — không bắt buộc mã vận đơn.
+          </div>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-ink-primary mb-1">Đơn vị vận chuyển</label>
+              <input
+                v-model="shipProvider"
+                list="ship-providers"
+                placeholder="VD: Green SM, GHN, GHTK..."
+                class="w-full h-11 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm"
+              />
+              <datalist id="ship-providers">
+                <option v-for="p in SHIP_PROVIDERS" :key="p" :value="p" />
+              </datalist>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-ink-primary mb-1">
+                Mã vận đơn <span v-if="!isPickup" class="text-rose-500">*</span>
+                <span v-else class="text-ink-disabled">(không bắt buộc)</span>
+              </label>
+              <input
+                v-model="shipTracking"
+                placeholder="Mã tracking từ đơn vị vận chuyển"
+                class="w-full h-11 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm font-mono"
+              />
+            </div>
+          </div>
+        </template>
+
+        <div v-if="advanceError" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-3">
+          {{ advanceError }}
+        </div>
+
+        <div class="flex gap-2 pt-4">
+          <button type="button" @click="showAdvance = false" :disabled="advanceSaving" class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50">
+            Quay lại
+          </button>
+          <button type="button" @click="submitAdvance" :disabled="advanceSaving" class="flex-1 h-11 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-semibold disabled:opacity-50">
+            {{ advanceSaving ? 'Đang xử lý...' : 'Xác nhận' }}
+          </button>
+        </div>
       </div>
     </div>
 

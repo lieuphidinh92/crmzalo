@@ -84,6 +84,7 @@ export function statusLabel(s) {
     completed: 'Hoàn tất',
     shipped: 'Đã giao',
     paid: 'Đã thanh toán',
+    returned: 'Đơn hoàn',
     cancelled: 'Đã huỷ',
   };
   return map[s] ?? s;
@@ -98,6 +99,7 @@ export function statusColor(s) {
     completed: 'bg-emerald-100 text-emerald-700',
     shipped: 'bg-emerald-100 text-emerald-700',
     paid: 'bg-emerald-100 text-emerald-700',
+    returned: 'bg-orange-100 text-orange-700',
     cancelled: 'bg-rose-100 text-rose-700',
   };
   return map[s] ?? 'bg-gray-100 text-gray-700';

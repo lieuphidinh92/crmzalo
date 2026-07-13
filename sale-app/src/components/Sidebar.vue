@@ -37,7 +37,7 @@ const navItems = computed(() => [
   { name: 'home', label: 'Tổng quan', to: '/', icon: 'home' },
   { name: 'products', label: 'Sản phẩm', to: '/products', icon: 'package', soon: true },
   { name: 'create', label: 'Tạo đơn hàng', to: '/pos', icon: 'cart' },
-  { name: 'orders', label: 'Đơn hàng', to: '/orders', icon: 'clipboard', soon: true },
+  { name: 'orders', label: 'Danh sách Đơn hàng', to: '/orders', icon: 'clipboard' },
   { name: 'customers', label: 'Khách hàng', to: '/customers', icon: 'users' },
   { name: 'debt', label: 'Công nợ', to: '/debt', icon: 'wallet' },
   { name: 'follow-up', label: 'Cần chăm sóc', to: '/follow-up', icon: 'heart' },
