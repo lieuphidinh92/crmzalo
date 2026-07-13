@@ -350,7 +350,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const baseWhere: any = {
         orgId: user.orgId,
         debtAmountValue: { gt: 0 },
-        status: { notIn: ['cancelled'] },
+        status: { notIn: ['cancelled', 'returned'] },
       };
       if (user.role === 'member') {
         baseWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
@@ -881,7 +881,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         const orderWhere: any = {
           orgId: user.orgId,
           debtAmountValue: { gt: 0 },
-          status: { notIn: ['cancelled'] },
+          status: { notIn: ['cancelled', 'returned'] },
         };
         if (user.role === 'member') {
           orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
@@ -993,7 +993,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             orgId: user.orgId,
             contactId: { in: pageIds },
             debtAmountValue: { gt: 0 },
-            status: { notIn: ['cancelled'] },
+            status: { notIn: ['cancelled', 'returned'] },
           };
           const debtGrouped: any[] = await prisma.order.groupBy({
             by: ['contactId'],
@@ -1097,7 +1097,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         const orderWhere: any = {
           orgId: user.orgId,
           debtAmountValue: { gt: 0 },
-          status: { notIn: ['cancelled'] },
+          status: { notIn: ['cancelled', 'returned'] },
         };
         if (user.role === 'member') {
           orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
@@ -1184,7 +1184,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           orgId: user.orgId,
           contactId: { in: pageIds },
           debtAmountValue: { gt: 0 },
-          status: { notIn: ['cancelled'] },
+          status: { notIn: ['cancelled', 'returned'] },
         };
         const debtGrouped: any[] = await prisma.order.groupBy({
           by: ['contactId'],
@@ -1359,7 +1359,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             orgId: user.orgId,
             contactId: id,
             debtAmountValue: { gt: 0 },
-            status: { notIn: ['cancelled'] },
+            status: { notIn: ['cancelled', 'returned'] },
           },
           _sum: { debtAmountValue: true },
           _count: { id: true },

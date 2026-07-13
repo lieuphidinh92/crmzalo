@@ -54,7 +54,7 @@ function debtOrderWhere(user: { id: string; orgId: string; role: string }) {
   const where: any = {
     orgId: user.orgId,
     debtAmountValue: { gt: 0 },
-    status: { notIn: ['cancelled'] },
+    status: { notIn: ['cancelled', 'returned'] },
   };
   if (user.role === 'member') {
     where.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
@@ -331,7 +331,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           const orders = await tx.order.findMany({
             where: {
               orgId: user.orgId, contactId: contact.id,
-              debtAmountValue: { gt: 0 }, status: { notIn: ['cancelled'] },
+              debtAmountValue: { gt: 0 }, status: { notIn: ['cancelled', 'returned'] },
             },
             select: { id: true, orderCode: true, debtAmountValue: true, paidAmount: true },
             orderBy: [{ orderDate: 'asc' }, { createdAt: 'asc' }],
@@ -505,7 +505,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
         if (!contact) return reply.status(404).send({ error: 'Không tìm thấy khách hàng' });
 
         // Đơn của KH (bỏ đơn huỷ). Member chỉ thấy đơn mình phụ trách/tạo.
-        const orderWhere: any = { orgId: user.orgId, contactId: id, status: { notIn: ['cancelled'] } };
+        const orderWhere: any = { orgId: user.orgId, contactId: id, status: { notIn: ['cancelled', 'returned'] } };
         if (user.role === 'member') {
           orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
         }

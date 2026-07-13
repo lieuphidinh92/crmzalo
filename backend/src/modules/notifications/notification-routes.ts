@@ -110,7 +110,7 @@ export async function notificationRoutes(app: FastifyInstance) {
           {
             debtAmountValue: { gt: 0 },
             debtDueDate: { lt: new Date() },
-            status: { notIn: ['cancelled'] },
+            status: { notIn: ['cancelled', 'returned'] },
           },
         ],
       },

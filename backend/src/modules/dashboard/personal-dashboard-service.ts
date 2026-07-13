@@ -247,7 +247,7 @@ export async function getPersonalKpi(
       prisma.order.aggregate({
         where: {
           orgId,
-          status: { not: 'cancelled' },
+          status: { notIn: ['cancelled', 'returned'] },
           contact: { createdAt: { lt: monthStart } },
           AND: [
             {
@@ -270,7 +270,7 @@ export async function getPersonalKpi(
       prisma.order.aggregate({
         where: {
           orgId,
-          status: { not: 'cancelled' },
+          status: { notIn: ['cancelled', 'returned'] },
           contact: { createdAt: { lt: lastMonthStart } },
           AND: [
             {

@@ -19,8 +19,13 @@ export const ORDER_STATUSES = [
   'packing',
   'shipping',
   'completed',
+  'returned',
   'cancelled',
 ] as const;
+
+// Statuses whose order is financially reversed — must be EXCLUDED from
+// revenue/debt aggregates everywhere `cancelled` is excluded.
+export const NON_REVENUE_STATUSES = ['cancelled', 'returned'] as const;
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
@@ -46,13 +51,17 @@ const FORWARD: Record<OrderStatus, OrderStatus[]> = {
   packing: ['shipping'],
   shipping: ['completed'],
   completed: [],
+  returned: [],
   cancelled: [],
 };
 
 export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
   if (to === 'cancelled') {
-    return from !== 'completed' && from !== 'cancelled';
+    return from !== 'completed' && from !== 'cancelled' && from !== 'returned';
   }
+  // `returned` is reached only via the dedicated /return endpoint (a
+  // delivered order sent back), never through the forward pipeline.
+  if (to === 'returned') return false;
   return FORWARD[from].includes(to);
 }
 

@@ -78,6 +78,9 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
       if (to === 'cancelled') {
         return reply.status(400).send({ error: 'Dùng /cancel để huỷ đơn (yêu cầu lý do)' });
       }
+      if (to === 'returned') {
+        return reply.status(400).send({ error: 'Dùng /return để đánh dấu đơn hoàn (yêu cầu lý do)' });
+      }
       if (!canTransition(from, to)) {
         return reply.status(400).send({
           error: `Không thể chuyển từ ${from} → ${to}. Chỉ được chuyển qua bước kế tiếp.`,
@@ -322,6 +325,73 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
     } catch (err) {
       logger.error('[orders] Cancel error:', err);
       return reply.status(500).send({ error: 'Failed to cancel order' });
+    }
+  });
+
+  // POST /api/v1/orders/:id/return — mark a DELIVERED order returned.
+  // Only allowed from `completed` (a shipped/delivered order the customer
+  // sent back). Restocks inventory exactly like /cancel (stock was already
+  // deducted at packing) and excludes the order from revenue/debt via
+  // NON_REVENUE_STATUSES. Admin-only: reversing a completed sale is a
+  // financial action that should stay with owner/admin.
+  app.post('/api/v1/orders/:id/return', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      if (user.role !== 'owner' && user.role !== 'admin') {
+        return reply.status(403).send({ error: 'Chỉ Quản lý (owner/admin) được đánh dấu đơn hoàn' });
+      }
+      const { id } = request.params as { id: string };
+      const body = request.body as { returnReason?: string };
+      if (!body.returnReason?.trim()) {
+        return reply.status(400).send({ error: 'Vui lòng nhập lý do hoàn đơn' });
+      }
+
+      const baseScope = orderScopeWhere(user);
+      const order = await prisma.order.findFirst({
+        where: { AND: [baseScope, { id }] },
+        include: { items: true, gifts: true },
+      });
+      if (!order) return reply.status(404).send({ error: 'Order not found' });
+
+      const from = normalizeStatus(order.status);
+      if (from === 'returned') {
+        return reply.status(400).send({ error: 'Đơn đã ở trạng thái hoàn' });
+      }
+      if (from !== 'completed') {
+        return reply.status(400).send({
+          error: 'Chỉ đơn đã "Giao thành công" mới đánh dấu hoàn được. Đơn chưa giao xong dùng Huỷ đơn.',
+        });
+      }
+
+      // A completed order always had its stock deducted at packing → restock.
+      await prisma.$transaction(async (tx: any) => {
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: 'returned',
+            returnReason: body.returnReason!.trim(),
+            returnedAt: new Date(),
+          },
+        });
+        if (order.legacyCost) {
+          await restoreStockForOrder(order.id, user, tx);
+        } else {
+          await reverseFIFO(tx, order.id, user);
+          await restoreGiftsOnly(order.id, user, tx);
+        }
+      });
+
+      const full = await prisma.order.findUnique({
+        where: { id: order.id },
+        include: ORDER_FULL_INCLUDE,
+      });
+      return {
+        ...stripCostFromOrder(full!, user.role),
+        statusNormalized: normalizeStatus(full!.status),
+      };
+    } catch (err) {
+      logger.error('[orders] Return error:', err);
+      return reply.status(500).send({ error: 'Failed to mark order returned' });
     }
   });
 }

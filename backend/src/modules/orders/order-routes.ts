@@ -21,6 +21,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import {
   ORDER_STATUSES,
+  NON_REVENUE_STATUSES,
   type OrderStatus,
   normalizeStatus,
   canEditOrderStatus,
@@ -94,7 +95,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
         filters.push({
           debtAmountValue: { gt: 0 },
           debtDueDate: { lt: new Date() },
-          status: { notIn: ['cancelled'] },
+          status: { notIn: [...NON_REVENUE_STATUSES] },
         });
       }
       if (q.search) {
@@ -157,7 +158,18 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/orders/pipeline-summary', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = reqUser(request);
-      const where = orderScopeWhere(user);
+      const q = request.query as { from?: string; to?: string };
+      const scope = orderScopeWhere(user);
+
+      // Tab counts follow the list's date range so the numbers match the rows
+      // on screen; debt/expiry warnings stay global (they are not range-bound).
+      const where: Prisma.OrderWhereInput = { ...scope };
+      if (q.from || q.to) {
+        const range: Prisma.DateTimeFilter = {};
+        if (q.from) range.gte = new Date(q.from);
+        if (q.to) range.lte = new Date(q.to + 'T23:59:59');
+        where.orderDate = range;
+      }
 
       const grouped = await prisma.order.groupBy({
         by: ['status'],
@@ -171,6 +183,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
         packing: 0,
         shipping: 0,
         completed: 0,
+        returned: 0,
         cancelled: 0,
       };
       for (const g of grouped) {
@@ -182,10 +195,10 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       const [overdueCount, expiringBatchesCount] = await Promise.all([
         prisma.order.count({
           where: {
-            ...where,
+            ...scope,
             debtAmountValue: { gt: 0 },
             debtDueDate: { lt: new Date() },
-            status: { notIn: ['cancelled'] },
+            status: { notIn: [...NON_REVENUE_STATUSES] },
           },
         }),
         prisma.inventoryBatch.count({

@@ -41,7 +41,7 @@ async function runDailyDigest(): Promise<void> {
       where: {
         debtAmountValue: { gt: 0 },
         debtDueDate: { lt: now },
-        status: { notIn: ['cancelled'] },
+        status: { notIn: ['cancelled', 'returned'] },
       },
     }),
     prisma.inventoryBatch.count({

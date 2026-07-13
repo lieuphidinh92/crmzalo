@@ -582,6 +582,7 @@ model Order {
   internalNote String? @map("internal_note")
   customerNote String? @map("customer_note")
   cancelReason String? @map("cancel_reason")
+  returnReason String? @map("return_reason")
 
   // VAT placeholder for Easy Invoice integration (Session 2B)
   vatInvoiceId     String? @map("vat_invoice_id")
@@ -607,6 +608,7 @@ model Order {
   shippedAt   DateTime? @map("shipped_at")
   completedAt DateTime? @map("completed_at")
   cancelledAt DateTime? @map("cancelled_at")
+  returnedAt  DateTime? @map("returned_at")
 
   // Pre-FIFO orders carry per-line cost snapshots from MISA imports or
   // earlier sessions; their `unit_cost`/`line_cost` must NOT be touched
