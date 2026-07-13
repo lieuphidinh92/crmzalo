@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { api } from '../api/client';
 import { useAuthStore } from '../stores/auth';
 import { formatVND, formatVNDShort, formatDateVN, formatDateTimeVN, statusLabel, statusColor } from '../composables/useFormat';
+import { canZaloRemind, openZaloReminder } from '../composables/useDebtReminder';
 import DebtCustomerRow from '../components/DebtCustomerRow.vue';
 
 const auth = useAuthStore();
@@ -12,6 +13,69 @@ const canRecordPayment = computed(() => ['owner', 'admin'].includes(auth.user?.r
 const customers = ref([]);
 const loading = ref(false);
 const errorMsg = ref('');
+
+// ── Tìm kiếm nhanh khách đang nợ (lọc client-side theo tên / SĐT / cửa hàng) ──
+const search = ref('');
+const filteredCustomers = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  if (!q) return customers.value;
+  const digits = q.replace(/\D/g, '');
+  return customers.value.filter((c) => {
+    const name = (c.full_name || '').toLowerCase();
+    const store = (c.store_name || '').toLowerCase();
+    const phone = String(c.phone || '').replace(/\D/g, '');
+    return name.includes(q) || store.includes(q) || (digits && phone.includes(digits));
+  });
+});
+
+// ── Bảng bật lên khi bấm 2 thẻ tổng hợp ──
+const showAllDebt = ref(false); // bấm "Tổng công nợ"
+const showOverdue = ref(false); // bấm "Quá hạn"
+const allSort = ref('overdue'); // 'overdue' | 'amount'
+
+function daysOverdueOf(c) {
+  if (!c.due_date) return null;
+  return Math.floor((Date.now() - new Date(c.due_date).getTime()) / 86400000);
+}
+
+// Danh sách tất cả KH đang nợ, sắp theo lựa chọn.
+const allDebtSorted = computed(() => {
+  const list = [...customers.value];
+  if (allSort.value === 'amount') {
+    list.sort((a, b) => (b.debt || 0) - (a.debt || 0));
+  } else {
+    // Theo quá hạn: quá hạn lên đầu → hạn sớm nhất → nợ nhiều hơn (khớp backend).
+    list.sort((a, b) => {
+      const ao = a.is_overdue ? 1 : 0;
+      const bo = b.is_overdue ? 1 : 0;
+      if (ao !== bo) return bo - ao;
+      const ad = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+      const bd = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+      if (ad !== bd) return ad - bd;
+      return (b.debt || 0) - (a.debt || 0);
+    });
+  }
+  return list;
+});
+
+// Chỉ KH có đơn quá hạn — trễ nhiều nhất lên đầu.
+const overdueList = computed(() => {
+  const list = customers.value.filter((c) => c.overdue_orders > 0 || c.overdue_debt > 0);
+  list.sort((a, b) => {
+    const ad = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+    const bd = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+    if (ad !== bd) return ad - bd;
+    return (b.overdue_debt || 0) - (a.overdue_debt || 0);
+  });
+  return list;
+});
+
+// Từ bảng tổng hợp bấm 1 KH → đóng bảng, mở chi tiết KH đó.
+function openFromSheet(c) {
+  showAllDebt.value = false;
+  showOverdue.value = false;
+  openCustomer(c);
+}
 
 // Tổng hợp công nợ (lấy từ /debt-summary để khớp với CRM lớn).
 const summary = ref({ total: 0, overdue_total: 0, contact_count: 0, overdue_order_count: 0 });
@@ -344,28 +408,65 @@ onMounted(loadList);
 <template>
   <div class="px-4 lg:px-6 py-4 lg:py-6 max-w-[1100px] mx-auto">
     <!-- Header -->
-    <div class="mb-4">
+    <div class="mb-3">
       <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Công nợ</h1>
       <p class="text-xs text-ink-secondary mt-0.5">
         {{ summary.contact_count?.toLocaleString('vi-VN') || 0 }} đại lý đang nợ · ưu tiên đòi đơn quá hạn
       </p>
     </div>
 
-    <!-- Summary cards -->
+    <!-- Tìm kiếm nhanh khách đang nợ -->
+    <div class="relative mb-3">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-secondary pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+      </svg>
+      <input
+        v-model="search"
+        type="search"
+        inputmode="search"
+        placeholder="Tìm khách đang nợ (tên, SĐT, cửa hàng)…"
+        class="w-full h-11 pl-9 pr-9 rounded-btn bg-white border border-line-300 focus:border-royal-600 focus:ring-2 focus:ring-royal-100 outline-none text-sm"
+      />
+      <button
+        v-if="search"
+        @click="search = ''"
+        class="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary"
+        aria-label="Xoá tìm kiếm"
+      >
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <!-- Summary cards (bấm để xem danh sách) -->
     <div class="grid grid-cols-2 gap-3 mb-4">
-      <div class="bg-white border border-line-200 rounded-card p-4 shadow-card">
-        <div class="text-xs text-ink-secondary">Tổng công nợ</div>
+      <button
+        type="button"
+        @click="showAllDebt = true"
+        class="text-left bg-white border border-line-200 rounded-card p-4 shadow-card hover:border-royal-300 active:scale-[0.99] transition"
+      >
+        <div class="flex items-center justify-between">
+          <div class="text-xs text-ink-secondary">Tổng công nợ</div>
+          <svg class="w-4 h-4 text-ink-disabled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
         <div class="text-lg lg:text-xl font-bold text-ink-primary mt-1 tabular-nums">
           {{ formatVND(summary.total || 0) }}
         </div>
-      </div>
-      <div class="bg-white border border-rose-200 rounded-card p-4 shadow-card">
-        <div class="text-xs text-rose-600">Quá hạn</div>
+        <div class="text-[11px] text-royal-700 mt-0.5 font-medium">Xem danh sách</div>
+      </button>
+      <button
+        type="button"
+        @click="showOverdue = true"
+        class="text-left bg-white border border-rose-200 rounded-card p-4 shadow-card hover:border-rose-300 active:scale-[0.99] transition"
+      >
+        <div class="flex items-center justify-between">
+          <div class="text-xs text-rose-600">Quá hạn</div>
+          <svg class="w-4 h-4 text-rose-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
         <div class="text-lg lg:text-xl font-bold text-rose-600 mt-1 tabular-nums">
           {{ formatVND(summary.overdue_total || 0) }}
         </div>
-        <div class="text-[11px] text-ink-secondary mt-0.5">{{ summary.overdue_order_count || 0 }} đơn quá hạn</div>
-      </div>
+        <div class="text-[11px] text-ink-secondary mt-0.5">{{ summary.overdue_order_count || 0 }} đơn quá hạn · nhắc nợ</div>
+      </button>
     </div>
 
     <!-- Skeleton -->
@@ -392,8 +493,14 @@ onMounted(loadList);
 
     <!-- List -->
     <div v-else class="space-y-2.5">
+      <div
+        v-if="filteredCustomers.length === 0"
+        class="bg-white border border-line-200 rounded-card p-8 text-center text-sm text-ink-secondary"
+      >
+        Không tìm thấy khách nào khớp “<span class="font-semibold text-ink-primary">{{ search }}</span>”.
+      </div>
       <DebtCustomerRow
-        v-for="c in customers"
+        v-for="c in filteredCustomers"
         :key="c.id"
         :customer="c"
         @open="openCustomer"
@@ -788,6 +895,117 @@ onMounted(loadList);
           >
             {{ paySaving ? 'Đang ghi nhận…' : 'Xác nhận thu tiền' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sheet: Tất cả công nợ (bấm thẻ "Tổng công nợ") -->
+    <div v-if="showAllDebt" class="fixed inset-0 z-50 flex items-end lg:items-center lg:justify-center">
+      <div class="absolute inset-0 bg-black/40" @click="showAllDebt = false"></div>
+      <div class="relative bg-white w-full lg:max-w-lg rounded-t-2xl lg:rounded-card shadow-pop max-h-[85vh] flex flex-col">
+        <div class="flex items-center justify-between gap-3 p-4 border-b border-line-200">
+          <div class="min-w-0">
+            <div class="font-bold text-ink-primary">Tất cả công nợ</div>
+            <div class="text-xs text-ink-secondary tabular-nums">
+              {{ customers.length }} đại lý · {{ formatVND(summary.total || 0) }}
+            </div>
+          </div>
+          <button @click="showAllDebt = false" class="shrink-0 w-8 h-8 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <!-- Chuyển cách sắp xếp -->
+        <div class="flex gap-1.5 p-3 border-b border-line-200">
+          <button
+            @click="allSort = 'overdue'"
+            class="flex-1 h-9 rounded-btn text-xs font-semibold border transition-colors"
+            :class="allSort === 'overdue' ? 'border-royal-600 bg-royal-50 text-royal-700' : 'border-line-300 text-ink-secondary'"
+          >Theo quá hạn</button>
+          <button
+            @click="allSort = 'amount'"
+            class="flex-1 h-9 rounded-btn text-xs font-semibold border transition-colors"
+            :class="allSort === 'amount' ? 'border-royal-600 bg-royal-50 text-royal-700' : 'border-line-300 text-ink-secondary'"
+          >Nợ nhiều nhất</button>
+        </div>
+
+        <div class="p-3 overflow-y-auto space-y-2">
+          <button
+            v-for="c in allDebtSorted"
+            :key="c.id"
+            @click="openFromSheet(c)"
+            class="w-full text-left flex items-center gap-3 p-2.5 rounded-card border border-line-200 hover:bg-surface-soft transition"
+          >
+            <div class="w-9 h-9 rounded-full bg-royal-50 text-royal-700 flex items-center justify-center font-bold text-sm shrink-0">
+              {{ (c.full_name || c.store_name || '?').trim().slice(0, 1).toUpperCase() }}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="font-semibold text-ink-primary truncate text-sm">{{ c.full_name || '—' }}</div>
+              <div class="text-[11px] mt-0.5">
+                <span v-if="c.is_overdue" class="text-rose-600 font-medium">Quá hạn {{ daysOverdueOf(c) }} ngày · {{ c.overdue_orders || 0 }} đơn</span>
+                <span v-else class="text-ink-secondary">{{ c.order_count || 0 }} đơn nợ</span>
+              </div>
+            </div>
+            <div class="font-bold tabular-nums text-sm shrink-0" :class="c.is_overdue ? 'text-rose-600' : 'text-ink-primary'">
+              {{ formatVND(c.debt || 0) }}
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sheet: Đơn quá hạn (bấm thẻ "Quá hạn") -->
+    <div v-if="showOverdue" class="fixed inset-0 z-50 flex items-end lg:items-center lg:justify-center">
+      <div class="absolute inset-0 bg-black/40" @click="showOverdue = false"></div>
+      <div class="relative bg-white w-full lg:max-w-lg rounded-t-2xl lg:rounded-card shadow-pop max-h-[85vh] flex flex-col">
+        <div class="flex items-center justify-between gap-3 p-4 border-b border-line-200">
+          <div class="min-w-0">
+            <div class="font-bold text-rose-600">Đơn quá hạn</div>
+            <div class="text-xs text-ink-secondary tabular-nums">
+              {{ overdueList.length }} khách · {{ summary.overdue_order_count || 0 }} đơn · {{ formatVND(summary.overdue_total || 0) }}
+            </div>
+          </div>
+          <button @click="showOverdue = false" class="shrink-0 w-8 h-8 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div class="p-3 overflow-y-auto space-y-2">
+          <div v-if="overdueList.length === 0" class="text-center py-10 text-sm text-ink-secondary">
+            Không có đơn quá hạn 🎉
+          </div>
+          <div
+            v-for="c in overdueList"
+            :key="c.id"
+            class="border border-rose-200 bg-rose-50/30 rounded-card p-3"
+          >
+            <button @click="openFromSheet(c)" class="w-full text-left">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-semibold text-ink-primary truncate">{{ c.full_name || '—' }}</span>
+                <span class="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Quá hạn {{ daysOverdueOf(c) }} ngày</span>
+              </div>
+              <div class="text-[11px] text-ink-secondary mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                <span v-if="c.phone">📞 {{ c.phone }}</span>
+                <span v-if="c.province">📍 {{ c.province }}</span>
+                <span>{{ c.overdue_orders || 0 }} đơn quá hạn</span>
+              </div>
+              <div class="mt-1.5 text-sm font-bold text-rose-600 tabular-nums">
+                Quá hạn {{ formatVND(c.overdue_debt || 0) }}
+                <span class="text-[11px] font-normal text-ink-secondary">· tổng nợ {{ formatVNDShort(c.debt || 0) }}</span>
+              </div>
+            </button>
+            <button
+              @click="openZaloReminder(c)"
+              :disabled="!canZaloRemind(c)"
+              class="mt-2 w-full h-9 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              :title="canZaloRemind(c) ? 'Mở Zalo và soạn sẵn tin nhắc nợ' : 'KH chưa có Zalo / SĐT'"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+              </svg>
+              Nhắc nợ qua Zalo
+            </button>
+          </div>
         </div>
       </div>
     </div>
