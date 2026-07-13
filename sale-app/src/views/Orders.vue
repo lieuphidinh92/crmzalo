@@ -29,18 +29,31 @@ const range = ref('30'); // 7 | 30 | 90 | all
 
 let debounceTimer = null;
 
-// Chip key → raw status values sent to the API. Legacy MISA rows carry
-// `paid`/`shipped`; fold them into the matching modern chip so old orders
-// still show under the right filter.
-const statusChips = [
+// Tab key → raw status values sent to the API. Legacy MISA rows carry
+// `paid`/`shipped`; fold them into the matching modern tab so old orders
+// still show under the right filter. `normalizeStatus` on the backend maps
+// them the same way, so the per-tab counts line up with the rows.
+const statusTabs = [
   { key: '', label: 'Tất cả', api: '' },
-  { key: 'draft', label: 'Nháp', api: 'draft' },
+  { key: 'draft', label: 'Chờ xác nhận', api: 'draft' },
   { key: 'confirmed', label: 'Đã xác nhận', api: 'confirmed' },
-  { key: 'packing', label: 'Đóng gói', api: 'packing' },
+  { key: 'packing', label: 'Đang đóng gói', api: 'packing' },
   { key: 'shipping', label: 'Đang giao', api: 'shipping,shipped' },
-  { key: 'completed', label: 'Hoàn tất', api: 'completed,paid' },
-  { key: 'cancelled', label: 'Huỷ', api: 'cancelled' },
+  { key: 'completed', label: 'Giao thành công', api: 'completed,paid' },
+  { key: 'returned', label: 'Đơn hoàn', api: 'returned' },
+  { key: 'cancelled', label: 'Đơn huỷ', api: 'cancelled' },
 ];
+
+// Per-tab counts from /orders/pipeline-summary, keyed by normalized status.
+// Scoped to the same date range as the list so the numbers match on screen.
+const counts = ref({});
+
+function tabCount(key) {
+  if (key === '') {
+    return Object.values(counts.value).reduce((a, b) => a + (b || 0), 0);
+  }
+  return counts.value[key] || 0;
+}
 
 const rangeOptions = [
   { value: '7', label: '7 ngày qua' },
@@ -63,7 +76,7 @@ async function load() {
   loading.value = true;
   errorMsg.value = '';
   try {
-    const apiStatus = statusChips.find((c) => c.key === status.value)?.api ?? '';
+    const apiStatus = statusTabs.find((c) => c.key === status.value)?.api ?? '';
     const params = {
       page: page.value,
       limit: limit.value,
@@ -85,15 +98,34 @@ async function load() {
   }
 }
 
+// Tab counts depend only on the date range (not status/search), so refresh
+// them when the range changes. Failure is non-blocking — tabs just show 0.
+async function loadCounts() {
+  try {
+    const params = {};
+    const from = fromDate();
+    if (from) params.from = from;
+    const { data } = await api.get('/orders/pipeline-summary', { params });
+    counts.value = data.counts || {};
+  } catch {
+    counts.value = {};
+  }
+}
+
 watch([q, status, range], () => {
   page.value = 1;
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(load, 250);
 });
 
+watch(range, loadCounts);
+
 watch(page, load);
 
-onMounted(load);
+onMounted(() => {
+  load();
+  loadCounts();
+});
 
 function totalOf(o) {
   return o.totalAmountValue ?? o.totalAmount ?? 0;
@@ -150,7 +182,7 @@ const pageNumbers = computed(() => {
     <!-- Header -->
     <div class="flex items-center justify-between mb-4">
       <div>
-        <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Đơn hàng</h1>
+        <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Danh sách Đơn hàng</h1>
         <p class="text-xs text-ink-secondary mt-0.5">{{ total.toLocaleString('vi-VN') }} đơn</p>
       </div>
       <button
@@ -164,9 +196,34 @@ const pageNumbers = computed(() => {
       </button>
     </div>
 
-    <!-- Search + range + chips -->
+    <!-- Tab bar theo trạng thái (cuộn ngang trên mobile) -->
+    <div class="border-b border-line-200 mb-4 overflow-x-auto">
+      <div class="flex gap-1 min-w-max">
+        <button
+          v-for="tab in statusTabs"
+          :key="tab.key"
+          @click="status = tab.key"
+          class="relative h-10 px-3 text-sm font-semibold whitespace-nowrap transition border-b-2 -mb-px flex items-center gap-1.5"
+          :class="
+            status === tab.key
+              ? 'text-royal-700 border-royal-700'
+              : 'text-ink-secondary border-transparent hover:text-ink-primary'
+          "
+        >
+          {{ tab.label }}
+          <span
+            class="text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center"
+            :class="status === tab.key ? 'bg-royal-100 text-royal-700' : 'bg-surface-soft text-ink-secondary'"
+          >
+            {{ tabCount(tab.key) }}
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search + range -->
     <div class="bg-white border border-line-200 rounded-card p-4 shadow-card mb-4">
-      <div class="grid lg:grid-cols-3 gap-3 mb-3">
+      <div class="grid lg:grid-cols-3 gap-3">
         <div class="relative lg:col-span-2">
           <input
             v-model="q"
@@ -184,22 +241,6 @@ const pageNumbers = computed(() => {
         >
           <option v-for="opt in rangeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
-      </div>
-
-      <div class="flex gap-2 flex-wrap">
-        <button
-          v-for="chip in statusChips"
-          :key="chip.key"
-          @click="status = chip.key"
-          class="h-8 px-3 rounded-full text-xs font-semibold border transition"
-          :class="
-            status === chip.key
-              ? 'bg-royal-700 text-white border-royal-700'
-              : 'bg-white text-ink-primary border-line-300 hover:border-royal-700'
-          "
-        >
-          {{ chip.label }}
-        </button>
       </div>
     </div>
 

@@ -1,6 +1,13 @@
 # ── Dependencies ─────────────────────────────────────────────────────
-node_modules/
-**/node_modules/
+# KHÔNG dùng dấu "/" cuối để phủ cả symlink `node_modules` (thủ thuật
+# iCloud `.nosync` trên Mac) lẫn thư mục thật. Bao luôn bản Finder nhân
+# đôi ("node_modules 2") và mọi thư mục *.nosync — đây là thứ làm git
+# quét chậm mỗi lần status/commit.
+node_modules
+**/node_modules
+**/node_modules*
+*.nosync
+**/*.nosync
 .pnpm-store/
 
 # ── Build artifacts ─────────────────────────────────────────────────
