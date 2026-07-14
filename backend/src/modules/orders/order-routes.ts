@@ -65,6 +65,12 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       const baseScope = orderScopeWhere(user);
       const filters: Prisma.OrderWhereInput[] = [baseScope];
 
+      // "Đơn nợ đầu kỳ" (status='opening_balance', mã NDK-…) là bút toán
+      // di trú công nợ, KHÔNG phải đơn bán → ẩn khỏi màn Danh sách Đơn hàng.
+      // (Chúng vẫn hiện ở module Công nợ.) Nếu không loại, normalizeStatus
+      // quy status lạ này về 'draft' và chúng lọt vào tab "Chờ xác nhận".
+      filters.push({ status: { not: 'opening_balance' } });
+
       if (q.status) {
         const statuses = q.status
           .split(',')
@@ -163,7 +169,10 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
 
       // Tab counts follow the list's date range so the numbers match the rows
       // on screen; debt/expiry warnings stay global (they are not range-bound).
-      const where: Prisma.OrderWhereInput = { ...scope };
+      // Loại "đơn nợ đầu kỳ" (opening_balance) khỏi tab-count cho khớp với
+      // danh sách — nếu không, normalizeStatus quy chúng về 'draft' và badge
+      // "Chờ xác nhận" phồng lên trong khi list (lọc đúng chuỗi) trống.
+      const where: Prisma.OrderWhereInput = { ...scope, status: { not: 'opening_balance' } };
       if (q.from || q.to) {
         const range: Prisma.DateTimeFilter = {};
         if (q.from) range.gte = new Date(q.from);
