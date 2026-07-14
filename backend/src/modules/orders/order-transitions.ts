@@ -91,6 +91,12 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
       const now = new Date();
       const stageData: Prisma.OrderUpdateInput = { status: to };
 
+      // Trừ kho FIFO + chốt giá vốn xảy ra khi đơn rời "Đã xác nhận" lần đầu —
+      // dù qua bước packing (luồng CRM cũ) hay đi thẳng shipping từ confirmed
+      // (luồng mới, sale-app đã bỏ Đóng gói). Guard from==='confirmed' để đơn cũ
+      // đã trừ ở packing (packing→shipping) KHÔNG bị trừ lần hai.
+      const deductsStockNow = to === 'packing' || (to === 'shipping' && from === 'confirmed');
+
       if (to === 'confirmed') {
         // Validate full info present
         if (order.items.length === 0) {
@@ -102,7 +108,7 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
         stageData.confirmedAt = now;
       }
 
-      if (to === 'packing') {
+      if (deductsStockNow) {
         if (order.legacyCost) {
           // Legacy path: every line item must have a batch picked, every
           // batch must have enough stock. Pre-FIFO MISA imports stay on
@@ -218,14 +224,14 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
       // see enough stock can't both succeed (Postgres surfaces the
       // conflict as P2034 → caller returns 409).
       const txOpts: { isolationLevel?: Prisma.TransactionIsolationLevel } =
-        to === 'packing' && !order.legacyCost
+        deductsStockNow && !order.legacyCost
           ? { isolationLevel: 'Serializable' as Prisma.TransactionIsolationLevel }
           : {};
       try {
         await prisma.$transaction(async (tx: any) => {
           await tx.order.update({ where: { id: order.id }, data: stageData });
 
-          if (to === 'packing') {
+          if (deductsStockNow) {
             if (order.legacyCost) {
               await deductStockForOrder(order.id, user, tx);
             } else {

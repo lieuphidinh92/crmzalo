@@ -2353,6 +2353,10 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true, sku: true, name: true, unit: true, costPrice: true, totalStock: true, allowOversell: true, sellable: true },
       });
       const productMap = new Map<string, any>(products.map((p: any) => [p.id, p]));
+      // Bán âm kho (chốt đơn vượt tồn) CHỈ dành cho quản lý. Member phải bán trong
+      // tồn; muốn đặt trước hàng chưa về thì nhờ owner/admin chốt. Không áp cho đơn
+      // nháp (draft) — member vẫn lưu tạm được để quản lý duyệt sau.
+      const canOversell = user.role === 'owner' || user.role === 'admin';
       for (const it of body.items) {
         if (!productMap.has(it.productId)) {
           return reply.status(400).send({ error: `Sản phẩm không hợp lệ: ${it.productId}` });
@@ -2367,8 +2371,14 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         if (it.unitPrice === undefined || it.unitPrice < 0) {
           return reply.status(400).send({ error: 'Đơn giá phải ≥ 0' });
         }
-        // Bán sỉ cho phép bán trước/đặt hàng: mọi vai trò (kể cả sale) đều chốt
-        // được đơn vượt tồn. Giỏ hàng đã cảnh báo "Hết hàng/Vượt tồn" cho sale.
+        if (orderStatus !== 'draft' && !canOversell) {
+          const avail = Number(prod.totalStock) || 0;
+          if (it.quantity > avail) {
+            return reply.status(403).send({
+              error: `Sản phẩm "${prod.name}" chỉ còn ${avail}${prod.unit ? ' ' + prod.unit : ''} trong kho, không đủ ${it.quantity}. Chỉ quản lý được bán vượt tồn — giảm số lượng hoặc nhờ quản lý chốt đơn.`,
+            });
+          }
+        }
       }
 
       const orderCode = await generateOrderCode(user.orgId);

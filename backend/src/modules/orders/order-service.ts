@@ -47,7 +47,10 @@ export function normalizeStatus(raw: string | null | undefined): OrderStatus {
 // allowed from any non-terminal status.
 const FORWARD: Record<OrderStatus, OrderStatus[]> = {
   draft: ['confirmed'],
-  confirmed: ['packing'],
+  // "Đóng gói" đã gộp vào "Đang giao" (sale-app bỏ bước packing). Đơn đi THẲNG
+  // confirmed → shipping và trừ kho ở bước đó. Vẫn giữ confirmed → packing để
+  // CRM đầy đủ (chưa dọn) chạy được; sẽ loại ở Phase 2.
+  confirmed: ['packing', 'shipping'],
   packing: ['shipping'],
   shipping: ['completed'],
   completed: [],
