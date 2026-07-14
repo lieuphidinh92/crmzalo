@@ -329,6 +329,23 @@ export const usePOSStore = defineStore('pos', () => {
     )
       throw new Error('Hộ kinh doanh / Công ty cần nhập Mã số thuế để xuất hóa đơn');
 
+    // Bán âm kho: chỉ quản lý (owner/admin) được chốt đơn vượt tồn. Member phải bán
+    // trong tồn. Đơn nháp không chặn (member lưu tạm, quản lý duyệt sau). Backend
+    // vẫn chặn lại lần nữa — đây chỉ là chặn sớm cho UX.
+    if (!isDraft) {
+      const role = useAuthStore().user?.role;
+      const canOversell = role === 'owner' || role === 'admin';
+      if (!canOversell) {
+        const over = items.value.find(
+          (it) => it.stock !== undefined && it.stock !== null && it.quantity > it.stock,
+        );
+        if (over)
+          throw new Error(
+            `"${over.name}" chỉ còn ${over.stock}${over.unit ? ' ' + over.unit : ''} trong kho — chỉ quản lý được bán vượt tồn. Giảm số lượng hoặc nhờ quản lý chốt đơn.`,
+          );
+      }
+    }
+
     submitting.value = true;
     try {
       const payload = {

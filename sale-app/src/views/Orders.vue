@@ -37,7 +37,7 @@ const statusTabs = [
   { key: '', label: 'Tất cả', api: '' },
   { key: 'draft', label: 'Chờ xác nhận', api: 'draft' },
   { key: 'confirmed', label: 'Đã xác nhận', api: 'confirmed' },
-  { key: 'packing', label: 'Đang đóng gói', api: 'packing' },
+  // Bỏ bước "Đóng gói" — đơn xác nhận đi thẳng sang Đang giao (trừ kho ở đó).
   { key: 'shipping', label: 'Đang giao', api: 'shipping,shipped' },
   { key: 'completed', label: 'Giao thành công', api: 'completed,paid' },
   { key: 'returned', label: 'Đơn hoàn', api: 'returned' },
