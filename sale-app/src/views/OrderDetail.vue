@@ -114,7 +114,9 @@ const SHIP_PROVIDERS = [
 // Bước kế tiếp theo trạng thái hiện tại. Khớp FORWARD của backend order-service.
 const NEXT_STEP = {
   draft: { to: 'confirmed', label: 'Xác nhận đơn' },
-  confirmed: { to: 'packing', label: 'Đóng gói / Chuẩn bị hàng' },
+  // Đã gộp "Đóng gói" vào "Đang giao": xác nhận → giao thẳng (trừ kho ở bước này).
+  confirmed: { to: 'shipping', label: 'Xuất kho & Giao hàng' },
+  // Giữ cho đơn cũ lỡ đang ở 'packing' (luồng CRM) vẫn đi tiếp được.
   packing: { to: 'shipping', label: 'Chuyển sang Giao hàng' },
   shipping: { to: 'completed', label: 'Hoàn tất đơn' },
 };
@@ -122,7 +124,6 @@ const NEXT_STEP = {
 const TIMELINE = [
   { key: 'draft', label: 'Nháp' },
   { key: 'confirmed', label: 'Xác nhận' },
-  { key: 'packing', label: 'Đóng gói' },
   { key: 'shipping', label: 'Đang giao' },
   { key: 'completed', label: 'Hoàn tất' },
 ];
@@ -875,6 +876,12 @@ async function deleteOrder() {
 
         <!-- Bước Giao hàng: nhập đơn vị VC + mã vận đơn -->
         <template v-else-if="nextStep.to === 'shipping'">
+          <div
+            v-if="norm === 'confirmed'"
+            class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3"
+          >
+            ⚠️ Xuất kho &amp; giao sẽ <span class="font-semibold">trừ kho</span> theo số lượng trong đơn. Không đủ tồn sẽ không chuyển được (đơn cũ nhập từ MISA cần chọn lô trên CRM trước).
+          </div>
           <div v-if="isPickup" class="text-sm text-ink-secondary mb-3">
             Đơn khách tự lấy tại kho — không bắt buộc mã vận đơn.
           </div>
