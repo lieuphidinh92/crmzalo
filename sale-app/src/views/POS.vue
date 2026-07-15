@@ -9,7 +9,6 @@ import AdvancedOptions from '../components/AdvancedOptions.vue';
 import ProductFinder from '../components/ProductFinder.vue';
 import NewCustomerDialog from '../components/NewCustomerDialog.vue';
 import OrderSummaryDialog from '../components/OrderSummaryDialog.vue';
-import CompanyPickDialog from '../components/CompanyPickDialog.vue';
 
 const router = useRouter();
 const pos = usePOSStore();
@@ -18,7 +17,6 @@ const showNewCustomer = ref(false);
 const submitErr = ref('');
 const showSummary = ref(false);
 const summaryOrder = ref(null);
-const showCompanyPick = ref(false);
 
 const customerPanelRef = ref(null);
 const productFinderRef = ref(null);
@@ -48,22 +46,8 @@ const PAYMENT = [
   { v: 'credit', l: 'Công nợ' },
 ];
 
-// Xác nhận đơn: hỏi pháp nhân xuất hoá đơn TRƯỚC khi chốt.
-function requestConfirm() {
-  if (!canSubmit.value) return;
-  submitErr.value = '';
-  showCompanyPick.value = true;
-}
-
-// Đã chọn công ty trong popup → lưu lựa chọn rồi tạo đơn (confirmed).
-// Đóng popup sau khi xong: thành công → mở tóm tắt đơn; lỗi → hiện lỗi ở khối tổng tiền.
-async function onPickCompany(key) {
-  pos.invoicingCompany = key;
-  await submit('confirmed');
-  showCompanyPick.value = false;
-}
-
-// Lưu tạm (draft) / Xác nhận (confirmed) → tạo đơn rồi mở modal tóm tắt.
+// Tạo đơn nháp (draft) → tạo đơn rồi mở modal tóm tắt.
+// (Bỏ luồng "Xác nhận đơn": màn này chỉ lưu tạm/đơn nháp.)
 async function submit(status) {
   if (!canSubmit.value) return;
   submitErr.value = '';
@@ -92,15 +76,12 @@ function onCustomerCreated(customer) {
   showNewCustomer.value = false;
 }
 
-// ── Phím tắt: F2 tìm SP · F9 xác nhận · Ctrl+K tìm KH · Ctrl+P in đơn ──
+// ── Phím tắt: F2 tìm SP · Ctrl+K tìm KH · Ctrl+P in đơn ──
 function onKeydown(e) {
   const key = e.key;
   if (key === 'F2') {
     e.preventDefault();
     productFinderRef.value?.focusSearch?.();
-  } else if (key === 'F9') {
-    e.preventDefault();
-    requestConfirm();
   } else if ((e.ctrlKey || e.metaKey) && (key === 'k' || key === 'K')) {
     e.preventDefault();
     customerPanelRef.value?.focusSearch?.();
@@ -235,16 +216,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
               @click="submit('draft')"
               :disabled="!canSubmit"
               type="button"
-              class="h-12 px-4 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50 transition whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              ⤓ Lưu tạm / Đơn nháp
-            </button>
-            <button
-              @click="requestConfirm"
-              :disabled="!canSubmit"
               class="flex-1 h-12 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
-              {{ pos.submitting ? 'Đang lưu...' : '✓ Xác nhận đơn (F9)' }}
+              {{ pos.submitting ? 'Đang lưu...' : '⤓ Lưu tạm / Đơn nháp' }}
             </button>
           </div>
         </div>
@@ -266,7 +240,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
     <!-- Thanh phím tắt dưới cùng -->
     <div class="hidden lg:flex shrink-0 items-center gap-5 px-4 py-2 border-t border-line-200 bg-white text-[11px] text-ink-secondary">
       <span><kbd class="font-mono font-semibold text-ink-primary">F2</kbd> Tìm sản phẩm</span>
-      <span><kbd class="font-mono font-semibold text-ink-primary">F9</kbd> Xác nhận đơn</span>
       <span><kbd class="font-mono font-semibold text-ink-primary">Ctrl+K</kbd> Tìm khách hàng</span>
       <span><kbd class="font-mono font-semibold text-ink-primary">Ctrl+P</kbd> In đơn</span>
     </div>
@@ -275,13 +248,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
       v-if="showNewCustomer"
       @close="showNewCustomer = false"
       @created="onCustomerCreated"
-    />
-
-    <CompanyPickDialog
-      v-if="showCompanyPick"
-      :busy="pos.submitting"
-      @pick="onPickCompany"
-      @close="showCompanyPick = false"
     />
 
     <OrderSummaryDialog

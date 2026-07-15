@@ -74,12 +74,53 @@ function flashShareMsg(text) {
 // ── Đặt lại đơn ──
 const reordering = ref(false);
 
-// ── Payment dialog ──
-const showPay = ref(false);
-const payAmount = ref('');
-const payMethod = ref('');
-const paySaving = ref(false);
-const payError = ref('');
+// ── Thanh toán đã chuyển hẳn sang màn Công nợ (không ghi nhận ở đơn nữa). ──
+
+// ── Sửa đơn Nháp (admin) — chỉnh số lượng / xoá dòng ──
+const editingItems = ref(false);
+const itemSaving = ref(false);
+const itemError = ref('');
+
+// ── Ảnh giao hàng / giao thành công (upload lên Supabase qua backend) ──
+const shipPhone = ref('');
+const shipPhotos = ref([]); // URL[]
+const deliveryPhotos = ref([]); // URL[] — ảnh giao thành công
+const handoverPhotos = ref([]); // URL[] — ảnh/file biên bản bàn giao
+const uploadingShip = ref(false);
+const uploadingDelivery = ref(false);
+const uploadingHandover = ref(false);
+
+const PHOTO_TARGETS = {
+  ship: { flag: uploadingShip, bucket: shipPhotos },
+  delivery: { flag: uploadingDelivery, bucket: deliveryPhotos },
+  handover: { flag: uploadingHandover, bucket: handoverPhotos },
+};
+
+// Upload nhiều ảnh/file cho đơn → đẩy URL vào bucket tương ứng.
+async function uploadOrderPhotos(files, target) {
+  if (!files || !files.length) return;
+  const { flag, bucket } = PHOTO_TARGETS[target];
+  flag.value = true;
+  advanceError.value = '';
+  try {
+    for (const file of Array.from(files)) {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post(`/orders/${route.params.id}/photos`, fd);
+      if (data?.url) bucket.value.push(data.url);
+    }
+  } catch (err) {
+    advanceError.value = err.response?.data?.error || 'Lỗi upload tệp';
+  } finally {
+    flag.value = false;
+  }
+}
+function onShipFiles(e) { uploadOrderPhotos(e.target.files, 'ship'); e.target.value = ''; }
+function onDeliveryFiles(e) { uploadOrderPhotos(e.target.files, 'delivery'); e.target.value = ''; }
+function onHandoverFiles(e) { uploadOrderPhotos(e.target.files, 'handover'); e.target.value = ''; }
+function removeShipPhoto(i) { shipPhotos.value.splice(i, 1); }
+function removeDeliveryPhoto(i) { deliveryPhotos.value.splice(i, 1); }
+function removeHandoverPhoto(i) { handoverPhotos.value.splice(i, 1); }
 
 // ── Cancel dialog ──
 const showCancel = ref(false);
@@ -143,7 +184,10 @@ const isReturned = computed(() => norm.value === 'returned');
 const activeStep = computed(() => TIMELINE.findIndex((s) => s.key === norm.value));
 
 const debt = computed(() => Number(order.value?.debtAmountValue ?? 0));
-const canPay = computed(() => order.value && !isCancelled.value && !isReturned.value);
+// Sửa số lượng đơn: chỉ owner/admin (kho vận) + đơn còn ở Nháp/Xác nhận.
+const canEditItems = computed(
+  () => isAdmin.value && order.value && ['draft', 'confirmed'].includes(norm.value),
+);
 const canCancel = computed(
   () => order.value && !isCancelled.value && !isCompleted.value && !isReturned.value,
 );
@@ -179,6 +223,40 @@ const hasBankInfo = computed(
 function num(v) {
   return Number(v) || 0;
 }
+
+// ── Lịch sử cập nhật đơn (dựng từ các mốc thời gian đã lưu) ──
+const timeline = computed(() => {
+  const o = order.value;
+  if (!o) return [];
+  const rows = [];
+  const push = (at, label, meta) => { if (at) rows.push({ at, label, meta }); };
+  push(o.createdAt, 'Tạo đơn (Nháp)', null);
+  push(o.confirmedAt, 'Xác nhận đơn', null);
+  push(o.shippedAt, 'Xuất kho & Đang giao', [
+    o.shippingProvider && `ĐVVC: ${o.shippingProvider}`,
+    o.trackingCode && `Mã VĐ: ${o.trackingCode}`,
+    o.shipperPhone && `SĐT shipper: ${o.shipperPhone}`,
+  ].filter(Boolean).join(' · ') || null);
+  push(o.completedAt, 'Giao thành công', null);
+  push(o.cancelledAt, 'Huỷ đơn', o.cancelReason ? `Lý do: ${o.cancelReason}` : null);
+  push(o.returnedAt, 'Đơn hoàn', o.returnReason ? `Lý do: ${o.returnReason}` : null);
+  // Mới nhất lên đầu
+  return rows.sort((a, b) => new Date(b.at) - new Date(a.at));
+});
+
+// ── Tài liệu đính kèm (ảnh/file) — bằng chứng gửi khách ──
+const docGroups = computed(() => {
+  const o = order.value;
+  if (!o) return [];
+  const g = (label, arr) => ({ label, files: Array.isArray(arr) ? arr : [] });
+  return [
+    g('Ảnh bàn giao vận chuyển', o.shippingPhotos),
+    g('Biên bản bàn giao', o.handoverPhotos),
+    g('Ảnh giao thành công', o.deliveryPhotos),
+  ].filter((grp) => grp.files.length > 0);
+});
+const hasDocs = computed(() => docGroups.value.length > 0);
+function isPdf(url) { return /\.pdf($|\?)/i.test(url || ''); }
 
 async function loadPaymentInfo() {
   try {
@@ -304,31 +382,96 @@ async function handleReorder() {
   }
 }
 
-function openPay() {
-  payAmount.value = debt.value > 0 ? String(Math.round(debt.value)) : '';
-  payMethod.value = '';
-  payError.value = '';
-  showPay.value = true;
-}
-
-async function submitPay() {
-  const amount = Number(payAmount.value);
-  if (!amount || amount <= 0) {
-    payError.value = 'Số tiền phải > 0';
-    return;
-  }
-  paySaving.value = true;
-  payError.value = '';
+// ── Sửa số lượng / xoá dòng hàng (đơn Nháp, admin) ──
+// Cập nhật số lượng 1 dòng; qty<=0 hoặc bấm xoá → gọi DELETE.
+async function updateItemQty(item, newQty) {
+  const qty = Math.max(0, Math.floor(Number(newQty) || 0));
+  itemSaving.value = true;
+  itemError.value = '';
   try {
-    const body = { paidAmount: amount, mode: 'add' };
-    if (payMethod.value) body.paymentMethod = payMethod.value;
-    await api.post(`/orders/${route.params.id}/payment`, body);
-    showPay.value = false;
+    if (qty === 0) {
+      await api.delete(`/orders/${route.params.id}/items/${item.id}`);
+    } else {
+      await api.put(`/orders/${route.params.id}/items/${item.id}`, { quantity: qty });
+    }
     await load();
   } catch (err) {
-    payError.value = err.response?.data?.error || 'Lỗi ghi nhận thanh toán';
+    itemError.value = err.response?.data?.error || 'Lỗi cập nhật số lượng';
   } finally {
-    paySaving.value = false;
+    itemSaving.value = false;
+  }
+}
+async function removeItem(item) {
+  itemSaving.value = true;
+  itemError.value = '';
+  try {
+    await api.delete(`/orders/${route.params.id}/items/${item.id}`);
+    await load();
+  } catch (err) {
+    itemError.value = err.response?.data?.error || 'Lỗi xoá sản phẩm';
+  } finally {
+    itemSaving.value = false;
+  }
+}
+// Sửa đơn giá 1 dòng (đơn Nháp/Xác nhận). Bỏ qua nếu không đổi.
+async function updateItemPrice(item, newPrice) {
+  const price = Math.max(0, Math.floor(Number(newPrice) || 0));
+  if (price === num(item.unitPrice)) return;
+  itemSaving.value = true;
+  itemError.value = '';
+  try {
+    await api.put(`/orders/${route.params.id}/items/${item.id}`, { unitPrice: price });
+    await load();
+  } catch (err) {
+    itemError.value = err.response?.data?.error || 'Lỗi cập nhật giá';
+  } finally {
+    itemSaving.value = false;
+  }
+}
+
+// ── Thêm sản phẩm vào đơn (chế độ sửa) — giá theo bậc của khách ──
+const addQuery = ref('');
+const addResults = ref([]);
+const addSearching = ref(false);
+let addTimer = null;
+function onAddSearch() {
+  if (addTimer) clearTimeout(addTimer);
+  const q = addQuery.value.trim();
+  if (!q) { addResults.value = []; return; }
+  addTimer = setTimeout(async () => {
+    addSearching.value = true;
+    try {
+      const tier = order.value?.contact?.policyTier || 'thung_1';
+      const { data } = await api.get('/sale-app/products/search', { params: { q, tier, limit: 8 } });
+      addResults.value = data.products || [];
+    } catch {
+      addResults.value = [];
+    } finally {
+      addSearching.value = false;
+    }
+  }, 300);
+}
+async function addProductToOrder(p) {
+  if (p.price == null || p.price <= 0 || !p.priceTierId) {
+    itemError.value = `SP "${p.name}" chưa có giá cho bậc khách này — không thêm được.`;
+    return;
+  }
+  itemSaving.value = true;
+  itemError.value = '';
+  try {
+    await api.post(`/orders/${route.params.id}/items`, {
+      productId: p.id,
+      quantity: 1,
+      unitPrice: p.price,
+      priceTierId: p.priceTierId,
+    });
+    addQuery.value = '';
+    addResults.value = [];
+    await load();
+  } catch (err) {
+    itemError.value = err.response?.data?.error || 'Lỗi thêm sản phẩm';
+  } finally {
+    itemSaving.value = false;
   }
 }
 
@@ -337,6 +480,12 @@ function openAdvance() {
   if (nextStep.value?.to === 'shipping') {
     shipTracking.value = order.value?.trackingCode || '';
     shipProvider.value = order.value?.shippingProvider || '';
+    shipPhone.value = order.value?.shipperPhone || '';
+    shipPhotos.value = Array.isArray(order.value?.shippingPhotos) ? [...order.value.shippingPhotos] : [];
+  }
+  if (nextStep.value?.to === 'completed') {
+    handoverPhotos.value = Array.isArray(order.value?.handoverPhotos) ? [...order.value.handoverPhotos] : [];
+    deliveryPhotos.value = Array.isArray(order.value?.deliveryPhotos) ? [...order.value.deliveryPhotos] : [];
   }
   showAdvance.value = true;
 }
@@ -344,10 +493,17 @@ function openAdvance() {
 async function submitAdvance() {
   const step = nextStep.value;
   if (!step) return;
-  // "Đang giao" bắt buộc mã vận đơn, trừ đơn khách tự lấy tại kho.
-  if (step.to === 'shipping' && !isPickup.value && !shipTracking.value.trim()) {
-    advanceError.value = 'Vui lòng nhập mã vận đơn (hoặc đơn khách tự lấy tại kho).';
-    return;
+  // ── Bước "Đang giao": bắt buộc đủ thông tin giao hàng (trừ khách tự lấy) ──
+  if (step.to === 'shipping' && !isPickup.value) {
+    if (!shipTracking.value.trim()) { advanceError.value = 'Vui lòng nhập Mã vận đơn.'; return; }
+    if (!shipProvider.value.trim()) { advanceError.value = 'Vui lòng nhập Đơn vị vận chuyển / Số ship.'; return; }
+    if (!shipPhone.value.trim()) { advanceError.value = 'Vui lòng nhập SĐT shipper.'; return; }
+    if (shipPhotos.value.length === 0) { advanceError.value = 'Vui lòng thêm ít nhất 1 ảnh chụp lúc bàn giao.'; return; }
+  }
+  // ── Bước "Giao thành công": bắt buộc biên bản + ảnh ──
+  if (step.to === 'completed') {
+    if (handoverPhotos.value.length === 0) { advanceError.value = 'Vui lòng đính kèm ảnh/file biên bản bàn giao.'; return; }
+    if (deliveryPhotos.value.length === 0) { advanceError.value = 'Vui lòng thêm ít nhất 1 ảnh giao thành công.'; return; }
   }
   advanceSaving.value = true;
   advanceError.value = '';
@@ -356,6 +512,12 @@ async function submitAdvance() {
     if (step.to === 'shipping') {
       if (shipTracking.value.trim()) body.trackingCode = shipTracking.value.trim();
       if (shipProvider.value.trim()) body.shippingProvider = shipProvider.value.trim();
+      if (shipPhone.value.trim()) body.shipperPhone = shipPhone.value.trim();
+      if (shipPhotos.value.length) body.shippingPhotos = shipPhotos.value;
+    }
+    if (step.to === 'completed') {
+      body.handoverPhotos = handoverPhotos.value;
+      body.deliveryPhotos = deliveryPhotos.value;
     }
     await api.post(`/orders/${route.params.id}/transition`, body);
     showAdvance.value = false;
@@ -366,6 +528,11 @@ async function submitAdvance() {
   } finally {
     advanceSaving.value = false;
   }
+}
+
+// ── Xuất VAT (Misa) — nút trước, nối API sau ──
+function exportVatMisa() {
+  flashShareMsg('Tính năng Xuất VAT sang Misa đang được phát triển — sẽ nối API sau.');
 }
 
 async function submitCancel() {
@@ -418,6 +585,76 @@ async function deleteOrder() {
     deleteError.value = err.response?.data?.error || 'Lỗi xoá đơn';
   } finally {
     deleting.value = false;
+  }
+}
+
+// ── Xem/bổ sung tài liệu theo giai đoạn (bấm vào timeline) ──
+const STAGE_LABELS = { draft: 'Nháp', confirmed: 'Xác nhận', shipping: 'Đang giao', completed: 'Hoàn tất' };
+const STAGE_DOCS = {
+  draft: [],
+  confirmed: [],
+  shipping: [{ field: 'shippingPhotos', label: 'Ảnh bàn giao vận chuyển', pdf: false }],
+  completed: [
+    { field: 'handoverPhotos', label: 'Biên bản bàn giao', pdf: true },
+    { field: 'deliveryPhotos', label: 'Ảnh giao thành công', pdf: false },
+  ],
+};
+const docStage = ref(null); // stage key đang mở
+const stageDraft = ref({ shippingPhotos: [], handoverPhotos: [], deliveryPhotos: [] });
+const stageUploading = ref(false);
+const stageDocSaving = ref(false);
+const stageDocError = ref('');
+const stageDocConfig = computed(() => STAGE_DOCS[docStage.value] || []);
+// Mốc thời gian của giai đoạn đang mở (để hiển thị trong popup)
+const stageAt = computed(() => {
+  const o = order.value; if (!o) return null;
+  return { draft: o.createdAt, confirmed: o.confirmedAt, shipping: o.shippedAt, completed: o.completedAt }[docStage.value];
+});
+
+function openStageDocs(stageKey) {
+  const o = order.value || {};
+  docStage.value = stageKey;
+  stageDocError.value = '';
+  stageDraft.value = {
+    shippingPhotos: Array.isArray(o.shippingPhotos) ? [...o.shippingPhotos] : [],
+    handoverPhotos: Array.isArray(o.handoverPhotos) ? [...o.handoverPhotos] : [],
+    deliveryPhotos: Array.isArray(o.deliveryPhotos) ? [...o.deliveryPhotos] : [],
+  };
+}
+async function onStageUpload(field, e) {
+  const files = e.target.files;
+  e.target.value = '';
+  if (!files || !files.length) return;
+  stageUploading.value = true;
+  stageDocError.value = '';
+  try {
+    for (const file of Array.from(files)) {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post(`/orders/${route.params.id}/photos`, fd);
+      if (data?.url) stageDraft.value[field].push(data.url);
+    }
+  } catch (err) {
+    stageDocError.value = err.response?.data?.error || 'Lỗi upload tệp';
+  } finally {
+    stageUploading.value = false;
+  }
+}
+function removeStageDoc(field, i) { stageDraft.value[field].splice(i, 1); }
+async function saveStageDocs() {
+  stageDocSaving.value = true;
+  stageDocError.value = '';
+  try {
+    const body = {};
+    for (const g of stageDocConfig.value) body[g.field] = stageDraft.value[g.field];
+    await api.patch(`/orders/${route.params.id}/documents`, body);
+    docStage.value = null;
+    await load();
+    flashShareMsg('Đã cập nhật tài liệu');
+  } catch (err) {
+    stageDocError.value = err.response?.data?.error || 'Lỗi lưu tài liệu';
+  } finally {
+    stageDocSaving.value = false;
   }
 }
 </script>
@@ -486,9 +723,14 @@ async function deleteOrder() {
         <!-- Status timeline -->
         <div v-else class="flex items-center">
           <template v-for="(s, idx) in TIMELINE" :key="s.key">
-            <div class="flex flex-col items-center shrink-0">
+            <button
+              type="button"
+              @click="openStageDocs(s.key)"
+              title="Xem / bổ sung tài liệu giai đoạn này"
+              class="flex flex-col items-center shrink-0 group focus:outline-none"
+            >
               <div
-                class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold"
+                class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold transition group-hover:ring-2 group-hover:ring-royal-300"
                 :class="idx <= activeStep ? 'bg-royal-700 text-white' : 'bg-surface-50 border border-line-300 text-ink-disabled'"
               >
                 <svg v-if="idx < activeStep" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
@@ -496,10 +738,10 @@ async function deleteOrder() {
                 </svg>
                 <span v-else>{{ idx + 1 }}</span>
               </div>
-              <span class="text-[10px] mt-1 text-center" :class="idx <= activeStep ? 'text-ink-primary font-medium' : 'text-ink-disabled'">
+              <span class="text-[10px] mt-1 text-center group-hover:text-royal-700" :class="idx <= activeStep ? 'text-ink-primary font-medium' : 'text-ink-disabled'">
                 {{ s.label }}
               </span>
-            </div>
+            </button>
             <div
               v-if="idx < TIMELINE.length - 1"
               class="flex-1 h-0.5 mx-1 -mt-4"
@@ -540,8 +782,23 @@ async function deleteOrder() {
 
       <!-- Items -->
       <div class="bg-white border border-line-200 rounded-card p-5 shadow-card mb-3">
-        <div class="text-xs font-semibold text-ink-secondary uppercase mb-3">
-          Sản phẩm ({{ order.items?.length || 0 }})
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs font-semibold text-ink-secondary uppercase">
+            Sản phẩm ({{ order.items?.length || 0 }})
+          </div>
+          <!-- Sửa số lượng: chỉ admin + đơn Nháp/Xác nhận -->
+          <button
+            v-if="canEditItems"
+            @click="editingItems = !editingItems; itemError = ''; addQuery = ''; addResults = []"
+            type="button"
+            class="text-sm font-bold px-4 py-2 rounded-xl transition shadow-pop"
+            :class="editingItems ? 'border-2 border-rose-500 text-rose-600 bg-white hover:bg-rose-50' : 'bg-rose-600 text-white hover:bg-rose-700'"
+          >
+            {{ editingItems ? '✓ Xong' : '✎ Sửa đơn hàng' }}
+          </button>
+        </div>
+        <div v-if="itemError" class="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">
+          {{ itemError }}
         </div>
         <div class="space-y-3">
           <div v-for="it in order.items" :key="it.id" class="flex gap-3">
@@ -555,9 +812,65 @@ async function deleteOrder() {
                 {{ num(it.quantity) }} {{ it.unit || '' }} × {{ formatVND(it.unitPrice) }}
                 <span v-if="num(it.discountValue) > 0" class="text-amber-600"> − {{ formatVND(it.discountValue) }}</span>
               </div>
+              <!-- Bộ chỉnh số lượng + giá (chế độ sửa) -->
+              <div v-if="editingItems" class="mt-1.5 space-y-1.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] text-ink-secondary w-9 shrink-0">SL:</span>
+                  <button type="button" :disabled="itemSaving" @click="updateItemQty(it, num(it.quantity) - 1)" class="w-7 h-7 rounded-lg border border-line-300 text-ink-primary font-bold hover:bg-surface-50 disabled:opacity-40">−</button>
+                  <input
+                    type="number" min="0" :value="num(it.quantity)" :disabled="itemSaving"
+                    @change="updateItemQty(it, $event.target.value)"
+                    class="w-14 h-7 text-center rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm font-semibold"
+                  />
+                  <button type="button" :disabled="itemSaving" @click="updateItemQty(it, num(it.quantity) + 1)" class="w-7 h-7 rounded-lg border border-line-300 text-ink-primary font-bold hover:bg-surface-50 disabled:opacity-40">+</button>
+                  <button type="button" :disabled="itemSaving" @click="removeItem(it)" class="ml-1 text-xs text-rose-600 font-semibold hover:underline disabled:opacity-40">Xoá</button>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] text-ink-secondary w-9 shrink-0">Giá:</span>
+                  <input
+                    type="number" min="0" step="1000" :value="num(it.unitPrice)" :disabled="itemSaving"
+                    @change="updateItemPrice(it, $event.target.value)"
+                    class="w-32 h-7 px-2 text-right rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm font-semibold"
+                  />
+                  <span class="text-[11px] text-ink-disabled">đ / {{ it.unit || 'đơn vị' }}</span>
+                </div>
+              </div>
             </div>
             <div class="text-sm font-semibold text-ink-primary shrink-0">{{ formatVND(it.lineTotal) }}</div>
           </div>
+        </div>
+
+        <!-- Thêm sản phẩm (chế độ sửa) -->
+        <div v-if="editingItems" class="mt-3 pt-3 border-t border-dashed border-line-300">
+          <label class="block text-[11px] font-semibold text-ink-secondary uppercase mb-1.5">Thêm sản phẩm vào đơn</label>
+          <input
+            v-model="addQuery"
+            @input="onAddSearch"
+            type="search"
+            placeholder="Gõ tên SP hoặc SKU..."
+            class="w-full h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm"
+          />
+          <div v-if="addSearching" class="text-[11px] text-ink-disabled mt-1.5">Đang tìm...</div>
+          <div v-else-if="addResults.length" class="mt-1.5 border border-line-200 rounded-lg divide-y divide-line-100 max-h-64 overflow-y-auto">
+            <button
+              v-for="p in addResults"
+              :key="p.id"
+              type="button"
+              :disabled="itemSaving"
+              @click="addProductToOrder(p)"
+              class="w-full flex items-center gap-2 px-2.5 py-2 text-left hover:bg-surface-50 disabled:opacity-50"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="text-sm text-ink-primary leading-snug truncate">{{ p.name }}</div>
+                <div class="text-[11px] text-ink-secondary">{{ p.sku }} · Tồn: {{ p.stock ?? '—' }}</div>
+              </div>
+              <div class="text-sm font-semibold shrink-0" :class="p.price ? 'text-royal-700' : 'text-ink-disabled'">
+                {{ p.price ? formatVND(p.price) : 'Chưa có giá' }}
+              </div>
+              <span class="text-royal-700 font-bold shrink-0">＋</span>
+            </button>
+          </div>
+          <div v-else-if="addQuery.trim()" class="text-[11px] text-ink-disabled mt-1.5">Không tìm thấy sản phẩm.</div>
         </div>
 
         <!-- Gifts -->
@@ -617,6 +930,47 @@ async function deleteOrder() {
           <div class="text-sm text-ink-primary">{{ order.internalNote }}</div>
         </div>
       </div>
+
+      <!-- Lịch sử cập nhật & Tài liệu (bằng chứng gửi khách) -->
+      <div class="bg-white border border-line-200 rounded-card p-5 shadow-card mb-3">
+        <div class="text-xs font-semibold text-ink-secondary uppercase mb-3">Lịch sử &amp; tài liệu</div>
+
+        <!-- Mốc thời gian -->
+        <div class="space-y-2.5">
+          <div v-for="(row, i) in timeline" :key="i" class="flex gap-2.5">
+            <div class="flex flex-col items-center shrink-0">
+              <span class="w-2.5 h-2.5 rounded-full mt-1" :class="i === 0 ? 'bg-royal-700' : 'bg-line-300'"></span>
+              <span v-if="i < timeline.length - 1" class="flex-1 w-px bg-line-200 my-0.5"></span>
+            </div>
+            <div class="min-w-0 flex-1 pb-1">
+              <div class="text-sm font-semibold text-ink-primary">{{ row.label }}</div>
+              <div class="text-[11px] text-ink-secondary">{{ formatDateTimeVN(row.at) }}</div>
+              <div v-if="row.meta" class="text-[11px] text-ink-secondary mt-0.5">{{ row.meta }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tài liệu đính kèm -->
+        <div v-if="hasDocs" class="mt-4 pt-3 border-t border-line-200 space-y-3">
+          <div v-for="grp in docGroups" :key="grp.label">
+            <div class="text-[11px] font-semibold text-ink-secondary uppercase mb-1.5">{{ grp.label }} ({{ grp.files.length }})</div>
+            <div class="flex flex-wrap gap-2">
+              <a
+                v-for="(f, i) in grp.files" :key="i"
+                :href="f" target="_blank" rel="noopener"
+                class="relative w-16 h-16 rounded-lg overflow-hidden border border-line-200 bg-surface-50 block group"
+                title="Bấm để xem / tải về"
+              >
+                <img v-if="!isPdf(f)" :src="f" class="w-full h-full object-cover" />
+                <div v-else class="w-full h-full flex items-center justify-center text-[10px] text-ink-secondary font-semibold">PDF</div>
+                <span class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center text-white text-[10px] opacity-0 group-hover:opacity-100">Xem</span>
+              </a>
+            </div>
+          </div>
+          <div class="text-[11px] text-ink-disabled">Bấm vào ảnh/file để mở, xem hoặc lưu về làm bằng chứng gửi khách.</div>
+        </div>
+        <div v-else class="mt-3 text-[11px] text-ink-disabled">Chưa có tài liệu đính kèm (ảnh giao hàng sẽ hiện ở đây sau khi cập nhật trạng thái).</div>
+      </div>
     </template>
 
     <!-- Đặt lại đơn này (luôn hiện khi đã tải đơn) -->
@@ -667,7 +1021,7 @@ async function deleteOrder() {
 
     <!-- Action bar (inline, end of content) -->
     <div
-      v-if="order && (canPay || canCancel)"
+      v-if="order && canCancel"
       class="flex gap-2 mt-1"
     >
       <button
@@ -676,13 +1030,6 @@ async function deleteOrder() {
         class="flex-1 h-11 rounded-xl border border-rose-300 text-rose-600 font-semibold hover:bg-rose-50"
       >
         Huỷ đơn
-      </button>
-      <button
-        v-if="canPay"
-        @click="openPay"
-        class="flex-1 h-11 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-semibold shadow-pop"
-      >
-        Ghi nhận thanh toán
       </button>
     </div>
 
@@ -732,48 +1079,6 @@ async function deleteOrder() {
             {{ deleting ? 'Đang xoá...' : 'Xoá vĩnh viễn' }}
           </button>
         </div>
-      </div>
-    </div>
-
-    <!-- Payment dialog -->
-    <div v-if="showPay" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-      <div class="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-bold text-ink-primary">Ghi nhận thanh toán</h3>
-          <button @click="showPay = false" class="text-ink-disabled hover:text-ink-primary text-xl leading-none">✕</button>
-        </div>
-        <div class="text-sm text-ink-secondary mb-3" v-if="debt > 0">
-          Còn nợ: <span class="font-bold text-red-600">{{ formatVND(debt) }}</span>
-        </div>
-        <form @submit.prevent="submitPay" class="space-y-3">
-          <div>
-            <label class="block text-xs font-medium text-ink-primary mb-1">Số tiền thu *</label>
-            <input
-              v-model="payAmount"
-              type="number"
-              min="0"
-              inputmode="numeric"
-              class="w-full h-11 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-base font-semibold"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-ink-primary mb-1">Hình thức</label>
-            <select v-model="payMethod" class="w-full h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none bg-white">
-              <option v-for="m in PAY_METHODS" :key="m.value" :value="m.value">{{ m.label }}</option>
-            </select>
-          </div>
-          <div v-if="payError" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            {{ payError }}
-          </div>
-          <div class="flex gap-2 pt-1">
-            <button type="button" @click="showPay = false" :disabled="paySaving" class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50">
-              Huỷ
-            </button>
-            <button type="submit" :disabled="paySaving" class="flex-1 h-11 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-semibold disabled:opacity-50">
-              {{ paySaving ? 'Đang lưu...' : 'Xác nhận' }}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
 
@@ -867,12 +1172,53 @@ async function deleteOrder() {
         >
           ⚠️ Đóng gói sẽ <span class="font-semibold">trừ kho</span> theo số lượng trong đơn. Đơn cũ nhập từ MISA cần chọn lô trên CRM trước khi đóng gói.
         </div>
-        <div v-else-if="nextStep.to === 'completed'" class="text-sm text-ink-secondary mb-3">
-          Hoàn tất đơn yêu cầu <span class="font-semibold">đã thu đủ tiền</span> (đơn công nợ được miễn).
-          <template v-if="debt > 0">
-            Còn nợ: <span class="font-bold text-red-600">{{ formatVND(debt) }}</span>.
-          </template>
-        </div>
+        <template v-else-if="nextStep.to === 'completed'">
+          <div class="text-sm text-ink-secondary mb-3">
+            Xác nhận đơn <span class="font-mono font-semibold">{{ orderCode }}</span> đã giao thành công.
+            <template v-if="debt > 0">
+              Còn nợ: <span class="font-bold text-red-600">{{ formatVND(debt) }}</span> (thu tiền ở màn Công nợ).
+            </template>
+          </div>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-ink-primary mb-1">Biên bản bàn giao (ảnh/file) <span class="text-rose-500">*</span></label>
+              <div class="flex flex-wrap gap-2">
+                <div v-for="(url, i) in handoverPhotos" :key="i" class="relative w-16 h-16 rounded-lg overflow-hidden border border-line-200 bg-surface-50">
+                  <img v-if="!/\.pdf($|\?)/i.test(url)" :src="url" class="w-full h-full object-cover" />
+                  <div v-else class="w-full h-full flex items-center justify-center text-[10px] text-ink-secondary font-semibold">PDF</div>
+                  <button type="button" @click="removeHandoverPhoto(i)" class="absolute top-0 right-0 bg-black/60 text-white w-5 h-5 text-xs leading-none">✕</button>
+                </div>
+                <label class="w-16 h-16 rounded-lg border border-dashed border-line-300 flex items-center justify-center text-ink-disabled cursor-pointer hover:bg-surface-50">
+                  <span v-if="uploadingHandover" class="text-[10px]">Đang tải...</span>
+                  <span v-else class="text-2xl leading-none">＋</span>
+                  <input type="file" accept="image/*,application/pdf" multiple class="hidden" @change="onHandoverFiles" />
+                </label>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-ink-primary mb-1">Ảnh giao thành công <span class="text-rose-500">*</span></label>
+              <div class="flex flex-wrap gap-2">
+                <div v-for="(url, i) in deliveryPhotos" :key="i" class="relative w-16 h-16 rounded-lg overflow-hidden border border-line-200">
+                  <img :src="url" class="w-full h-full object-cover" />
+                  <button type="button" @click="removeDeliveryPhoto(i)" class="absolute top-0 right-0 bg-black/60 text-white w-5 h-5 text-xs leading-none">✕</button>
+                </div>
+                <label class="w-16 h-16 rounded-lg border border-dashed border-line-300 flex items-center justify-center text-ink-disabled cursor-pointer hover:bg-surface-50">
+                  <span v-if="uploadingDelivery" class="text-[10px]">Đang tải...</span>
+                  <span v-else class="text-2xl leading-none">＋</span>
+                  <input type="file" accept="image/*" multiple class="hidden" @change="onDeliveryFiles" />
+                </label>
+              </div>
+            </div>
+            <!-- Xuất VAT sang Misa (nút trước, nối API sau) -->
+            <button
+              type="button"
+              @click="exportVatMisa"
+              class="w-full h-10 rounded-xl border border-royal-300 text-royal-700 font-semibold hover:bg-royal-50 flex items-center justify-center gap-2 text-sm"
+            >
+              🧾 Xuất VAT (Misa)
+            </button>
+          </div>
+        </template>
 
         <!-- Bước Giao hàng: nhập đơn vị VC + mã vận đơn -->
         <template v-else-if="nextStep.to === 'shipping'">
@@ -887,7 +1233,9 @@ async function deleteOrder() {
           </div>
           <div class="space-y-3">
             <div>
-              <label class="block text-xs font-medium text-ink-primary mb-1">Đơn vị vận chuyển</label>
+              <label class="block text-xs font-medium text-ink-primary mb-1">
+                Đơn vị vận chuyển / Số ship <span v-if="!isPickup" class="text-rose-500">*</span>
+              </label>
               <input
                 v-model="shipProvider"
                 list="ship-providers"
@@ -909,6 +1257,32 @@ async function deleteOrder() {
                 class="w-full h-11 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm font-mono"
               />
             </div>
+            <div>
+              <label class="block text-xs font-medium text-ink-primary mb-1">
+                SĐT shipper <span v-if="!isPickup" class="text-rose-500">*</span>
+              </label>
+              <input
+                v-model="shipPhone"
+                type="tel"
+                inputmode="tel"
+                placeholder="SĐT người giao / shipper"
+                class="w-full h-11 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm"
+              />
+            </div>
+            <div v-if="!isPickup">
+              <label class="block text-xs font-medium text-ink-primary mb-1">Ảnh chụp lúc bàn giao <span class="text-rose-500">*</span></label>
+              <div class="flex flex-wrap gap-2">
+                <div v-for="(url, i) in shipPhotos" :key="i" class="relative w-16 h-16 rounded-lg overflow-hidden border border-line-200">
+                  <img :src="url" class="w-full h-full object-cover" />
+                  <button type="button" @click="removeShipPhoto(i)" class="absolute top-0 right-0 bg-black/60 text-white w-5 h-5 text-xs leading-none">✕</button>
+                </div>
+                <label class="w-16 h-16 rounded-lg border border-dashed border-line-300 flex items-center justify-center text-ink-disabled cursor-pointer hover:bg-surface-50">
+                  <span v-if="uploadingShip" class="text-[10px]">Đang tải...</span>
+                  <span v-else class="text-2xl leading-none">＋</span>
+                  <input type="file" accept="image/*" multiple class="hidden" @change="onShipFiles" />
+                </label>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -923,6 +1297,48 @@ async function deleteOrder() {
           <button type="button" @click="submitAdvance" :disabled="advanceSaving" class="flex-1 h-11 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-semibold disabled:opacity-50">
             {{ advanceSaving ? 'Đang xử lý...' : 'Xác nhận' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Popup tài liệu theo giai đoạn (bấm vào timeline) -->
+    <div v-if="docStage" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" @click.self="docStage = null">
+      <div class="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl max-h-[85vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-lg font-bold text-ink-primary">Tài liệu — {{ STAGE_LABELS[docStage] }}</h3>
+          <button @click="docStage = null" class="text-ink-disabled hover:text-ink-primary text-xl leading-none">✕</button>
+        </div>
+        <div v-if="stageAt" class="text-[11px] text-ink-secondary mb-3">Thời điểm: {{ formatDateTimeVN(stageAt) }}</div>
+        <div v-else class="text-[11px] text-ink-disabled mb-3">Đơn chưa đạt tới giai đoạn này (vẫn có thể chuẩn bị tài liệu trước).</div>
+
+        <template v-if="stageDocConfig.length">
+          <div v-for="g in stageDocConfig" :key="g.field" class="mb-4">
+            <label class="block text-xs font-medium text-ink-primary mb-1.5">{{ g.label }}</label>
+            <div class="flex flex-wrap gap-2">
+              <div v-for="(url, i) in stageDraft[g.field]" :key="i" class="relative w-16 h-16 rounded-lg overflow-hidden border border-line-200 bg-surface-50">
+                <a :href="url" target="_blank" rel="noopener" class="block w-full h-full">
+                  <img v-if="!isPdf(url)" :src="url" class="w-full h-full object-cover" />
+                  <div v-else class="w-full h-full flex items-center justify-center text-[10px] text-ink-secondary font-semibold">PDF</div>
+                </a>
+                <button type="button" @click="removeStageDoc(g.field, i)" class="absolute top-0 right-0 bg-black/60 text-white w-5 h-5 text-xs leading-none">✕</button>
+              </div>
+              <label class="w-16 h-16 rounded-lg border border-dashed border-line-300 flex items-center justify-center text-ink-disabled cursor-pointer hover:bg-surface-50">
+                <span v-if="stageUploading" class="text-[10px]">Đang tải...</span>
+                <span v-else class="text-2xl leading-none">＋</span>
+                <input type="file" :accept="g.pdf ? 'image/*,application/pdf' : 'image/*'" multiple class="hidden" @change="(e) => onStageUpload(g.field, e)" />
+              </label>
+            </div>
+          </div>
+          <div v-if="stageDocError" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">{{ stageDocError }}</div>
+          <div class="flex gap-2 pt-1">
+            <button type="button" @click="docStage = null" :disabled="stageDocSaving" class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50">Đóng</button>
+            <button type="button" @click="saveStageDocs" :disabled="stageDocSaving || stageUploading" class="flex-1 h-11 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-semibold disabled:opacity-50">
+              {{ stageDocSaving ? 'Đang lưu...' : 'Lưu tài liệu' }}
+            </button>
+          </div>
+        </template>
+        <div v-else class="text-sm text-ink-secondary py-3">
+          Giai đoạn này chưa có mục tài liệu riêng. Tài liệu giao hàng nằm ở bước <span class="font-semibold">Đang giao</span> và <span class="font-semibold">Hoàn tất</span>.
         </div>
       </div>
     </div>
