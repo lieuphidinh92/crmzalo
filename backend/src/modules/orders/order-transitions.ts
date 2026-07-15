@@ -35,13 +35,28 @@ import {
   reverseFIFO,
   validateFifoStock,
 } from './fifo-service.js';
+import { uploadToStorage, extForMime } from '../../shared/storage/supabase-storage.js';
 
 interface TransitionBody {
   to_status?: string;
   toStatus?: string;
   trackingCode?: string;
   shippingProvider?: string;
+  shipperPhone?: string;
+  shippingPhotos?: string[];
+  handoverPhotos?: string[];
+  handoverNote?: string;
+  deliveryPhotos?: string[];
   cancelReason?: string;
+}
+
+// Chuẩn hoá mảng URL ảnh gửi lên (bỏ rỗng, giới hạn 10 ảnh).
+function cleanPhotoUrls(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+    .map((u) => u.trim())
+    .slice(0, 10);
 }
 
 export async function orderTransitionRoutes(app: FastifyInstance): Promise<void> {
@@ -194,28 +209,61 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
       }
 
       if (to === 'shipping') {
-        const trackingCode = body.trackingCode ?? order.trackingCode;
-        const provider = body.shippingProvider ?? order.shippingProvider;
+        const trackingCode = (body.trackingCode ?? order.trackingCode ?? '').trim();
+        const provider = (body.shippingProvider ?? order.shippingProvider ?? '').trim();
+        const shipperPhone = (body.shipperPhone ?? order.shipperPhone ?? '').trim();
+        const photos = cleanPhotoUrls(
+          body.shippingPhotos ?? (order.shippingPhotos as unknown),
+        );
         const isPickup = order.shippingMethod === 'pickup_at_warehouse';
-        if (!isPickup && !trackingCode) {
-          return reply.status(400).send({
-            error: 'Bắt buộc có Mã vận đơn (tracking_code) trước khi chuyển sang Đang giao.',
-          });
+        // Đơn giao (không phải khách tự lấy): bắt buộc đủ thông tin giao hàng.
+        if (!isPickup) {
+          if (!trackingCode) {
+            return reply.status(400).send({ error: 'Bắt buộc có Mã vận đơn trước khi chuyển sang Đang giao.' });
+          }
+          if (!provider) {
+            return reply.status(400).send({ error: 'Bắt buộc có Đơn vị vận chuyển / Số ship.' });
+          }
+          if (!shipperPhone) {
+            return reply.status(400).send({ error: 'Bắt buộc có SĐT shipper.' });
+          }
+          if (photos.length === 0) {
+            return reply.status(400).send({ error: 'Bắt buộc có ít nhất 1 ảnh chụp lúc bàn giao vận chuyển.' });
+          }
         }
         if (trackingCode) stageData.trackingCode = trackingCode;
         if (provider) stageData.shippingProvider = provider;
+        if (shipperPhone) stageData.shipperPhone = shipperPhone;
+        if (photos.length) stageData.shippingPhotos = photos;
         stageData.shippedAt = now;
       }
 
       if (to === 'completed') {
+        // Bằng chứng giao thành công: biên bản bàn giao (ảnh/file) + ảnh giao thành công.
+        const handoverPhotos = cleanPhotoUrls(
+          body.handoverPhotos ?? (order.handoverPhotos as unknown),
+        );
+        const handoverNote = (body.handoverNote ?? order.handoverNote ?? '').trim();
+        const deliveryPhotos = cleanPhotoUrls(
+          body.deliveryPhotos ?? (order.deliveryPhotos as unknown),
+        );
+        if (handoverPhotos.length === 0) {
+          return reply.status(400).send({ error: 'Bắt buộc đính kèm ảnh/file biên bản bàn giao trước khi Giao thành công.' });
+        }
+        if (deliveryPhotos.length === 0) {
+          return reply.status(400).send({ error: 'Bắt buộc có ít nhất 1 ảnh chụp đơn giao thành công.' });
+        }
         const total = toNumber(order.totalAmountValue ?? order.totalAmount);
         const paid = toNumber(order.paidAmount);
         const allowDebt = order.paymentMethod === 'credit';
         if (!allowDebt && paid < total) {
           return reply.status(400).send({
-            error: `Đã thu ${paid.toLocaleString('vi-VN')} / cần ${total.toLocaleString('vi-VN')}. Chưa thu đủ tiền — chuyển payment_method sang "credit" nếu cho phép nợ.`,
+            error: `Đã thu ${paid.toLocaleString('vi-VN')} / cần ${total.toLocaleString('vi-VN')}. Chưa thu đủ tiền — ghi nhận thu tiền ở màn Công nợ, hoặc chuyển sang công nợ nếu cho phép nợ.`,
           });
         }
+        stageData.handoverPhotos = handoverPhotos;
+        if (handoverNote) stageData.handoverNote = handoverNote;
+        stageData.deliveryPhotos = deliveryPhotos;
         stageData.completedAt = now;
       }
 
@@ -269,6 +317,79 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
     } catch (err) {
       logger.error('[orders] Transition error:', err);
       return reply.status(500).send({ error: (err as Error).message || 'Failed to transition order' });
+    }
+  });
+
+  // POST /api/v1/orders/:id/photos — upload 1 ảnh (giao hàng / giao thành công)
+  // → Supabase Storage → trả URL. Ai xem được đơn thì upload được (khớp scope
+  // với quyền chuyển trạng thái). Frontend gom URL rồi gửi kèm khi transition.
+  app.post('/api/v1/orders/:id/photos', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { id } = request.params as { id: string };
+      const baseScope = orderScopeWhere(user);
+      const order = await prisma.order.findFirst({
+        where: { AND: [baseScope, { id }] },
+        select: { id: true },
+      });
+      if (!order) return reply.status(404).send({ error: 'Order not found' });
+
+      const file = await (request as any).file?.();
+      if (!file) return reply.status(400).send({ error: 'Thiếu file ảnh' });
+      const mime = String(file.mimetype || '');
+      if (!extForMime(mime)) {
+        return reply.status(400).send({ error: 'Chỉ nhận ảnh JPG/PNG/WEBP hoặc PDF' });
+      }
+      const buffer = await file.toBuffer();
+      if (buffer.length === 0) return reply.status(400).send({ error: 'File rỗng' });
+
+      const url = await uploadToStorage(buffer, mime, 'orders', order.id);
+      return reply.status(201).send({ url });
+    } catch (err: any) {
+      const code = err?.statusCode;
+      if (code && code >= 400 && code < 600) {
+        return reply.status(code).send({ error: err.message });
+      }
+      logger.error('[orders] upload photo error:', err);
+      return reply.status(500).send({ error: 'Lỗi upload ảnh đơn hàng' });
+    }
+  });
+
+  // PATCH /api/v1/orders/:id/documents — bổ sung/sửa tài liệu (ảnh/file) của
+  // từng giai đoạn mà KHÔNG đổi trạng thái đơn. Cho phép thêm bằng chứng sau
+  // khi đơn đã đi qua giai đoạn đó.
+  app.patch('/api/v1/orders/:id/documents', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as {
+        shippingPhotos?: string[];
+        handoverPhotos?: string[];
+        deliveryPhotos?: string[];
+      };
+      const order = await prisma.order.findFirst({
+        where: { AND: [orderScopeWhere(user), { id }] },
+        select: { id: true },
+      });
+      if (!order) return reply.status(404).send({ error: 'Order not found' });
+
+      const data: Prisma.OrderUpdateInput = {};
+      if (body.shippingPhotos !== undefined) data.shippingPhotos = cleanPhotoUrls(body.shippingPhotos);
+      if (body.handoverPhotos !== undefined) data.handoverPhotos = cleanPhotoUrls(body.handoverPhotos);
+      if (body.deliveryPhotos !== undefined) data.deliveryPhotos = cleanPhotoUrls(body.deliveryPhotos);
+      if (Object.keys(data).length === 0) {
+        return reply.status(400).send({ error: 'Không có tài liệu nào để cập nhật' });
+      }
+
+      await prisma.order.update({ where: { id: order.id }, data });
+      const full = await prisma.order.findUnique({ where: { id: order.id }, include: ORDER_FULL_INCLUDE });
+      return {
+        ...stripCostFromOrder(full!, user.role),
+        statusNormalized: normalizeStatus(full!.status),
+      };
+    } catch (err) {
+      logger.error('[orders] Update documents error:', err);
+      return reply.status(500).send({ error: 'Lỗi cập nhật tài liệu đơn' });
     }
   });
 

@@ -6,6 +6,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
+import { requireRole } from '../auth/role-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import {
   recomputeOrderTotals,
@@ -27,7 +28,8 @@ interface PaymentBody {
 export async function orderPaymentRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
-  app.post('/api/v1/orders/:id/payment', async (request: FastifyRequest, reply: FastifyReply) => {
+  // Ghi nhận thanh toán = quyền owner/admin (thu tiền tập trung ở màn Công nợ).
+  app.post('/api/v1/orders/:id/payment', { preHandler: requireRole('owner', 'admin') }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = reqUser(request);
       const { id } = request.params as { id: string };

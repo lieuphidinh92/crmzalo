@@ -564,6 +564,13 @@ model Order {
   deliveryAddress  String?   @map("delivery_address")
   recipientName    String?   @map("recipient_name")
   recipientPhone   String?   @map("recipient_phone")
+  // Giao hàng: SĐT shipper/DVVC + ảnh chụp lúc bàn giao cho vận chuyển (bước Đang giao)
+  shipperPhone     String?   @map("shipper_phone")
+  shippingPhotos   Json      @default("[]") @map("shipping_photos")
+  // Giao thành công: biên bản bàn giao (ảnh/file đính kèm) + ảnh đơn giao thành công (bước Hoàn tất)
+  handoverPhotos   Json      @default("[]") @map("handover_photos")
+  handoverNote     String?   @map("handover_note")
+  deliveryPhotos   Json      @default("[]") @map("delivery_photos")
   // Snapshots of the cart total (auto-computed in service):
   //   subtotalAmount  = SUM(line_total)
   //   discountAmount  = the resolved discount in VND (already applied)
@@ -1025,6 +1032,10 @@ model Supplier {
   phone           String?
   address         String?
   notes           String?
+  // Thông tin công ty / người đại diện (dùng cho hợp đồng & công nợ NCC)
+  companyName         String? @map("company_name")          // tên công ty đầy đủ (name = tên gợi nhớ)
+  representative      String? @map("representative")         // người đại diện
+  representativeTitle String? @map("representative_title")   // chức vụ người đại diện
   // ──────────────────────────────────────────────────────────────────
 
   org              Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
