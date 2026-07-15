@@ -253,14 +253,8 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
         if (deliveryPhotos.length === 0) {
           return reply.status(400).send({ error: 'Bắt buộc có ít nhất 1 ảnh chụp đơn giao thành công.' });
         }
-        const total = toNumber(order.totalAmountValue ?? order.totalAmount);
-        const paid = toNumber(order.paidAmount);
-        const allowDebt = order.paymentMethod === 'credit';
-        if (!allowDebt && paid < total) {
-          return reply.status(400).send({
-            error: `Đã thu ${paid.toLocaleString('vi-VN')} / cần ${total.toLocaleString('vi-VN')}. Chưa thu đủ tiền — ghi nhận thu tiền ở màn Công nợ, hoặc chuyển sang công nợ nếu cho phép nợ.`,
-          });
-        }
+        // KHÔNG chặn theo thanh toán: cho phép Giao thành công dù chưa thu đủ
+        // tiền (đơn công nợ được theo dõi & thu ở màn Công nợ).
         stageData.handoverPhotos = handoverPhotos;
         if (handoverNote) stageData.handoverNote = handoverNote;
         stageData.deliveryPhotos = deliveryPhotos;
