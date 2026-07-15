@@ -286,7 +286,7 @@ async function downloadImage() {
 .btn-back:hover{background:#f1f5f9;}
 
 /* ===== A4 sheet ===== */
-.page{position:relative;width:210mm;min-height:297mm;background:#fff;padding:12mm;overflow:hidden;
+.page{position:relative;width:210mm;height:297mm;background:#fff;padding:12mm;overflow:hidden;
   box-sizing:border-box;box-shadow:0 16px 50px rgba(0,0,0,.4);
   font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
