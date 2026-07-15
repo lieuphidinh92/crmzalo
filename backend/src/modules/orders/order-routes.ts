@@ -134,7 +134,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
             assignedSale: { select: { id: true, fullName: true, email: true } },
             createdBy: { select: { id: true, fullName: true } },
           },
-          orderBy: [{ updatedAt: 'desc' }],
+          orderBy: [{ orderDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
           skip: (page - 1) * limit,
           take: limit,
         }),
