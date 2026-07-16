@@ -2,7 +2,8 @@
  * Composable for the wholesale-order workflow (Session 2A).
  *
  * Extends the original simple-order CRUD with:
- *   - 6-status pipeline (draft → confirmed → packing → shipping → completed)
+ *   - pipeline (draft → confirmed → shipping → completed); 'packing' đã gộp
+ *     vào 'shipping' (giữ lại value để hiển thị nhãn đơn cũ, không dùng trong luồng)
  *   - cancel-with-reason
  *   - line items / gifts / payment endpoints
  *   - permission-aware filters (member sees own orders only)

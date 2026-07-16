@@ -216,7 +216,7 @@
             <v-icon size="18" color="primary">mdi-gift</v-icon>
             <div class="flex-grow-1">
               <div class="font-weight-medium">{{ g.giftName }}</div>
-              <div v-if="g.batch" class="text-caption text-medium-emphasis">Lô {{ g.batch.batchCode }} · Trừ kho khi đóng gói</div>
+              <div v-if="g.batch" class="text-caption text-medium-emphasis">Lô {{ g.batch.batchCode }} · Trừ kho khi giao hàng</div>
               <div v-else class="text-caption text-medium-emphasis">Quà custom — không trừ kho</div>
             </div>
             <div>x{{ g.quantity }}</div>
@@ -450,6 +450,15 @@
       <v-card>
         <v-card-title>Cập nhật mã vận đơn</v-card-title>
         <v-card-text>
+          <v-alert
+            v-if="order && order.statusNormalized === 'confirmed'"
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+          >
+            Chuyển sang <strong>Đang giao</strong> sẽ trừ kho theo FIFO và chốt giá vốn cho đơn này.
+          </v-alert>
           <v-select
             v-model="trackingForm.provider"
             :items="shippingProviderOptions"

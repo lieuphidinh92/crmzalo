@@ -35,7 +35,7 @@
             :items="batchItems"
             item-title="text"
             item-value="value"
-            label="Lô (bắt buộc — sẽ trừ kho khi đóng gói)"
+            label="Lô (bắt buộc — sẽ trừ kho khi giao hàng)"
             :loading="batchesLoading"
             class="mb-3"
             hide-details

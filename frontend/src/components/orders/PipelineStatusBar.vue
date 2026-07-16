@@ -64,7 +64,11 @@ defineEmits<{
   (e: 'cancel'): void;
 }>();
 
-const steps = ORDER_STATUS_OPTIONS.filter((s) => s.value !== 'cancelled');
+// "Đóng gói" (packing) đã gộp vào "Đang giao" — ẩn khỏi pipeline nên nút
+// "Chuyển sang…" đi thẳng Xác nhận → Đang giao (trừ kho FIFO ở bước Giao).
+// Vẫn giữ 'packing' trong ORDER_STATUS_OPTIONS để statusLabel hiển thị đúng
+// cho đơn cũ (nếu còn) — chỉ loại khỏi luồng thao tác.
+const steps = ORDER_STATUS_OPTIONS.filter((s) => s.value !== 'cancelled' && s.value !== 'packing');
 
 function stepIndex(s: string) {
   return steps.findIndex((step) => step.value === s);
