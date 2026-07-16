@@ -284,6 +284,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
           where: { id, orgId: user.orgId },
           include: {
             supplier: true,
+            warehouse: true,
             items: {
               include: {
                 product: {
@@ -297,7 +298,9 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
                 id: true,
                 batchCode: true,
                 productId: true,
+                importQuantity: true,
                 currentQuantity: true,
+                expiryDate: true,
                 status: true,
               },
             },

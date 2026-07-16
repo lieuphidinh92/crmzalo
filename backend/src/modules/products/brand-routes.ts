@@ -176,6 +176,9 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
     'phone',
     'address',
     'notes',
+    'companyName',
+    'representative',
+    'representativeTitle',
   ] as const;
 
   // Dựng `data` Prisma từ body cho create/update. Khi update chỉ set field có gửi lên.
