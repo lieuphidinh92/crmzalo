@@ -5,10 +5,16 @@ import { useAuthStore } from '../stores/auth';
 import { formatVND, formatVNDShort, formatDateVN, formatDateTimeVN, statusLabel, statusColor } from '../composables/useFormat';
 import { canZaloRemind, openZaloReminder } from '../composables/useDebtReminder';
 import DebtCustomerRow from '../components/DebtCustomerRow.vue';
+import SupplierDebtPanel from '../components/SupplierDebtPanel.vue';
 
 const auth = useAuthStore();
 // Chỉ owner/admin được ghi nhận thu tiền; member chỉ xem để đi đòi nợ.
 const canRecordPayment = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+
+// Tab lớn: Phải thu KH vs Phải trả NCC. Tab NCC chỉ owner/admin thấy
+// (API /supplier-debt/* gate 403 với member — giá vốn nhạy cảm).
+const mainTab = ref('receivable'); // 'receivable' | 'payable'
+const canSeePayable = computed(() => ['owner', 'admin'].includes(auth.user?.role));
 
 const customers = ref([]);
 const loading = ref(false);
@@ -410,10 +416,32 @@ onMounted(loadList);
     <!-- Header -->
     <div class="mb-3">
       <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Công nợ</h1>
-      <p class="text-xs text-ink-secondary mt-0.5">
-        {{ summary.contact_count?.toLocaleString('vi-VN') || 0 }} đại lý đang nợ · ưu tiên đòi đơn quá hạn
-      </p>
     </div>
+
+    <!-- Tabs lớn: Phải thu KH / Phải trả NCC -->
+    <div class="flex gap-1 mb-4 border-b border-line-200">
+      <button
+        @click="mainTab = 'receivable'"
+        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
+        :class="mainTab === 'receivable' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
+      >
+        Phải thu Khách hàng
+      </button>
+      <button
+        v-if="canSeePayable"
+        @click="mainTab = 'payable'"
+        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
+        :class="mainTab === 'payable' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
+      >
+        Phải trả NCC
+      </button>
+    </div>
+
+    <!-- ══════════ TAB: PHẢI THU KHÁCH HÀNG ══════════ -->
+    <div v-show="mainTab === 'receivable'">
+    <p class="text-xs text-ink-secondary mb-3 -mt-1">
+      {{ summary.contact_count?.toLocaleString('vi-VN') || 0 }} đại lý đang nợ · ưu tiên đòi đơn quá hạn
+    </p>
 
     <!-- Tìm kiếm nhanh khách đang nợ -->
     <div class="relative mb-3">
@@ -1017,5 +1045,10 @@ onMounted(loadList);
     >
       {{ toast }}
     </div>
+    </div>
+    <!-- ══════════ /TAB: PHẢI THU KHÁCH HÀNG ══════════ -->
+
+    <!-- ══════════ TAB: PHẢI TRẢ NCC ══════════ -->
+    <SupplierDebtPanel v-if="mainTab === 'payable'" />
   </div>
 </template>
