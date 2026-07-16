@@ -56,14 +56,21 @@ async function load() {
 
 onMounted(load);
 
+const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+
 const quickActions = [
   { label: 'Tạo đơn hàng', sub: 'Lên đơn nhanh', icon: 'cart', to: '/pos' },
   { label: 'Báo giá nhanh', sub: 'Tạo báo giá gửi KH', icon: 'doc', soon: true },
   { label: 'Kho hàng', sub: 'Kiểm tra tồn kho', icon: 'warehouse', soon: true },
+  { label: 'Nhập kho', sub: 'Tạo phiếu nhập NCC', icon: 'box', to: '/imports', adminOnly: true },
   { label: 'Khuyến mãi', sub: 'Chương trình hiện có', icon: 'gift', soon: true },
   { label: 'Khách hàng', sub: 'Tìm và tạo mới', icon: 'users', to: '/customers' },
   { label: 'Sản phẩm mới', sub: 'SP vừa cập nhật', icon: 'box', soon: true },
 ];
+
+const visibleActions = computed(() =>
+  quickActions.filter((a) => !a.adminOnly || isAdmin.value),
+);
 
 const trustPills = [
   { icon: 'shield', title: 'Hàng chính hãng', sub: 'Cam kết 100% chính hãng' },
@@ -259,7 +266,7 @@ function levelBadge(l) {
         <div class="text-sm font-semibold text-ink-primary mb-3">Công cụ bán hàng nhanh</div>
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           <button
-            v-for="a in quickActions"
+            v-for="a in visibleActions"
             :key="a.label"
             @click="quickGo(a)"
             :disabled="a.soon"
