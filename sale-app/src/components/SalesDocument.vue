@@ -56,7 +56,9 @@ const total = computed(() => Number(props.order.total) || 0);
 const amountWords = computed(() => readVND(total.value));
 
 // Số dòng tối thiểu để bảng giống form in sẵn (kẻ ô trống cho đẹp).
-const MIN_ROWS = computed(() => (isExport.value ? 5 : 9));
+// Phiếu xuất kho cao (có QR + tổng tiền + tiền bằng chữ) nên giữ ít dòng
+// đệm để phần chữ ký vừa 1 trang A4; biên bản thấp hơn nên để nhiều.
+const MIN_ROWS = computed(() => (isExport.value ? 2 : 8));
 const padRows = computed(() => Math.max(0, MIN_ROWS.value - items.value.length));
 
 const cust = computed(() => ({
@@ -286,7 +288,7 @@ async function downloadImage() {
 .btn-back:hover{background:#f1f5f9;}
 
 /* ===== A4 sheet ===== */
-.page{position:relative;width:210mm;height:297mm;background:#fff;padding:12mm;overflow:hidden;
+.page{position:relative;width:210mm;min-height:297mm;flex:none;background:#fff;padding:12mm;overflow:visible;
   box-sizing:border-box;box-shadow:0 16px 50px rgba(0,0,0,.4);
   font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -311,7 +313,7 @@ async function downloadImage() {
 /* ===== header ===== */
 .hd{display:grid;grid-template-columns:23% 47% 30%;gap:6mm;align-items:center;}
 .logo{display:flex;align-items:center;justify-content:center;}
-.page.halovn .logo img{height:36mm;width:auto;max-width:100%;display:block;}
+.page.halovn .logo img{height:28mm;width:auto;max-width:100%;display:block;}
 .page.inocare .logo img{width:44mm;height:auto;max-width:100%;display:block;}
 .company .cname{font-weight:800;font-size:17pt;color:var(--blue);line-height:1.15;
   text-transform:uppercase;margin-bottom:2mm;}
@@ -326,7 +328,7 @@ async function downloadImage() {
   text-align:center;background:linear-gradient(180deg,#fff,var(--tint));}
 .paybox .pt{font-size:8.4pt;font-weight:800;color:#fff;background:var(--blue);
   border-radius:20px;padding:1.4mm 3mm;letter-spacing:.3px;display:inline-block;margin-bottom:2mm;}
-.paybox .qr{width:31mm;height:31mm;display:block;margin:0 auto 1.6mm;
+.paybox .qr{width:26mm;height:26mm;display:block;margin:0 auto 1.4mm;
   border:1px solid var(--bd);border-radius:2mm;padding:1mm;background:#fff;}
 .paybox .bk{font-size:9pt;font-weight:700;color:var(--deep);line-height:1.35;}
 .paybox .stk{font-size:9.4pt;color:var(--ink);}
@@ -348,7 +350,7 @@ async function downloadImage() {
 
 /* ===== customer card ===== */
 .custcard{border:1.2px solid var(--bd);border-radius:4mm;background:var(--tint);padding:3.4mm 4mm;margin-top:1mm;}
-.crowc{display:flex;align-items:center;gap:2.4mm;min-height:6.6mm;font-size:10.6pt;}
+.crowc{display:flex;align-items:center;gap:2.4mm;min-height:5.8mm;font-size:10.6pt;}
 .lbl{color:var(--muted);flex:0 0 auto;}
 .val{font-weight:700;color:var(--ink);}
 .fill{flex:1;border-bottom:1.4px dotted var(--bd);align-self:flex-end;margin-bottom:1mm;min-width:8mm;}
@@ -368,12 +370,12 @@ td.name{font-weight:600;}
 .summary{margin-top:0;border:1px solid var(--bd);border-top:none;font-size:10.4pt;}
 .sumrow{display:flex;align-items:stretch;}
 .sumrow:not(:last-child){border-bottom:1px solid var(--bd);}
-.sumlbl{flex:1;padding:2.4mm 3mm;color:var(--ink);}
+.sumlbl{flex:1;padding:1.8mm 3mm;color:var(--ink);}
 .sumlbl.c{text-align:center;font-weight:600;}
-.sumval{flex:0 0 30mm;padding:2.4mm 3mm;text-align:right;font-weight:700;color:var(--deep);
+.sumval{flex:0 0 30mm;padding:1.8mm 3mm;text-align:right;font-weight:700;color:var(--deep);
   border-left:1px solid var(--bd);font-variant-numeric:tabular-nums;}
 .split{display:flex;flex:1;padding:0;}
-.split>span{flex:1;padding:2.4mm 3mm;color:var(--muted);}
+.split>span{flex:1;padding:1.8mm 3mm;color:var(--muted);}
 .split .tax{flex:0 0 44%;border-left:1px solid var(--bd);}
 .grand{background:linear-gradient(90deg,var(--deep),var(--blue));}
 .grand .sumlbl{color:#fff;font-weight:800;font-size:11.5pt;text-align:center;}
@@ -390,7 +392,7 @@ td.name{font-weight:600;}
 .note-line{text-align:center;margin-top:6mm;font-size:10.4pt;color:var(--muted);}
 
 /* ===== signatures ===== */
-.signs{display:grid;gap:6mm;margin-top:9mm;text-align:center;}
+.signs{display:grid;gap:6mm;margin-top:5mm;text-align:center;}
 .signs-3{grid-template-columns:repeat(3,1fr);}
 .signs-2{grid-template-columns:repeat(2,1fr);padding:0 8%;}
 .sig .sico{width:9mm;height:9mm;border-radius:50%;background:var(--light);margin:0 auto 1.5mm;
@@ -398,7 +400,7 @@ td.name{font-weight:600;}
 .sig .sico svg{width:4.6mm;height:4.6mm;fill:none;stroke:var(--blue);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
 .sig .role{font-weight:800;color:var(--deep);font-size:11pt;}
 .sig .note{font-style:italic;color:var(--muted);font-size:9pt;margin-top:.5mm;}
-.sig .sline{border-bottom:1.4px dotted var(--bd);margin:14mm 4mm 0;}
+.sig .sline{border-bottom:1.4px dotted var(--bd);margin:9mm 4mm 0;}
 </style>
 
 <!-- In: chỉ tờ chứng từ, khổ A4 dọc -->
