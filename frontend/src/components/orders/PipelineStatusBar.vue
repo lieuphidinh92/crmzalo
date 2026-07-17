@@ -8,7 +8,7 @@
         :class="{
           'step--done': stepIndex(step.value) < currentIdx,
           'step--current': step.value === current,
-          'step--cancelled': current === 'cancelled' && step.value !== 'cancelled',
+          'step--cancelled': current === 'cancelled' && (step.value as OrderStatus) !== 'cancelled',
         }"
       >
         <div class="step-circle">
@@ -35,7 +35,7 @@
         Chuyển sang {{ nextStep.text }}
       </v-btn>
       <v-btn
-        v-if="current !== 'cancelled'"
+        v-if="(current as OrderStatus) !== 'cancelled'"
         color="error"
         variant="outlined"
         prepend-icon="mdi-close"

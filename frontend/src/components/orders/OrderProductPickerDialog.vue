@@ -26,11 +26,11 @@
           @update:model-value="onPickProduct"
         >
           <template #item="{ props: itemProps, item }">
-            <v-list-item v-bind="itemProps" :title="item.raw.display">
+            <v-list-item v-bind="itemProps" :title="rowOf(item).display">
               <template #subtitle>
                 <span class="text-caption">
-                  Tồn: {{ item.raw.totalStock }} {{ item.raw.unit }}
-                  · {{ formatVND(item.raw.defaultPrice) }}
+                  Tồn: {{ rowOf(item).totalStock }} {{ rowOf(item).unit }}
+                  · {{ formatVND(rowOf(item).defaultPrice) }}
                 </span>
               </template>
             </v-list-item>
@@ -65,7 +65,7 @@
             class="mb-3"
           >
             <template #selection="{ item }">
-              <span class="font-mono text-body-2">{{ item.title }}</span>
+              <span class="font-mono text-body-2">{{ selectionTitle(item) }}</span>
             </template>
           </v-select>
 
@@ -168,6 +168,15 @@ const results = ref<ProductItem[]>([]);
 const searching = ref(false);
 const picked = ref<ProductItem | null>(null);
 const tiers = ref<PriceTier[]>([]);
+
+/** Vuetify's #item slot passes a ListItem wrapper whose `.raw` holds the row. */
+function rowOf(item: unknown): ProductItem {
+  return (item as { raw: ProductItem }).raw;
+}
+/** Vuetify's #selection slot exposes `.title` (mapped from item-title="text"). */
+function selectionTitle(item: unknown): string {
+  return (item as { title: string }).title;
+}
 
 const { batches, loading: batchesLoading, fetchProductBatches } = useBatches();
 

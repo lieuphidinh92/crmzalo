@@ -25,6 +25,9 @@ import {
   Tooltip,
   Legend,
   Filler,
+  type ChartData,
+  type ChartOptions,
+  type TooltipItem,
 } from 'chart.js';
 
 ChartJS.register(
@@ -63,21 +66,21 @@ const chartData = computed(() => {
         pointRadius: 3,
       },
     ],
-  };
+  } as ChartData<'line'>;
 });
 
-const chartOptions = {
+const chartOptions: ChartOptions<'line'> = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: { display: false },
     tooltip: {
       callbacks: {
-        label: (ctx: { parsed: { y: number } }) =>
+        label: (ctx: TooltipItem<'line'>) =>
           new Intl.NumberFormat('vi-VN', {
             style: 'currency',
             currency: 'VND',
-          }).format(ctx.parsed.y),
+          }).format(ctx.parsed.y ?? 0),
       },
     },
   },

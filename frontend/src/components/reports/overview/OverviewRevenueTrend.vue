@@ -52,6 +52,9 @@ import {
   Tooltip,
   Filler,
   Legend,
+  type ChartData,
+  type ChartOptions,
+  type TooltipItem,
 } from 'chart.js';
 import {
   formatVNDShort,
@@ -101,7 +104,7 @@ function fmtMonth(ym: string): string {
 
 const chartData = computed(() => {
   const d = props.data;
-  if (!d) return { labels: [], datasets: [] };
+  if (!d) return { labels: [], datasets: [] } as ChartData<'line'>;
   const labels = d.buckets.map(fmtMonth);
   const datasets: Array<Record<string, unknown>> = d.series.map((s, i) => {
     const color = SERIES_COLORS[i % SERIES_COLORS.length];
@@ -145,10 +148,10 @@ const chartData = computed(() => {
       tension: 0,
     });
   }
-  return { labels, datasets };
+  return { labels, datasets } as unknown as ChartData<'line'>;
 });
 
-const chartOptions = computed(() => ({
+const chartOptions = computed((): ChartOptions<'line'> => ({
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index' as const, intersect: false },
@@ -165,11 +168,11 @@ const chartOptions = computed(() => ({
       titleColor: '#F8FAFC',
       bodyColor: '#F8FAFC',
       callbacks: {
-        label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) =>
+        label: (ctx: TooltipItem<'line'>) =>
           `${ctx.dataset.label ?? ''}: ${new Intl.NumberFormat('vi-VN', {
             style: 'currency',
             currency: 'VND',
-          }).format(ctx.parsed.y)}`,
+          }).format(ctx.parsed.y ?? 0)}`,
       },
     },
   },

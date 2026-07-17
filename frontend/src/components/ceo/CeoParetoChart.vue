@@ -99,6 +99,9 @@ import {
   Tooltip,
   Legend,
   Filler,
+  type ChartData,
+  type ChartOptions,
+  type TooltipItem,
 } from 'chart.js';
 import {
   customerTypeLabel,
@@ -153,10 +156,10 @@ const chartData = computed(() => {
         yAxisID: 'y2',
       },
     ],
-  };
+  } as ChartData<'bar'>;
 });
 
-const chartOptions = {
+const chartOptions: ChartOptions<'bar'> = {
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index' as const, intersect: false },
@@ -164,14 +167,15 @@ const chartOptions = {
     legend: { position: 'top' as const, labels: { boxWidth: 12 } },
     tooltip: {
       callbacks: {
-        label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) => {
+        label: (ctx: TooltipItem<'bar'>) => {
           const label = ctx.dataset.label ?? '';
+          const y = ctx.parsed.y ?? 0;
           if (label.includes('%'))
-            return `${label}: ${ctx.parsed.y.toFixed(1)}%`;
+            return `${label}: ${y.toFixed(1)}%`;
           return `${label}: ${new Intl.NumberFormat('vi-VN', {
             style: 'currency',
             currency: 'VND',
-          }).format(ctx.parsed.y)}`;
+          }).format(y)}`;
         },
       },
     },

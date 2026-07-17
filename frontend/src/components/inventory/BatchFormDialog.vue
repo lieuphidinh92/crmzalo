@@ -31,9 +31,9 @@
           @update:model-value="onPickProduct"
         >
           <template #item="{ props: itemProps, item }">
-            <v-list-item v-bind="itemProps" :title="item.raw.display">
+            <v-list-item v-bind="itemProps" :title="rowOf(item).display">
               <template #subtitle>
-                <span class="text-caption">Tồn hiện tại: {{ item.raw.totalStock }} {{ item.raw.unit }}</span>
+                <span class="text-caption">Tồn hiện tại: {{ rowOf(item).totalStock }} {{ rowOf(item).unit }}</span>
               </template>
             </v-list-item>
           </template>
@@ -159,6 +159,12 @@ const emit = defineEmits<{
 }>();
 
 const { createBatch, updateBatchMeta, saving } = useInventory();
+
+/** Vuetify's #item slot passes a ListItem wrapper whose `.raw` holds the row.
+ *  Typed helper so the template reads the row without `any`. */
+function rowOf(item: unknown): ProductItem {
+  return (item as { raw: ProductItem }).raw;
+}
 
 const results = ref<ProductItem[]>([]);
 const searching = ref(false);

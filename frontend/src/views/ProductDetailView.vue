@@ -413,7 +413,7 @@
     <!-- Full batches list + cost stats (3.5D-2) -->
     <ProductBatchesDialog
       v-model="batchesDialog"
-      :product-id="productId"
+      :product-id="productId ?? ''"
       :product-sku="form.sku"
       :can-see-cost="canSeeCost"
     />

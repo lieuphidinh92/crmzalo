@@ -18,11 +18,11 @@
       @update:model-value="onPick"
     >
       <template #item="{ props: itemProps, item }">
-        <v-list-item v-bind="itemProps" :title="item.raw.display">
+        <v-list-item v-bind="itemProps" :title="rowOf(item).display">
           <template #subtitle>
-            <span v-if="item.raw.storeName" class="text-caption">{{ item.raw.storeName }}</span>
-            <span v-if="item.raw.policyTier" class="text-caption text-medium-emphasis ml-1">
-              · {{ tierLabel(item.raw.policyTier) }}
+            <span v-if="rowOf(item).storeName" class="text-caption">{{ rowOf(item).storeName }}</span>
+            <span v-if="rowOf(item).policyTier" class="text-caption text-medium-emphasis ml-1">
+              · {{ tierLabel(rowOf(item).policyTier!) }}
             </span>
           </template>
         </v-list-item>
@@ -88,6 +88,12 @@ const emit = defineEmits<{
 const results = ref<ContactPickerItem[]>([]);
 const loading = ref(false);
 const picked = computed(() => props.modelValue);
+
+/** Vuetify's #item slot passes a ListItem wrapper whose `.raw` holds the row.
+ *  Typed helper so the template reads the row without `any`. */
+function rowOf(item: unknown): ContactPickerItem {
+  return (item as { raw: ContactPickerItem }).raw;
+}
 
 let debouncer: ReturnType<typeof setTimeout> | null = null;
 function onSearch(text: string) {

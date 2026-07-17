@@ -384,8 +384,6 @@ import {
   formatDateVN,
   suggestBatchCode,
   useImports,
-  type ImportSupplier,
-  type ImportWarehouse,
   type ParsedExcelRow,
 } from '@/composables/use-imports';
 import ExcelUploadDialog from '@/components/imports/ExcelUploadDialog.vue';

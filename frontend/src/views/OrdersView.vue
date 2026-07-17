@@ -34,24 +34,24 @@
 
     <!-- Warning banners -->
     <v-alert
-      v-if="summary?.warnings?.overdueDebt > 0"
+      v-if="(summary?.warnings?.overdueDebt ?? 0) > 0"
       type="error"
       variant="tonal"
       density="compact"
       class="mt-3"
       closable
     >
-      🚨 {{ summary.warnings.overdueDebt }} đơn quá hạn nợ —
+      🚨 {{ summary?.warnings?.overdueDebt }} đơn quá hạn nợ —
       <a class="text-decoration-underline" href="#" @click.prevent="filterOverdue">Xem ngay</a>
     </v-alert>
     <v-alert
-      v-if="summary?.warnings?.expiringBatches > 0"
+      v-if="(summary?.warnings?.expiringBatches ?? 0) > 0"
       type="warning"
       variant="tonal"
       density="compact"
       class="mt-2"
     >
-      ⚠ {{ summary.warnings.expiringBatches }} lô hàng sắp hết hạn (90 ngày tới)
+      ⚠ {{ summary?.warnings?.expiringBatches }} lô hàng sắp hết hạn (90 ngày tới)
     </v-alert>
 
     <!-- Filter bar -->

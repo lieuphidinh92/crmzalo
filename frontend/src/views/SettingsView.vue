@@ -37,7 +37,7 @@
                 density="compact"
                 hide-details
                 :label="item.isActive ? 'Hoạt động' : 'Đã nghỉ'"
-                @update:model-value="(val: boolean) => toggleActive(item, val)"
+                @update:model-value="(val: boolean | null) => toggleActive(item, val ?? false)"
               />
             </template>
             <template #item.actions="{ item }">

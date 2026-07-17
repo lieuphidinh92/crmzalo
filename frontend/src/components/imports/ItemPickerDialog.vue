@@ -27,13 +27,13 @@
             <template #item="{ item, props: itemProps }">
               <v-list-item v-bind="itemProps">
                 <template #title>
-                  <span class="font-mono text-caption">{{ item.raw.sku }}</span>
-                  · {{ item.raw.name }}
+                  <span class="font-mono text-caption">{{ rowOf(item).sku }}</span>
+                  · {{ rowOf(item).name }}
                 </template>
                 <template #subtitle>
                   <span class="text-caption text-medium-emphasis">
-                    Đơn vị: {{ item.raw.unit ?? '—' }}
-                    <span v-if="item.raw.costPrice"> · Giá vốn TB: {{ formatVNDFull(item.raw.costPrice) }}</span>
+                    Đơn vị: {{ rowOf(item).unit ?? '—' }}
+                    <span v-if="rowOf(item).costPrice"> · Giá vốn TB: {{ formatVNDFull(rowOf(item).costPrice) }}</span>
                   </span>
                 </template>
               </v-list-item>
@@ -173,6 +173,12 @@ const open = computed({
   set: (v) => emit('update:modelValue', v),
 });
 const editingMode = computed(() => !!props.line);
+
+/** Vuetify's #item slot passes a ListItem wrapper whose `.raw` holds the row.
+ *  Typed helper so the template reads the row without `any`. */
+function rowOf(item: unknown): ProductRow {
+  return (item as { raw: ProductRow }).raw;
+}
 
 const formRef = ref<any>(null);
 const formValid = ref(false);

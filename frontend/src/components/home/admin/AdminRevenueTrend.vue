@@ -42,6 +42,9 @@ import {
   Tooltip,
   Legend,
   Filler,
+  type ChartData,
+  type ChartOptions,
+  type TooltipItem,
 } from 'chart.js';
 import {
   customerTypeLabel,
@@ -108,10 +111,10 @@ const chartData = computed(() => {
       fill: props.groupBy === 'total',
       pointRadius: 3,
     })),
-  };
+  } as ChartData<'line'>;
 });
 
-const chartOptions = {
+const chartOptions: ChartOptions<'line'> = {
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index' as const, intersect: false },
@@ -119,11 +122,11 @@ const chartOptions = {
     legend: { position: 'top' as const, labels: { boxWidth: 12 } },
     tooltip: {
       callbacks: {
-        label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) =>
+        label: (ctx: TooltipItem<'line'>) =>
           `${ctx.dataset.label ?? ''}: ${new Intl.NumberFormat('vi-VN', {
             style: 'currency',
             currency: 'VND',
-          }).format(ctx.parsed.y)}`,
+          }).format(ctx.parsed.y ?? 0)}`,
       },
     },
   },

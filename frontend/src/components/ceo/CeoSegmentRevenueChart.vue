@@ -25,6 +25,9 @@ import {
   BarElement,
   Tooltip,
   Legend,
+  type ChartData,
+  type ChartOptions,
+  type TooltipItem,
 } from 'chart.js';
 import {
   customerTypeLabel,
@@ -61,21 +64,21 @@ const chartData = computed(() => {
       stack: 'revenue',
       borderRadius: 4,
     })),
-  };
+  } as ChartData<'bar'>;
 });
 
-const chartOptions = {
+const chartOptions: ChartOptions<'bar'> = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: { position: 'top' as const, labels: { boxWidth: 12 } },
     tooltip: {
       callbacks: {
-        label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) =>
+        label: (ctx: TooltipItem<'bar'>) =>
           `${ctx.dataset.label ?? ''}: ${new Intl.NumberFormat('vi-VN', {
             style: 'currency',
             currency: 'VND',
-          }).format(ctx.parsed.y)}`,
+          }).format(ctx.parsed.y ?? 0)}`,
       },
     },
   },
