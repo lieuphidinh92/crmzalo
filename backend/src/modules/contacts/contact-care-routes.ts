@@ -197,25 +197,25 @@ export async function contactCareRoutes(app: FastifyInstance): Promise<void> {
         SELECT
           COALESCE(SUM(COALESCE(o.total_amount_value::float, o.total_amount)) FILTER (
             WHERE o.order_date >= NOW() - INTERVAL '60 days'
-              AND o.status IN ('confirmed','shipped','completed')
+              AND o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
           ), 0)::float AS revenue_60d,
           COALESCE(SUM(oi.profit::float) FILTER (
             WHERE o.order_date >= NOW() - INTERVAL '60 days'
-              AND o.status IN ('confirmed','shipped','completed')
+              AND o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
               AND oi.profit IS NOT NULL
           ), 0)::float AS profit_60d,
           COALESCE(SUM(COALESCE(o.total_amount_value::float, o.total_amount)) FILTER (
-            WHERE o.status IN ('confirmed','shipped','completed')
+            WHERE o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
           ), 0)::float AS revenue_lifetime,
           COALESCE(SUM(oi.profit::float) FILTER (
-            WHERE o.status IN ('confirmed','shipped','completed')
+            WHERE o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
               AND oi.profit IS NOT NULL
           ), 0)::float AS profit_lifetime,
           COUNT(DISTINCT o.id) FILTER (
-            WHERE o.status IN ('confirmed','shipped','completed')
+            WHERE o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
           )::int AS order_count_lifetime,
           MAX(o.order_date) FILTER (
-            WHERE o.status IN ('confirmed','shipped','completed')
+            WHERE o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
           ) AS last_order_at
         FROM contacts c
         LEFT JOIN orders o ON o.contact_id = c.id

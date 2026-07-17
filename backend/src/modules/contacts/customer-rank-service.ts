@@ -21,7 +21,7 @@
  * của anh Philip), fallback `total_amount` (Float legacy MISA imports).
  * Lợi nhuận = SUM(order_items.profit) với profit = line_total - line_cost.
  *
- * Chỉ tính đơn `status IN ('confirmed','shipped','completed')` (mirror với
+ * Chỉ tính đơn `status IN ('confirmed','packing','shipping','completed','shipped','paid')` (mirror với
  * report list endpoint).
  */
 
@@ -30,7 +30,7 @@ const { Prisma } = pkg;
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 
-export const COUNTABLE_STATUSES = ['confirmed', 'shipped', 'completed'] as const;
+export const COUNTABLE_STATUSES = ['confirmed', 'packing', 'shipping', 'completed', 'shipped', 'paid'] as const;
 const DAYS_60 = 60;
 
 const W_PROFIT_VS_REVENUE = { profit: 0.7, revenue: 0.3 };
@@ -78,18 +78,18 @@ export async function recomputeRanksForOrg(orgId: string): Promise<{
       c.id AS contact_id,
       COALESCE(SUM(COALESCE(o.total_amount_value::float, o.total_amount)) FILTER (
         WHERE o.order_date >= NOW() - INTERVAL '${Prisma.raw(String(DAYS_60))} days'
-          AND o.status IN ('confirmed','shipped','completed')
+          AND o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
       ), 0)::float AS revenue_60d,
       COALESCE(SUM(oi.profit::float) FILTER (
         WHERE o.order_date >= NOW() - INTERVAL '${Prisma.raw(String(DAYS_60))} days'
-          AND o.status IN ('confirmed','shipped','completed')
+          AND o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
           AND oi.profit IS NOT NULL
       ), 0)::float AS profit_60d,
       COALESCE(SUM(COALESCE(o.total_amount_value::float, o.total_amount)) FILTER (
-        WHERE o.status IN ('confirmed','shipped','completed')
+        WHERE o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
       ), 0)::float AS revenue_lifetime,
       COALESCE(SUM(oi.profit::float) FILTER (
-        WHERE o.status IN ('confirmed','shipped','completed')
+        WHERE o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
           AND oi.profit IS NOT NULL
       ), 0)::float AS profit_lifetime
     FROM contacts c

@@ -80,7 +80,7 @@ function sanitizeSpecialDates(raw: unknown): Array<{ label: string; date: string
 
 /** Statuses that count as booked revenue. Mirrors the convention in
  * reports/overview-service. Excludes draft + cancelled. */
-const COUNTABLE_STATUSES = ['confirmed', 'shipped', 'completed'] as const;
+const COUNTABLE_STATUSES = ['confirmed', 'packing', 'shipping', 'completed', 'shipped', 'paid'] as const;
 
 /** Day-bucket boundaries for the "Số ngày chưa đặt đơn" filter. */
 const DAYS_BUCKET_ACTIVE_MAX = 29;       // <30d
@@ -346,7 +346,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               ), 0)::bigint AS revenue_60d
             FROM orders o
             WHERE o.contact_id IN (${Prisma.join(contactIds)})
-              AND o.status IN ('confirmed','shipped','completed')
+              AND o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
             GROUP BY o.contact_id
           ),
           item_profit AS (
@@ -370,7 +370,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             FROM orders o
             JOIN order_items oi ON oi.order_id = o.id
             WHERE o.contact_id IN (${Prisma.join(contactIds)})
-              AND o.status IN ('confirmed','shipped','completed')
+              AND o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
             GROUP BY o.contact_id
           )
           SELECT
@@ -625,7 +625,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               ), 0)::bigint AS revenue_60d
             FROM orders o
             WHERE o.contact_id IN (${Prisma.join(contactIds)})
-              AND o.status IN ('confirmed','shipped','completed')
+              AND o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
             GROUP BY o.contact_id
           ),
           item_profit AS (
@@ -649,7 +649,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             FROM orders o
             JOIN order_items oi ON oi.order_id = o.id
             WHERE o.contact_id IN (${Prisma.join(contactIds)})
-              AND o.status IN ('confirmed','shipped','completed')
+              AND o.status IN ('confirmed','packing','shipping','completed','shipped','paid')
             GROUP BY o.contact_id
           )
           SELECT

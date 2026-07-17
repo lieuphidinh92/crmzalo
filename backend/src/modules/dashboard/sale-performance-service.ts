@@ -29,7 +29,7 @@ const ACTIVE_LOOKBACK_DAYS = 60;
  * confirmed) and cancelled. Mirrors COUNTABLE_ORDER_STATUSES in
  * overview-service — kept as a local copy so this module has no
  * cross-dependency on the reports layer. */
-const COUNTABLE_STATUSES = ['confirmed', 'shipped', 'completed'] as const;
+const COUNTABLE_STATUSES = ['confirmed', 'packing', 'shipping', 'completed', 'shipped', 'paid'] as const;
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
 

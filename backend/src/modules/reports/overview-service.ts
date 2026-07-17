@@ -27,9 +27,12 @@ const ACTIVE_LOOKBACK_DAYS = 60;
 const AT_RISK_INACTIVE_DAYS = 45;
 const AT_RISK_LIFETIME_VND = 100_000_000;
 
-/** Statuses that count as "real revenue". Excludes draft (chưa chốt) and
- * cancelled (đã huỷ). Confirmed/shipped/completed are all booked sales. */
-export const COUNTABLE_ORDER_STATUSES = ['confirmed', 'shipped', 'completed'] as const;
+/** Statuses that count as "real revenue". Excludes draft (chưa chốt),
+ * cancelled/returned (đã huỷ/hoàn) và opening_balance (công nợ đầu kỳ).
+ * NOTE: trạng thái "đang giao" trong DB là `shipping` (KHÔNG phải `shipped`);
+ * `shipped`/`paid` chỉ là tên legacy — giữ lại cho chắc. Phải khớp list của
+ * sale-app, nếu không đơn shipping/packing bị bỏ → doanh số ra 0. */
+export const COUNTABLE_ORDER_STATUSES = ['confirmed', 'packing', 'shipping', 'completed', 'shipped', 'paid'] as const;
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
