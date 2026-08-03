@@ -23,7 +23,14 @@ out/
 .env.local
 .env.*.local
 **/.env
+# MỌI biến thể .env (.env.prod, .env.staging...) — 3/8/2026 phát hiện
+# backend/.env.prod chứa DATABASE_URL production mà KHÔNG bị ignore:
+# một lần `git add .` là lộ mật khẩu Supabase lên GitHub.
+.env.*
+**/.env.*
+# Ngoại lệ đứng SAU nên vẫn commit được file mẫu (luật sau thắng luật trước).
 !.env.example
+!**/.env.example
 
 # ── Prisma generated client ─────────────────────────────────────────
 backend/node_modules/.prisma/
