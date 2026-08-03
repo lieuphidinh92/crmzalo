@@ -259,3 +259,65 @@ default-own = Admin, nên 5/6 đơn của Đạt bị tính lệch sang Admin.
    script check `prisma.order.findMany({ orderCode: { in: codes }})`
    trước khi create. Re-chạy --apply = no-op. An toàn cho CEO
    re-run khi nghi ngờ.
+
+---
+
+## 15/07/2026 — Tồn kho sale-app lệch kiểm kê: "tồn ma" demo + cột total_stock lưu sẵn
+
+**Vấn đề:** CEO thấy MH_01 (Manhae Menopause 30v) tồn 90 hộp trên sale-app
+nhưng file kiểm kê 14/7 không có mã này ("lệch hẳn").
+
+**Root cause (2 tầng):**
+1. Đợt kiểm kê 14/7 nạp tồn thật bằng cách THÊM 1 lô mới (created_at tháng 7,
+   type=`adjust`/`stocktake`) cho từng SKU thật, nhưng KHÔNG dọn các lô
+   demo/test cũ từ tháng 5/2026. → 10 SKU giữ "tồn ma" (tổng 934 đv), gồm cả
+   lô `L2605-TEST`. Nhận diện: SKU còn tồn nhưng `count(batches created_at>=2026-07-01)=0`.
+2. **`products.total_stock` là cột DENORMALIZED** — sale-app `/sale-app/products`
+   trả `stock: p.totalStock` (sale-app-routes.ts:327), KHÔNG tính sống từ lô.
+   → Sửa `inventory_batches.current_quantity` là CHƯA đủ; phải resync `total_stock`.
+
+**Cách fix (an toàn, đã verify local):**
+- Backup 20 lô ra CSV trước.
+- Transaction: insert `inventory_movements` (adjust/stocktake, qty âm, note kiểm toán)
+  rồi set `current_quantity=0` cho lô ma (đều `so_lan_ban_ra=0` nên không hỏng đơn).
+- Resync `products.total_stock = sum(current_quantity)` cho 10 SKU.
+- Verify toàn catalog: `total_stock` khớp 100% tổng lô, 0 mã lệch.
+- Backend đọc DB sống → không restart; chỉ hard-refresh PWA.
+
+**Bài học:**
+- Mọi thao tác sửa tồn kho phải đụng CẢ HAI: `inventory_batches.current_quantity`
+  VÀ `products.total_stock`. Query reconcile sau khi sửa:
+  `products having total_stock <> sum(batch.current_quantity)` phải trả 0 dòng.
+- Nạp kiểm kê lần sau: phải ZERO/dọn lô cũ trước khi thêm lô đếm mới, tránh cộng dồn tồn ma.
+- Fix mới làm ở DB LOCAL. Production (Supabase) nhiều khả năng dính y hệt — chờ CEO duyệt.
+
+---
+
+## 17/07/2026 — Dashboard CRM ra doanh số 0 dù có đơn: sai vocabulary status (`shipped` vs `shipping`)
+
+**Hiện tượng:** Sau khi deploy CRM đầy đủ lên crm.halo.com.vn, Dashboard "Báo cáo tổng quan"
++ Top NV Sale/CEO + xếp hạng/chăm sóc KH đều ra **doanh số 0** cho tháng hiện tại, dù
+danh sách Đơn hàng hiện đủ (813 đơn, Đang giao 85, Hoàn tất 700). "Đại lý active" vẫn đúng
+(đếm contacts, không đụng orders) → khoanh vùng: chỉ phần gom số từ ORDERS bị lỗi.
+
+**Root cause:** Các module thống kê CRM lọc doanh số bằng `['confirmed','shipped','completed']`.
+Nhưng vocabulary status chuẩn (`orders/order-service.ts` → `ORDER_STATUSES`) là
+`draft,confirmed,packing,shipping,completed,returned,cancelled`. `shipped`/`paid`/`new` chỉ là
+**tên legacy** (LEGACY_STATUS_MAP: shipped→shipping, paid→completed) — DB có **0 đơn** status
+`shipped`. Mọi đơn "Đang giao" = `shipping`. Vì tháng 7 phần lớn là đơn Đang giao → bị loại sạch.
+Bằng chứng DB local: doanh số list-sai vs list-đúng chênh đúng 143.760.000đ = 3 đơn `shipping`.
+
+**Cách fix:** đổi list ở 5 file CRM sang khớp sale-app (đã đúng sẵn):
+`['confirmed','packing','shipping','completed','shipped','paid']`.
+Files: `reports/overview-service.ts`, `dashboard/sale-performance-service.ts`,
+`contacts/{contact-routes,customer-rank-service,contact-care-routes}.ts` (cả mảng TS lẫn SQL `IN (...)`).
+Không đụng DB. cancelled/returned/draft/opening_balance vẫn loại (không phải doanh số thật).
+
+**Bài học:**
+- KHÔNG hardcode danh sách status rải rác. Vocabulary chuẩn = `ORDER_STATUSES` trong
+  `orders/order-service.ts`; "đếm được doanh số" = trừ `draft,cancelled,returned,opening_balance`.
+  sale-app và CRM PHẢI dùng chung 1 list, nếu lệch → số 2 app không khớp.
+- Data "trắng" trên dashboard ≠ thiếu data. Kiểm tra thứ tự: danh sách đơn có hiện không?
+  Nếu có → lỗi query aggregate (status/ngày), KHÔNG phải thiếu data → KHÔNG kéo/copy DB.
+- Suýt copy DB local đè production (production đang có 813 đơn + 1,3 tỷ công nợ thật, sale team
+  nhập trực tiếp). May là dừng lại verify trước. Local chỉ là bản dev cũ, KHÔNG phải nguồn thật.
