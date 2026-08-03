@@ -35,10 +35,10 @@ let debounceTimer = null;
 // them the same way, so the per-tab counts line up with the rows.
 const statusTabs = [
   { key: '', label: 'Tất cả', api: '' },
-  { key: 'draft', label: 'Chờ xác nhận', api: 'draft' },
-  { key: 'confirmed', label: 'Đã xác nhận', api: 'confirmed' },
-  // Bỏ bước "Đóng gói" — đơn xác nhận đi thẳng sang Đang giao (trừ kho ở đó).
-  { key: 'shipping', label: 'Đang giao', api: 'shipping,shipped' },
+  { key: 'draft', label: 'Sale lên đơn', api: 'draft' },
+  { key: 'confirmed', label: 'Kho xác nhận đủ hàng', api: 'confirmed' },
+  // Bỏ bước "Đóng gói" — đơn kho xác nhận đi thẳng sang giao vận (trừ kho ở đó).
+  { key: 'shipping', label: 'Giao cho vận chuyển', api: 'shipping,shipped' },
   { key: 'completed', label: 'Giao thành công', api: 'completed,paid' },
   { key: 'returned', label: 'Đơn hoàn', api: 'returned' },
   { key: 'cancelled', label: 'Đơn huỷ', api: 'cancelled' },
