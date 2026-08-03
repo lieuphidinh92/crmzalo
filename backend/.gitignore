@@ -2,6 +2,13 @@
 node_modules/
 dist/
 .env
+# Mọi biến thể .env — .env.prod chứa DATABASE_URL production (mật khẩu Supabase).
+# Nhánh feature đã chặn từ trước, main thì thiếu → bổ sung 3/8/2026.
+.env.prod
+.env.*
+# Backup do script 1 lần ghi ra — chứa dữ liệu thật (tồn kho, công nợ khách).
+scripts/backup-*.json
+scripts/backups/
 *.log
 var/
 prisma/migrations/
