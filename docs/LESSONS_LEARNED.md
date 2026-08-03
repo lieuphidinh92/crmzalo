@@ -321,3 +321,62 @@ Không đụng DB. cancelled/returned/draft/opening_balance vẫn loại (không
   Nếu có → lỗi query aggregate (status/ngày), KHÔNG phải thiếu data → KHÔNG kéo/copy DB.
 - Suýt copy DB local đè production (production đang có 813 đơn + 1,3 tỷ công nợ thật, sale team
   nhập trực tiếp). May là dừng lại verify trước. Local chỉ là bản dev cũ, KHÔNG phải nguồn thật.
+
+---
+
+## 03/08/2026 — Kiểm kê "đầu ngày" áp thẳng vào production sẽ xoá giao dịch trong ngày
+
+**Vấn đề:** CEO gửi file kiểm thực tế 3/8 (92 SKU, kho tầng 1) để cập nhật tồn. Nếu áp
+`tồn = số kiểm` như đợt 14/7 thì sai, vì file kiểm lúc ĐẦU NGÀY còn production vẫn chạy:
+lúc 09:46 nhập 20đv SM_01 (phiếu NK-202608-001), 14:08–14:54 đóng gói xuất OL_02 −50đv,
+MH_07 −22đv, và 14:51 huỷ 2 đơn cũ → hoàn kho MH_02 +429đv.
+
+**LẦN ĐẦU LÀM SAI — bài học chính:** công thức `tồn = kiểm + Σ movement sau mốc kiểm`
+là CHƯA ĐỦ, vì nó gộp 2 loại movement khác bản chất. Áp xong OL_02 ra 155 và MH_07 ra 17
+(TRỪ 2 LẦN), phải chạy phiên `KK-202608-003` sửa lại thành 205 và 39.
+
+**Công thức đúng — phân biệt theo CHỨNG TỪ GỐC:**
+```
+tồn đích = số kiểm + Σ movement sau mốc kiểm CÓ chứng từ gốc cũng tạo sau mốc kiểm
+```
+- **Chứng từ tạo sau mốc kiểm = hàng thật** → cộng/trừ. Vd `NK-202608-001` tạo 09:46 nhập
+  20đv SM_01 → tồn = kiểm + 20.
+- **Chứng từ tạo từ trước (tháng 7) = DỌN DỮ LIỆU** → BỎ QUA. 12:00 Đức sửa trạng thái
+  loạt đơn sai: 4 đơn cũ (DH-202607-0131/0178/0174/0106, tạo 20–31/7) chuyển `completed`
+  → FIFO trừ kho lúc 14h; 2 đơn cũ (DH-202607-0089 shipped 17/7, DH-202607-0156 shipped
+  31/7) bị huỷ → hoàn kho +429đv MH_02. Hàng các đơn này đã rời kho từ tháng 7 → lúc kiểm
+  08:00 đã không có trong kho → **số kiểm đã đúng, cộng/trừ thêm là tính 2 lần**.
+- Cách tra: `inventory_movements.reference_type` + `reference_id` → `orders.created_at` /
+  `import_orders.created_at`. So với mốc kiểm. KHÔNG dựa vào `movement.created_at`.
+- Cũng loại `referenceType='stocktake'` (movement của chính phiên kiểm) để giữ idempotent.
+
+**Hỏi CEO mốc kiểm CHÍNH XÁC ngay từ đầu:** lần này ban đầu em đoán "đầu ngày" = 00:00;
+thực tế Đức kiểm **08:00** và 12:00 mới dọn đơn. Không hỏi thì không thể phân biệt được
+đâu là hàng thật đâu là dọn dữ liệu → sai số lớn.
+
+**Ngoại lệ phải hỏi CEO, không tự quyết:** MH_02 kiểm = 0 nhưng hệ thống hoàn kho 429đv.
+CEO xác nhận kho trống thật → hàng đã đi rồi mà đơn vẫn bị huỷ → áp 0, còn phải rà lại
+2 đơn đó (có thể đang mất doanh thu + công nợ 429 hộp).
+Bài học: chênh lệch lớn giữa số kiểm và số hệ thống = câu hỏi nghiệp vụ, KHÔNG phải bug.
+
+**2 bẫy kỹ thuật gặp khi viết script (đã fix, xem `scripts/kiemke-2026-08-03.ts`):**
+1. Cột `@db.Date` (`inventory_batches.expiry_date`): ghi `new Date('2028-06-01T00:00:00+07:00')`
+   → 2028-05-31T17:00Z → Postgres cắt DATE **lùi 1 ngày, lệch tháng HSD** → lần chạy sau
+   không khớp lại lô vừa tạo → P2002 trùng `(org_id, product_id, batch_code)`.
+   Đúng: **luôn `T00:00:00Z`** cho mọi giá trị ngày-không-giờ.
+2. File backup dùng tên cố định → chạy `--apply` lần 2 ghi đè backup lần 1 (backup mới chỉ
+   còn trạng thái ĐÃ sửa) = **mất đường lùi**. Phải gắn timestamp vào tên file backup.
+
+**Kiểm kê theo từng lô:** file ghi NM_1 2 lô (9/2027=17, 12/2027=191) nhưng DB có lô
+10/2027 (10đv) không ai kiểm. Không zero lô ngoài danh sách → tồn ra 218 thay vì 208.
+Quy tắc: lô không có trong file kiểm → về 0 (khi CEO chốt "file = toàn bộ tồn").
+
+**Kết quả:** `KK-202608-002` (57 lô, −1033đv) + `KK-202608-003` (2 lô, sửa vụ trừ 2 lần).
+92 SKU khớp file kiểm, Inocare giữ nguyên 8.601đv (chặn 2 tầng: brand + tiền tố SKU),
+tổng tồn **10.982đv** = 2.361 (kiểm) + 20 (nhập NK-202608-001) + 8.601 (Inocare).
+Chạy lại = no-op.
+
+**Còn treo:** 7 mã Inocare lệch `total_stock` vs tổng lô 48đv (có SẴN trước khi kiểm, đã
+verify bằng backup — sale-app đang hiện cao hơn tồn thật); 4 lô mới thiếu `importCost`
+(NM_1 9/2027, BIO_03, BIO_06, BIO_07); phiên `KK-202608-001` do `admin@local.dev` mở
+3/8 14:34 còn `counting` 0/139 lô → **để mở là app CHẶN tạo phiên kiểm mới**, nên huỷ.
