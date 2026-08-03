@@ -111,6 +111,111 @@ function ledgerNum(v) {
   return v ? numVN.format(Math.round(v)) : '';
 }
 
+// ── Tab lớn thứ 3: SỔ NHẬT KÝ CÔNG NỢ TOÀN CÔNG TY (chỉ owner/admin) ──
+// Kế toán tra mọi giao dịch nợ/thu theo thời gian để đối chiếu chứng từ nhanh.
+const canSeeCompany = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+
+// Hôm nay (giờ máy ~ giờ VN) dạng YYYY-MM-DD.
+function todayStr() {
+  const n = new Date();
+  const pad = (x) => String(x).padStart(2, '0');
+  return `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())}`;
+}
+
+const cLedger = ref(null); // { range, opening_balance, company_closing, totals, page, page_size, total, rows }
+const cLedgerLoading = ref(false);
+const cLedgerError = ref('');
+const cLedgerLoaded = ref(false);
+// Mặc định: "Từ ngày" để trống = từ đầu lịch sử → hôm nay (xem toàn bộ).
+const cLedgerFilter = ref({ from: '', to: todayStr(), q: '', page: 1 });
+
+async function loadCompanyLedger() {
+  cLedgerLoading.value = true;
+  cLedgerError.value = '';
+  try {
+    const { data } = await api.get('/sale-app/debt/ledger', {
+      params: {
+        from: cLedgerFilter.value.from || undefined,
+        to: cLedgerFilter.value.to || undefined,
+        q: cLedgerFilter.value.q.trim() || undefined,
+        page: cLedgerFilter.value.page,
+        pageSize: 100,
+      },
+    });
+    cLedger.value = data;
+    cLedgerLoaded.value = true;
+  } catch (err) {
+    cLedgerError.value = err.response?.data?.error || 'Không tải được sổ nhật ký công nợ';
+    cLedger.value = null;
+  } finally {
+    cLedgerLoading.value = false;
+  }
+}
+
+// Đổi lọc → về trang 1 rồi tải lại.
+function applyCLedgerFilter() {
+  cLedgerFilter.value.page = 1;
+  loadCompanyLedger();
+}
+function cLedgerGoPage(p) {
+  if (p < 1 || p > cLedgerPages.value) return;
+  cLedgerFilter.value.page = p;
+  loadCompanyLedger();
+}
+const cLedgerPages = computed(() => {
+  const t = cLedger.value?.total || 0;
+  const ps = cLedger.value?.page_size || 100;
+  return Math.max(1, Math.ceil(t / ps));
+});
+
+// Chuyển tab lớn; lần đầu vào tab công ty thì lazy-load.
+function openMainTab(t) {
+  mainTab.value = t;
+  if (t === 'company' && !cLedgerLoaded.value && !cLedgerLoading.value) {
+    loadCompanyLedger();
+  }
+}
+
+// ── Popup xem chứng từ (bấm cột "Chứng từ" ở sổ nhật ký) ──
+// Đơn bán → tải chi tiết đơn (ảnh giao/biên bản/giao thành công + HĐ VAT).
+// Phiếu thu → hiện luôn ảnh chuyển khoản có sẵn trong dòng.
+const docModal = ref({ open: false, loading: false, error: '', row: null, order: null });
+
+function isPdfUrl(u) {
+  return /\.pdf(\?|$)/i.test(String(u || ''));
+}
+
+async function openDoc(row) {
+  docModal.value = { open: true, loading: false, error: '', row, order: null };
+  if (row.type === 'sale' && row.order_id) {
+    docModal.value.loading = true;
+    try {
+      const { data } = await api.get(`/orders/${row.order_id}`);
+      docModal.value.order = data;
+    } catch (err) {
+      docModal.value.error = err.response?.data?.error || 'Không tải được chi tiết đơn';
+    } finally {
+      docModal.value.loading = false;
+    }
+  }
+}
+
+function closeDoc() {
+  docModal.value = { open: false, loading: false, error: '', row: null, order: null };
+}
+
+// Gom các nhóm ảnh chứng từ của 1 đơn để render (bỏ nhóm rỗng).
+const docOrderGroups = computed(() => {
+  const o = docModal.value.order;
+  if (!o) return [];
+  const asArr = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()) : []);
+  return [
+    { label: 'Ảnh bàn giao vận chuyển', urls: asArr(o.shippingPhotos) },
+    { label: 'Biên bản bàn giao', urls: asArr(o.handoverPhotos) },
+    { label: 'Ảnh giao thành công', urls: asArr(o.deliveryPhotos) },
+  ].filter((g) => g.urls.length > 0);
+});
+
 // Form thu tiền.
 const payOpen = ref(false);
 const paySaving = ref(false);
@@ -421,7 +526,7 @@ onMounted(loadList);
     <!-- Tabs lớn: Phải thu KH / Phải trả NCC -->
     <div class="flex gap-1 mb-4 border-b border-line-200">
       <button
-        @click="mainTab = 'receivable'"
+        @click="openMainTab('receivable')"
         class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
         :class="mainTab === 'receivable' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
       >
@@ -429,11 +534,19 @@ onMounted(loadList);
       </button>
       <button
         v-if="canSeePayable"
-        @click="mainTab = 'payable'"
+        @click="openMainTab('payable')"
         class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
         :class="mainTab === 'payable' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
       >
         Phải trả NCC
+      </button>
+      <button
+        v-if="canSeeCompany"
+        @click="openMainTab('company')"
+        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap"
+        :class="mainTab === 'company' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
+      >
+        Chi tiết công nợ
       </button>
     </div>
 
@@ -1050,5 +1163,237 @@ onMounted(loadList);
 
     <!-- ══════════ TAB: PHẢI TRẢ NCC ══════════ -->
     <SupplierDebtPanel v-if="mainTab === 'payable'" />
+
+    <!-- ══════════ TAB: CHI TIẾT CÔNG NỢ (SỔ NHẬT KÝ TOÀN CÔNG TY) ══════════ -->
+    <div v-show="mainTab === 'company'">
+      <p class="text-xs text-ink-secondary mb-3 -mt-1">
+        Mọi giao dịch nợ &amp; thu của toàn công ty theo thời gian · để kế toán đối chiếu chứng từ
+      </p>
+
+      <!-- Bộ lọc: khoảng ngày + tìm khách -->
+      <div class="flex flex-wrap items-end gap-2 mb-3">
+        <label class="flex flex-col text-[11px] text-ink-secondary">
+          Từ ngày
+          <input
+            type="date"
+            v-model="cLedgerFilter.from"
+            class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary"
+          />
+        </label>
+        <label class="flex flex-col text-[11px] text-ink-secondary">
+          Đến ngày
+          <input
+            type="date"
+            v-model="cLedgerFilter.to"
+            class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary"
+          />
+        </label>
+        <input
+          type="text"
+          v-model="cLedgerFilter.q"
+          @keyup.enter="applyCLedgerFilter"
+          placeholder="Tìm khách (tên, SĐT, cửa hàng)…"
+          class="flex-1 min-w-[180px] border border-line-300 rounded-btn px-3 py-1.5 text-sm text-ink-primary"
+        />
+        <button
+          @click="applyCLedgerFilter"
+          class="bg-royal-600 hover:bg-royal-700 text-white text-sm font-semibold px-4 py-1.5 rounded-btn transition-colors"
+        >
+          Xem
+        </button>
+      </div>
+
+      <div v-if="cLedgerLoading" class="space-y-2">
+        <div v-for="i in 8" :key="i" class="bg-surface-soft rounded h-8 animate-pulse"></div>
+      </div>
+      <div v-else-if="cLedgerError" class="bg-red-50 border border-red-200 text-red-700 rounded-card p-3 text-sm">
+        {{ cLedgerError }}
+      </div>
+      <div v-else-if="cLedger">
+        <!-- Thẻ tổng hợp kỳ -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+          <div class="bg-surface-soft rounded-card p-3">
+            <p class="text-[11px] text-ink-secondary">Số dư đầu kỳ</p>
+            <p class="text-sm font-bold text-ink-primary tabular-nums">{{ ledgerNum(cLedger.opening_balance) || 0 }} đ</p>
+          </div>
+          <div class="bg-surface-soft rounded-card p-3">
+            <p class="text-[11px] text-ink-secondary">Phát sinh nợ (bán)</p>
+            <p class="text-sm font-bold text-rose-600 tabular-nums">{{ ledgerNum(cLedger.totals.debit) || 0 }} đ</p>
+          </div>
+          <div class="bg-surface-soft rounded-card p-3">
+            <p class="text-[11px] text-ink-secondary">Đã thu (có)</p>
+            <p class="text-sm font-bold text-emerald-700 tabular-nums">{{ ledgerNum(cLedger.totals.credit) || 0 }} đ</p>
+          </div>
+          <div class="bg-surface-soft rounded-card p-3">
+            <p class="text-[11px] text-ink-secondary">Tổng nợ hiện tại (công ty)</p>
+            <p class="text-sm font-bold text-rose-600 tabular-nums">{{ ledgerNum(cLedger.company_closing) || 0 }} đ</p>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-ink-secondary mb-2">
+          Nợ = bán hàng · Có = thu tiền · Số dư = tổng công nợ công ty luỹ kế tới thời điểm đó. Vuốt ngang để xem đủ cột.
+        </p>
+
+        <div v-if="cLedger.rows.length === 0" class="text-center py-10 text-ink-secondary text-sm">
+          Không có giao dịch trong khoảng đã chọn.
+        </div>
+
+        <div v-else class="overflow-x-auto -mx-1 px-1">
+          <table class="w-full min-w-[720px] text-[12px] border-collapse">
+            <thead>
+              <tr class="bg-royal-50 text-ink-secondary text-[11px]">
+                <th class="text-left font-semibold px-2 py-2 whitespace-nowrap">Ngày</th>
+                <th class="text-left font-semibold px-2 py-2 whitespace-nowrap">Khách hàng</th>
+                <th class="text-left font-semibold px-2 py-2 whitespace-nowrap">Chứng từ</th>
+                <th class="text-left font-semibold px-2 py-2">Diễn giải</th>
+                <th class="text-right font-semibold px-2 py-2 whitespace-nowrap">Nợ (bán)</th>
+                <th class="text-right font-semibold px-2 py-2 whitespace-nowrap">Có (thu)</th>
+                <th class="text-right font-semibold px-2 py-2 whitespace-nowrap">Số dư công ty</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b border-line-200 text-ink-secondary">
+                <td class="px-2 py-1.5" colspan="6">Số dư đầu kỳ (toàn công ty)</td>
+                <td class="px-2 py-1.5 text-right tabular-nums">{{ ledgerNum(cLedger.opening_balance) || 0 }}</td>
+              </tr>
+              <tr v-for="(r, i) in cLedger.rows" :key="i" class="border-b border-line-200 align-top">
+                <td class="px-2 py-1.5 whitespace-nowrap text-ink-secondary">{{ formatDateVN(r.date) }}</td>
+                <td class="px-2 py-1.5 whitespace-nowrap font-medium text-ink-primary">
+                  {{ r.customer?.name || '—' }}
+                  <span v-if="r.customer?.phone" class="block text-[10px] text-ink-secondary font-normal">{{ r.customer.phone }}</span>
+                </td>
+                <td class="px-2 py-1.5 whitespace-nowrap">
+                  <button
+                    @click="openDoc(r)"
+                    class="font-medium text-royal-600 hover:underline inline-flex items-center gap-1"
+                    title="Xem chứng từ đính kèm"
+                  >
+                    {{ r.code }}
+                    <span v-if="r.proof_urls && r.proof_urls.length" class="text-[11px]">📎</span>
+                    <svg class="w-3 h-3 opacity-60" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
+                  </button>
+                </td>
+                <td class="px-2 py-1.5">
+                  {{ r.description }}<span v-if="r.method" class="text-ink-secondary"> ({{ methodLabel(r.method) }})</span>
+                </td>
+                <td class="px-2 py-1.5 text-right tabular-nums text-rose-600">{{ ledgerNum(r.debit) }}</td>
+                <td class="px-2 py-1.5 text-right tabular-nums text-emerald-700">{{ ledgerNum(r.credit) }}</td>
+                <td class="px-2 py-1.5 text-right tabular-nums font-semibold text-ink-primary">{{ ledgerNum(r.balance) }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="bg-royal-50 font-bold text-ink-primary border-t-2 border-line-300">
+                <td class="px-2 py-2" colspan="4">Cộng phát sinh trong kỳ</td>
+                <td class="px-2 py-2 text-right tabular-nums text-rose-600">{{ ledgerNum(cLedger.totals.debit) }}</td>
+                <td class="px-2 py-2 text-right tabular-nums text-emerald-700">{{ ledgerNum(cLedger.totals.credit) }}</td>
+                <td class="px-2 py-2 text-right tabular-nums">{{ ledgerNum(cLedger.company_closing) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <!-- Phân trang -->
+        <div v-if="cLedgerPages > 1" class="flex items-center justify-center gap-3 mt-3 text-sm">
+          <button
+            @click="cLedgerGoPage(cLedger.page - 1)"
+            :disabled="cLedger.page <= 1"
+            class="px-3 py-1 rounded-btn border border-line-300 disabled:opacity-40"
+          >‹ Trước</button>
+          <span class="text-ink-secondary">Trang {{ cLedger.page }} / {{ cLedgerPages }} · {{ cLedger.total.toLocaleString('vi-VN') }} dòng</span>
+          <button
+            @click="cLedgerGoPage(cLedger.page + 1)"
+            :disabled="cLedger.page >= cLedgerPages"
+            class="px-3 py-1 rounded-btn border border-line-300 disabled:opacity-40"
+          >Sau ›</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ POPUP: XEM CHỨNG TỪ ĐÍNH KÈM ══════════ -->
+    <div v-if="docModal.open" class="fixed inset-0 z-[58] flex items-end lg:items-center lg:justify-center">
+      <div class="absolute inset-0 bg-black/50" @click="closeDoc"></div>
+      <div class="relative bg-white w-full lg:max-w-lg lg:rounded-card rounded-t-2xl shadow-pop max-h-[90vh] flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-4 py-3 border-b border-line-200">
+          <div>
+            <p class="text-sm font-bold text-ink-primary">
+              {{ docModal.row?.type === 'payment' ? 'Chứng từ thu tiền' : 'Chứng từ đơn hàng' }}
+            </p>
+            <p class="text-[12px] text-ink-secondary">{{ docModal.row?.code }} · {{ docModal.row?.customer?.name || '—' }}</p>
+          </div>
+          <button @click="closeDoc" class="text-ink-secondary hover:text-ink-primary text-xl leading-none px-2">✕</button>
+        </div>
+
+        <div class="overflow-y-auto px-4 py-3 space-y-3">
+          <!-- ── Phiếu thu tiền ── -->
+          <template v-if="docModal.row?.type === 'payment'">
+            <div class="text-[13px] text-ink-primary space-y-0.5">
+              <p>Ngày thu: <span class="font-medium">{{ formatDateVN(docModal.row.date) }}</span></p>
+              <p>Số tiền: <span class="font-bold text-emerald-700">{{ formatVND(docModal.row.credit) }}</span></p>
+              <p v-if="docModal.row.method">Hình thức: <span class="font-medium">{{ methodLabel(docModal.row.method) }}</span></p>
+            </div>
+            <div>
+              <p class="text-[12px] font-semibold text-ink-secondary mb-1.5">Ảnh chứng từ chuyển khoản</p>
+              <div v-if="docModal.row.proof_urls && docModal.row.proof_urls.length" class="flex flex-wrap gap-2">
+                <template v-for="(u, j) in docModal.row.proof_urls" :key="j">
+                  <a v-if="isPdfUrl(u)" :href="u" target="_blank" rel="noopener"
+                    class="text-royal-600 hover:underline text-sm border border-line-300 rounded-btn px-3 py-2">📄 Chứng từ {{ j + 1 }} (PDF)</a>
+                  <a v-else :href="u" target="_blank" rel="noopener" class="block">
+                    <img :src="u" class="w-24 h-24 object-cover rounded-btn border border-line-200" />
+                  </a>
+                </template>
+              </div>
+              <p v-else class="text-sm text-ink-secondary italic">Phiếu thu này chưa có ảnh chứng từ.</p>
+            </div>
+          </template>
+
+          <!-- ── Đơn bán hàng ── -->
+          <template v-else>
+            <div v-if="docModal.loading" class="space-y-2">
+              <div v-for="i in 4" :key="i" class="bg-surface-soft rounded h-16 animate-pulse"></div>
+            </div>
+            <div v-else-if="docModal.error" class="bg-red-50 border border-red-200 text-red-700 rounded-card p-3 text-sm">
+              {{ docModal.error }}
+            </div>
+            <template v-else-if="docModal.order">
+              <!-- Thông tin đơn -->
+              <div class="text-[13px] text-ink-primary space-y-0.5">
+                <p>Ngày đơn: <span class="font-medium">{{ formatDateVN(docModal.order.orderDate || docModal.order.createdAt) }}</span></p>
+                <p>Nợ gốc dòng này: <span class="font-bold text-rose-600">{{ formatVND(docModal.row.debit) }}</span></p>
+                <p v-if="docModal.order.trackingCode">Mã vận đơn: <span class="font-medium">{{ docModal.order.trackingCode }}</span>
+                  <span v-if="docModal.order.shippingProvider" class="text-ink-secondary"> · {{ docModal.order.shippingProvider }}</span>
+                </p>
+                <p v-if="docModal.order.shipperPhone">SĐT shipper: <span class="font-medium">{{ docModal.order.shipperPhone }}</span></p>
+              </div>
+
+              <!-- Các nhóm ảnh giao hàng -->
+              <div v-for="g in docOrderGroups" :key="g.label">
+                <p class="text-[12px] font-semibold text-ink-secondary mb-1.5">{{ g.label }}</p>
+                <div class="flex flex-wrap gap-2">
+                  <template v-for="(u, j) in g.urls" :key="j">
+                    <a v-if="isPdfUrl(u)" :href="u" target="_blank" rel="noopener"
+                      class="text-royal-600 hover:underline text-sm border border-line-300 rounded-btn px-3 py-2">📄 File {{ j + 1 }} (PDF)</a>
+                    <a v-else :href="u" target="_blank" rel="noopener" class="block">
+                      <img :src="u" class="w-24 h-24 object-cover rounded-btn border border-line-200" />
+                    </a>
+                  </template>
+                </div>
+              </div>
+
+              <p v-if="docModal.order.handoverNote" class="text-[13px] text-ink-primary">
+                <span class="text-ink-secondary">Ghi chú bàn giao:</span> {{ docModal.order.handoverNote }}
+              </p>
+
+              <!-- Hoá đơn VAT -->
+              <a v-if="docModal.order.vatInvoiceUrl" :href="docModal.order.vatInvoiceUrl" target="_blank" rel="noopener"
+                class="inline-block text-royal-600 hover:underline text-sm border border-line-300 rounded-btn px-3 py-2">🧾 Hoá đơn VAT</a>
+
+              <p v-if="docOrderGroups.length === 0 && !docModal.order.handoverNote && !docModal.order.vatInvoiceUrl"
+                class="text-sm text-ink-secondary italic">Đơn này chưa có ảnh/chứng từ giao hàng đính kèm.</p>
+            </template>
+          </template>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

@@ -630,6 +630,200 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // ── GET /api/v1/sale-app/debt/ledger ─ SỔ NHẬT KÝ CÔNG NỢ TOÀN CÔNG TY ──
+  // Gom mọi giao dịch của cả org theo thời gian: bán hàng (phát sinh NỢ) +
+  // thu tiền (CÓ). Số dư mỗi dòng = TỔNG công nợ công ty tại thời điểm đó
+  // (luỹ kế từ đầu). Kế toán dùng để đối chiếu chứng từ nhanh.
+  // Chỉ owner/admin. Lọc: from/to (mặc định tháng hiện tại, giờ VN), q (tìm khách).
+  app.get(
+    '/api/v1/sale-app/debt/ledger',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const query = request.query as {
+          from?: string; to?: string; q?: string; page?: string; pageSize?: string;
+        };
+
+        // Mặc định: KHÔNG chặn đầu (từ đầu lịch sử) → hôm nay, theo giờ VN (UTC+7).
+        // Kế toán muốn thấy toàn bộ lịch sử; muốn bó tháng thì tự chọn "Từ ngày".
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const nowVn = new Date(Date.now() + 7 * 3600 * 1000);
+        const y = nowVn.getUTCFullYear();
+        const mo = nowVn.getUTCMonth(); // 0-based
+        const todayVn = `${y}-${pad(mo + 1)}-${pad(nowVn.getUTCDate())}`;
+        const isDate = (s?: string) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+        const from = isDate(query.from) ? query.from! : '1900-01-01';
+        const to = isDate(query.to) ? query.to! : todayVn;
+
+        const q = (query.q || '').trim().toLowerCase();
+        const page = Math.max(1, parseInt(query.page || '1', 10) || 1);
+        const pageSize = Math.min(500, Math.max(10, parseInt(query.pageSize || '100', 10) || 100));
+
+        // Ngày calendar theo giờ VN (date-only field lưu midnight UTC → +7h vẫn đúng ngày).
+        const vnDate = (d: Date | string) =>
+          new Date(new Date(d).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+
+        // Toàn bộ đơn (bỏ huỷ/trả) + phiếu thu (chưa đảo) của org, kèm thông tin khách.
+        const orders = await prisma.order.findMany({
+          where: { orgId: user.orgId, status: { notIn: ['cancelled', 'returned'] } },
+          select: {
+            id: true,
+            orderCode: true,
+            orderDate: true,
+            createdAt: true,
+            debtAmountValue: true,
+            contact: { select: { id: true, fullName: true, phone: true, storeName: true } },
+          },
+        });
+        const pays = await prisma.customerPayment.findMany({
+          where: { orgId: user.orgId, reversedAt: null },
+          select: {
+            id: true,
+            amount: true,
+            paymentDate: true,
+            paymentMethod: true,
+            reference: true,
+            allocations: true,
+            proofUrl: true,
+            contact: { select: { id: true, fullName: true, phone: true, storeName: true } },
+          },
+        });
+
+        // Tổng đã gạt vào từng đơn (mọi phiếu thu chưa đảo) → suy ra nợ gốc mỗi đơn.
+        const appliedByOrder = new Map<string, number>();
+        for (const p of pays) {
+          const allocs = Array.isArray(p.allocations) ? (p.allocations as any[]) : [];
+          for (const a of allocs) {
+            if (!a?.orderId) continue;
+            appliedByOrder.set(a.orderId, (appliedByOrder.get(a.orderId) || 0) + toNumber(a.applied));
+          }
+        }
+
+        // Danh sách sự kiện: bán hàng (Nợ) + thu tiền (Có).
+        type Ev = {
+          date: Date | string; sort: number; type: string; code: string | null;
+          orderId: string | null; description: string; customer: any;
+          debit: number; credit: number; method: string | null;
+          proof_urls: string[]; balance?: number; vnDate?: string;
+        };
+        const events: Ev[] = [];
+        for (const o of orders) {
+          const originalDebt = toNumber(o.debtAmountValue) + (appliedByOrder.get(o.id) || 0);
+          if (originalDebt <= 0) continue;
+          const isNdk = String(o.orderCode || '').toUpperCase().startsWith('NDK');
+          const c = o.contact;
+          events.push({
+            date: o.orderDate || o.createdAt,
+            sort: 0, // bán hàng đứng trước thu tiền cùng ngày
+            type: 'sale',
+            code: o.orderCode,
+            orderId: o.id,
+            description: isNdk ? 'Nợ đầu kỳ' : 'Bán hàng',
+            customer: c ? { id: c.id, name: c.fullName, phone: c.phone, store_name: c.storeName } : null,
+            debit: originalDebt,
+            credit: 0,
+            method: null,
+            proof_urls: [],
+          });
+        }
+        for (const p of pays) {
+          const allocs = Array.isArray(p.allocations) ? (p.allocations as any[]) : [];
+          let credit = allocs.reduce((s, a) => s + toNumber(a?.applied), 0);
+          if (credit <= 0) credit = toNumber(p.amount); // fallback phiếu cũ chưa có allocations
+          if (credit <= 0) continue;
+          const c = p.contact;
+          events.push({
+            date: p.paymentDate,
+            sort: 1,
+            type: 'payment',
+            code: p.reference || 'Thu tiền',
+            orderId: null,
+            description: 'Thu tiền công nợ',
+            customer: c ? { id: c.id, name: c.fullName, phone: c.phone, store_name: c.storeName } : null,
+            debit: 0,
+            credit,
+            method: p.paymentMethod,
+            proof_urls: parseProofUrls(p.proofUrl),
+          });
+        }
+
+        // Sắp theo ngày tăng dần (cùng ngày: bán hàng trước thu tiền) rồi tính số dư
+        // luỹ kế TOÀN CÔNG TY cho MỌI sự kiện.
+        events.sort((a, b) => {
+          const ta = new Date(a.date).getTime();
+          const tb = new Date(b.date).getTime();
+          if (ta !== tb) return ta - tb;
+          return a.sort - b.sort;
+        });
+        let balance = 0;
+        for (const e of events) {
+          balance += e.debit - e.credit;
+          e.balance = balance;
+          e.vnDate = vnDate(e.date);
+        }
+        const companyClosing = balance; // tổng công nợ hiện tại toàn công ty
+
+        // Cắt cửa sổ ngày. opening = số dư luỹ kế ngay trước dòng đầu cửa sổ.
+        let opening = 0;
+        const windowRows: Ev[] = [];
+        for (const e of events) {
+          if (e.vnDate! < from) {
+            opening = e.balance!; // số dư tới hết ngày trước cửa sổ
+            continue;
+          }
+          if (e.vnDate! > to) continue;
+          windowRows.push(e);
+        }
+
+        // Lọc tìm khách (số dư vẫn là số dư công ty).
+        const filtered = q
+          ? windowRows.filter((e) => {
+              const c = e.customer;
+              if (!c) return false;
+              return (
+                (c.name || '').toLowerCase().includes(q) ||
+                (c.phone || '').toLowerCase().includes(q) ||
+                (c.store_name || '').toLowerCase().includes(q)
+              );
+            })
+          : windowRows;
+
+        const sumDebit = filtered.reduce((s, e) => s + e.debit, 0);
+        const sumCredit = filtered.reduce((s, e) => s + e.credit, 0);
+        const total = filtered.length;
+        const start = (page - 1) * pageSize;
+        const pageRows = filtered.slice(start, start + pageSize).map((e) => ({
+          date: e.date,
+          type: e.type,
+          code: e.code,
+          order_id: e.orderId,
+          description: e.description,
+          customer: e.customer,
+          debit: e.debit,
+          credit: e.credit,
+          method: e.method,
+          balance: e.balance,
+          proof_urls: e.proof_urls,
+        }));
+
+        return {
+          range: { from, to },
+          opening_balance: opening,
+          company_closing: companyClosing,
+          totals: { debit: sumDebit, credit: sumCredit },
+          page,
+          page_size: pageSize,
+          total,
+          rows: pageRows,
+        };
+      } catch (err) {
+        logger.error('[sale-app] debt/ledger error:', err);
+        return reply.status(500).send({ error: 'Lỗi tải sổ nhật ký công nợ toàn công ty' });
+      }
+    },
+  );
+
   // ── POST /api/v1/sale-app/uploads/proof ─ upload ảnh chứng từ thanh toán ─
   // Nhận 1 ảnh (multipart, field "file") → đẩy lên Supabase Storage → trả URL.
   // Owner/admin (kế toán) — cùng quyền với người ghi nhận thu tiền.
