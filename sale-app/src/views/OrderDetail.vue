@@ -154,18 +154,18 @@ const SHIP_PROVIDERS = [
 ];
 // Bước kế tiếp theo trạng thái hiện tại. Khớp FORWARD của backend order-service.
 const NEXT_STEP = {
-  draft: { to: 'confirmed', label: 'Xác nhận đơn' },
+  draft: { to: 'confirmed', label: 'Kho xác nhận đủ hàng' },
   // Đã gộp "Đóng gói" vào "Đang giao": xác nhận → giao thẳng (trừ kho ở bước này).
-  confirmed: { to: 'shipping', label: 'Xuất kho & Giao hàng' },
+  confirmed: { to: 'shipping', label: 'Giao cho vận chuyển' },
   // Giữ cho đơn cũ lỡ đang ở 'packing' (luồng CRM) vẫn đi tiếp được.
-  packing: { to: 'shipping', label: 'Chuyển sang Giao hàng' },
+  packing: { to: 'shipping', label: 'Giao cho vận chuyển' },
   shipping: { to: 'completed', label: 'Hoàn tất đơn' },
 };
 
 const TIMELINE = [
-  { key: 'draft', label: 'Nháp' },
-  { key: 'confirmed', label: 'Xác nhận' },
-  { key: 'shipping', label: 'Đang giao' },
+  { key: 'draft', label: 'Sale lên đơn' },
+  { key: 'confirmed', label: 'Kho xác nhận đủ hàng' },
+  { key: 'shipping', label: 'Giao cho vận chuyển' },
   { key: 'completed', label: 'Hoàn tất' },
 ];
 
@@ -230,9 +230,9 @@ const timeline = computed(() => {
   if (!o) return [];
   const rows = [];
   const push = (at, label, meta) => { if (at) rows.push({ at, label, meta }); };
-  push(o.createdAt, 'Tạo đơn (Nháp)', null);
-  push(o.confirmedAt, 'Xác nhận đơn', null);
-  push(o.shippedAt, 'Xuất kho & Đang giao', [
+  push(o.createdAt, 'Sale lên đơn', null);
+  push(o.confirmedAt, 'Kho xác nhận đủ hàng', null);
+  push(o.shippedAt, 'Giao cho vận chuyển', [
     o.shippingProvider && `ĐVVC: ${o.shippingProvider}`,
     o.trackingCode && `Mã VĐ: ${o.trackingCode}`,
     o.shipperPhone && `SĐT shipper: ${o.shipperPhone}`,
@@ -589,7 +589,7 @@ async function deleteOrder() {
 }
 
 // ── Xem/bổ sung tài liệu theo giai đoạn (bấm vào timeline) ──
-const STAGE_LABELS = { draft: 'Nháp', confirmed: 'Xác nhận', shipping: 'Đang giao', completed: 'Hoàn tất' };
+const STAGE_LABELS = { draft: 'Sale lên đơn', confirmed: 'Kho xác nhận đủ hàng', shipping: 'Giao cho vận chuyển', completed: 'Hoàn tất' };
 const STAGE_DOCS = {
   draft: [],
   confirmed: [],
@@ -1338,7 +1338,7 @@ async function saveStageDocs() {
           </div>
         </template>
         <div v-else class="text-sm text-ink-secondary py-3">
-          Giai đoạn này chưa có mục tài liệu riêng. Tài liệu giao hàng nằm ở bước <span class="font-semibold">Đang giao</span> và <span class="font-semibold">Hoàn tất</span>.
+          Giai đoạn này chưa có mục tài liệu riêng. Tài liệu giao hàng nằm ở bước <span class="font-semibold">Giao cho vận chuyển</span> và <span class="font-semibold">Hoàn tất</span>.
         </div>
       </div>
     </div>

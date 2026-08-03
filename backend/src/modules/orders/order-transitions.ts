@@ -219,7 +219,7 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
         // Đơn giao (không phải khách tự lấy): bắt buộc đủ thông tin giao hàng.
         if (!isPickup) {
           if (!trackingCode) {
-            return reply.status(400).send({ error: 'Bắt buộc có Mã vận đơn trước khi chuyển sang Đang giao.' });
+            return reply.status(400).send({ error: 'Bắt buộc có Mã vận đơn trước khi chuyển sang Giao cho vận chuyển.' });
           }
           if (!provider) {
             return reply.status(400).send({ error: 'Bắt buộc có Đơn vị vận chuyển / Số ship.' });

@@ -457,7 +457,7 @@
             density="compact"
             class="mb-3"
           >
-            Chuyển sang <strong>Đang giao</strong> sẽ trừ kho theo FIFO và chốt giá vốn cho đơn này.
+            Chuyển sang <strong>Giao cho vận chuyển</strong> sẽ trừ kho theo FIFO và chốt giá vốn cho đơn này.
           </v-alert>
           <v-select
             v-model="trackingForm.provider"
@@ -486,7 +486,7 @@
             :disabled="!trackingForm.code"
             @click="onConfirmShipping"
           >
-            Chuyển sang Đang giao
+            Chuyển sang Giao cho vận chuyển
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -833,10 +833,10 @@ async function doAdvance(toStatus: OrderStatus, extra: Record<string, unknown> =
 
 function labelOf(s: OrderStatus): string {
   const map: Record<OrderStatus, string> = {
-    draft: 'Nháp',
-    confirmed: 'Xác nhận',
+    draft: 'Sale lên đơn',
+    confirmed: 'Kho xác nhận đủ hàng',
     packing: 'Đóng gói',
-    shipping: 'Đang giao',
+    shipping: 'Giao cho vận chuyển',
     completed: 'Hoàn tất',
     cancelled: 'Huỷ',
   };

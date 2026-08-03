@@ -15,11 +15,13 @@
 import { ref, reactive, computed } from 'vue';
 import { api } from '@/api/index';
 
+// Nhãn nói rõ AI đang làm gì (anh Philip chốt 3/8/2026). Giá trị `value` là status
+// trong DB — KHÔNG đổi (đổi là vỡ mọi query/dashboard, xem ORDER_STATUSES backend).
 export const ORDER_STATUS_OPTIONS = [
-  { text: 'Nháp', value: 'draft', color: 'blue', icon: 'mdi-file-document-edit-outline' },
-  { text: 'Xác nhận', value: 'confirmed', color: 'cyan', icon: 'mdi-check-circle-outline' },
+  { text: 'Sale lên đơn', value: 'draft', color: 'blue', icon: 'mdi-file-document-edit-outline' },
+  { text: 'Kho xác nhận đủ hàng', value: 'confirmed', color: 'cyan', icon: 'mdi-check-circle-outline' },
   { text: 'Đóng gói', value: 'packing', color: 'purple', icon: 'mdi-package-variant' },
-  { text: 'Đang giao', value: 'shipping', color: 'amber', icon: 'mdi-truck-fast-outline' },
+  { text: 'Giao cho vận chuyển', value: 'shipping', color: 'amber', icon: 'mdi-truck-fast-outline' },
   { text: 'Hoàn tất', value: 'completed', color: 'success', icon: 'mdi-check-all' },
   { text: 'Huỷ', value: 'cancelled', color: 'error', icon: 'mdi-close-circle-outline' },
 ] as const;

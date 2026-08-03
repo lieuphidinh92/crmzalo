@@ -76,11 +76,13 @@ export function formatRelativeTime(d) {
 }
 
 export function statusLabel(s) {
+  // Tên trạng thái nói rõ AI đang làm gì (anh Philip chốt 3/8/2026) — giá trị status
+  // trong DB KHÔNG đổi (draft/confirmed/shipping), chỉ đổi nhãn hiển thị.
   const map = {
-    draft: 'Nháp',
-    confirmed: 'Đã xác nhận',
+    draft: 'Sale lên đơn',
+    confirmed: 'Kho xác nhận đủ hàng',
     packing: 'Đang đóng gói',
-    shipping: 'Đang giao',
+    shipping: 'Giao cho vận chuyển',
     completed: 'Hoàn tất',
     shipped: 'Đã giao',
     paid: 'Đã thanh toán',
