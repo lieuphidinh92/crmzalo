@@ -107,6 +107,28 @@ export async function validateFifoStock(
  *   4. Rewrite the OrderItem's `unitCost`, `lineCost`, `profit` from
  *      the consumed cost.
  */
+/**
+ * Đồng bộ cột denormalized `products.total_stock` = tổng lô active.
+ *
+ * BẮT BUỘC gọi sau mọi thay đổi số lượng lô. `total_stock` là cột sale-app đọc
+ * để hiện tồn (KHÔNG tính sống từ lô), nên quên sync là app hiện sai tồn.
+ * Bug 4/8/2026: processFIFO/reverseFIFO trừ-cộng lô mà không sync → mỗi đơn
+ * giao xong tồn trên app cao hơn thực tế, lệch dồn (NEU_01 hiện 590 khi lô còn
+ * 90; MH_02 hiện 144 khi lô còn 440). Chạy trong cùng transaction với caller.
+ */
+async function syncTotalStock(tx: any, productId: string): Promise<void> {
+  const sum = await tx.inventoryBatch.aggregate({
+    where: { productId, status: 'active' },
+    _sum: { currentQuantity: true },
+  });
+  const total = sum._sum.currentQuantity ?? 0;
+  await tx.product.update({
+    where: { id: productId },
+    // Có tồn → tự hiện trong catalog (cùng quy tắc batch-routes/stocktake-routes).
+    data: { totalStock: total, ...(total > 0 ? { hasSales: true } : {}) },
+  });
+}
+
 export async function processFIFO(
   tx: any,
   orderId: string,
@@ -197,6 +219,9 @@ export async function processFIFO(
         profit: new Prisma.Decimal((item.lineTotal - totalCost).toFixed(2)),
       },
     });
+
+    // Vừa trừ lô → phải sync total_stock, nếu không sale-app hiện tồn cao hơn thật.
+    await syncTotalStock(tx, item.productId);
   }
 }
 
@@ -255,4 +280,12 @@ export async function reverseFIFO(
     where: { orderId, productId: { not: null } },
     data: { unitCost: null, lineCost: null, profit: null },
   });
+
+  // Vừa cộng lô lại → sync total_stock (1 lần/SP, tránh update trùng khi 1 SP
+  // được hoàn từ nhiều lô).
+  const productIds = new Set<string>();
+  for (const u of usages as Array<{ orderItem: { productId: string | null } }>) {
+    if (u.orderItem.productId) productIds.add(u.orderItem.productId);
+  }
+  for (const pid of productIds) await syncTotalStock(tx, pid);
 }
