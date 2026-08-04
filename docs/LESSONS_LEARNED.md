@@ -380,3 +380,36 @@ Chạy lại = no-op.
 verify bằng backup — sale-app đang hiện cao hơn tồn thật); 4 lô mới thiếu `importCost`
 (NM_1 9/2027, BIO_03, BIO_06, BIO_07); phiên `KK-202608-001` do `admin@local.dev` mở
 3/8 14:34 còn `counting` 0/139 lô → **để mở là app CHẶN tạo phiên kiểm mới**, nên huỷ.
+
+---
+
+## 04/08/2026 — Bán hàng KHÔNG sync `products.total_stock`: tồn trên app cao hơn thật, lệch dồn mãi
+
+**Triệu chứng:** hôm 3/8 vừa kiểm kê xong cho khớp 100%, sang 4/8 đã lệch lại 4 mã
+(NEU_01, NM_1 −80, SM_01 −20, HC_11 −20). Ban đầu tưởng mất hàng.
+
+**Root cause:** `products.total_stock` là cột denormalized mà sale-app đọc để hiện tồn
+(KHÔNG tính sống từ lô). Có 4 đường thay đổi số lượng lô, nhưng chỉ 3 đường sync cột này:
+- ✅ sửa lô tay — `inventory/batch-routes.ts`
+- ✅ kiểm kho — `inventory/stocktake-routes.ts`
+- ✅ nhập hàng — `imports/imports-routes.ts`
+- ❌ **BÁN HÀNG** — `orders/fifo-service.ts` (`processFIFO` khi giao, `reverseFIFO` khi huỷ)
+
+→ Mỗi đơn giao xong: lô giảm đúng, `total_stock` đứng im → app hiện thừa. Mỗi đơn huỷ:
+ngược lại, app hiện thiếu. Lệch cộng dồn theo từng đơn, nên "kiểm kê xong vẫn lệch sau
+vài ngày" là hệ quả tất yếu, không phải kiểm sai. Rủi ro thật: sale thấy hàng ảo → bán vượt tồn.
+
+**Fix:** thêm `syncTotalStock(tx, productId)` trong `fifo-service.ts`, gọi trong CÙNG
+transaction của caller — `processFIFO` sync sau mỗi item, `reverseFIFO` sync 1 lần/SP
+(dedupe khi 1 SP hoàn từ nhiều lô). Cùng quy tắc `hasSales=true` khi có tồn như 3 đường kia.
+
+**Cách verify (làm được mà không đụng production):** script test trên local tạo đơn giả →
+gọi `processFIFO` → so `total_stock` với tổng lô → gọi `reverseFIFO` → so lại → **cố tình
+throw để rollback**. Kết quả: 20→17 khớp cả 2 cột, huỷ đơn về đúng 20, local không đổi data.
+
+**Bài học rút ra:**
+1. Thêm 1 đường ghi mới vào cột denormalized → phải grep TẤT CẢ đường ghi khác và đối chiếu.
+   Ở đây 3/4 đường đúng nên bug ẩn lâu.
+2. "Vừa sửa số xong lại lệch" = nghi CODE, đừng nghi người kiểm.
+3. Trước khi kết luận "mất hàng", tra `inventory_movements` **đủ khoảng thời gian** — lần đầu
+   em lọc đúng ngày hôm nay nên không thấy đơn bán 18:39 tối trước, suýt báo sai là mất hàng.
