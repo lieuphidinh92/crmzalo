@@ -88,7 +88,11 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       }
       if (q.from || q.to) {
         const range: Prisma.DateTimeFilter = {};
-        if (q.from) range.gte = new Date(q.from);
+        // Cả 2 mốc đọc theo giờ VN (process chạy TZ=Asia/Ho_Chi_Minh). Nếu để
+        // `new Date(q.from)` thì chuỗi 'YYYY-MM-DD' bị hiểu là nửa đêm UTC = 07:00
+        // sáng VN → đơn đặt 00:00–07:00 ngày đó bị rơi khỏi kết quả, trong khi mốc
+        // `to` lại tính theo giờ VN. Thêm 'T00:00:00' cho 2 mốc cùng hệ quy chiếu.
+        if (q.from) range.gte = new Date(q.from + 'T00:00:00');
         if (q.to) range.lte = new Date(q.to + 'T23:59:59');
         filters.push({ orderDate: range });
       }
@@ -175,7 +179,11 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       const where: Prisma.OrderWhereInput = { ...scope, status: { not: 'opening_balance' } };
       if (q.from || q.to) {
         const range: Prisma.DateTimeFilter = {};
-        if (q.from) range.gte = new Date(q.from);
+        // Cả 2 mốc đọc theo giờ VN (process chạy TZ=Asia/Ho_Chi_Minh). Nếu để
+        // `new Date(q.from)` thì chuỗi 'YYYY-MM-DD' bị hiểu là nửa đêm UTC = 07:00
+        // sáng VN → đơn đặt 00:00–07:00 ngày đó bị rơi khỏi kết quả, trong khi mốc
+        // `to` lại tính theo giờ VN. Thêm 'T00:00:00' cho 2 mốc cùng hệ quy chiếu.
+        if (q.from) range.gte = new Date(q.from + 'T00:00:00');
         if (q.to) range.lte = new Date(q.to + 'T23:59:59');
         where.orderDate = range;
       }

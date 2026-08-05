@@ -59,20 +59,81 @@ const rangeOptions = [
   { value: '7', label: '7 ngày qua' },
   { value: '30', label: '30 ngày qua' },
   { value: '90', label: '90 ngày qua' },
+  { value: 'custom', label: 'Chọn khoảng ngày…' },
   { value: 'all', label: 'Tất cả' },
 ];
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)));
 
-function fromDate() {
-  if (range.value === 'all') return '';
-  const days = parseInt(range.value);
+// Ngày theo LỊCH VIỆT NAM. KHÔNG dùng toISOString() — nó trả ngày theo UTC nên
+// từ 00:00–07:00 sáng giờ VN sẽ ra ngày hôm trước ("30 ngày qua" thành 31 ngày).
+function ymdVN(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+const today = ymdVN(new Date());
+const daysAgo = (n) => {
   const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  d.setDate(d.getDate() - n);
+  return ymdVN(d);
+};
+
+// Khoảng ngày tự chọn — mặc định 30 ngày gần nhất để bấm vào là có số ngay.
+const customFrom = ref(daysAgo(30));
+const customTo = ref(today);
+
+// Bấm nhanh các mốc hay dùng thay vì chọn tay 2 lần.
+const quickPresets = [
+  { label: 'Hôm nay', calc: () => ({ from: today, to: today }) },
+  {
+    label: 'Tháng này',
+    calc: () => {
+      const n = new Date();
+      return { from: ymdVN(new Date(n.getFullYear(), n.getMonth(), 1)), to: today };
+    },
+  },
+  {
+    label: 'Tháng trước',
+    calc: () => {
+      const n = new Date();
+      return {
+        from: ymdVN(new Date(n.getFullYear(), n.getMonth() - 1, 1)),
+        to: ymdVN(new Date(n.getFullYear(), n.getMonth(), 0)), // ngày 0 = ngày cuối tháng trước
+      };
+    },
+  },
+];
+
+function applyPreset(p) {
+  const { from, to } = p.calc();
+  customFrom.value = from;
+  customTo.value = to;
+}
+
+// Chọn ngược (từ > đến) → báo đỏ và KHÔNG gọi API, tránh trả list rỗng khó hiểu.
+const dateError = computed(() =>
+  range.value === 'custom' && customFrom.value && customTo.value && customFrom.value > customTo.value
+    ? 'Ngày bắt đầu đang sau ngày kết thúc'
+    : '',
+);
+
+/** Tham số ngày gửi lên API cho cả danh sách lẫn số đếm trên tab. */
+function dateParams() {
+  if (range.value === 'all') return {};
+  if (range.value === 'custom') {
+    if (dateError.value) return null; // báo hiệu: đừng gọi API
+    const p = {};
+    if (customFrom.value) p.from = customFrom.value;
+    if (customTo.value) p.to = customTo.value;
+    return p;
+  }
+  return { from: daysAgo(parseInt(range.value)) };
 }
 
 async function load() {
+  const dates = dateParams();
+  if (dates === null) { loading.value = false; return; } // khoảng ngày không hợp lệ
   loading.value = true;
   errorMsg.value = '';
   try {
@@ -80,11 +141,10 @@ async function load() {
     const params = {
       page: page.value,
       limit: limit.value,
+      ...dates,
     };
     if (apiStatus) params.status = apiStatus;
     if (q.value.trim()) params.search = q.value.trim();
-    const from = fromDate();
-    if (from) params.from = from;
 
     const { data } = await api.get('/orders', { params });
     orders.value = data.orders || [];
@@ -101,24 +161,24 @@ async function load() {
 // Tab counts depend only on the date range (not status/search), so refresh
 // them when the range changes. Failure is non-blocking — tabs just show 0.
 async function loadCounts() {
+  const dates = dateParams();
+  if (dates === null) return; // khoảng ngày không hợp lệ → giữ số cũ
   try {
-    const params = {};
-    const from = fromDate();
-    if (from) params.from = from;
-    const { data } = await api.get('/orders/pipeline-summary', { params });
+    const { data } = await api.get('/orders/pipeline-summary', { params: dates });
     counts.value = data.counts || {};
   } catch {
     counts.value = {};
   }
 }
 
-watch([q, status, range], () => {
+// Đổi ngày tự chọn cũng phải tải lại (cả list lẫn số đếm trên tab, để 2 chỗ khớp nhau).
+watch([q, status, range, customFrom, customTo], () => {
   page.value = 1;
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(load, 250);
 });
 
-watch(range, loadCounts);
+watch([range, customFrom, customTo], loadCounts);
 
 watch(page, load);
 
@@ -241,6 +301,42 @@ const pageNumbers = computed(() => {
         >
           <option v-for="opt in rangeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
+      </div>
+
+      <!-- Khoảng ngày tự chọn — chỉ hiện khi chọn "Chọn khoảng ngày…" -->
+      <div v-if="range === 'custom'" class="mt-3 pt-3 border-t border-line-200">
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="flex-1 min-w-[150px]">
+            <span class="block text-xs font-semibold text-ink-secondary mb-1">Từ ngày</span>
+            <input
+              v-model="customFrom"
+              type="date"
+              :max="customTo || undefined"
+              class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+            />
+          </label>
+          <label class="flex-1 min-w-[150px]">
+            <span class="block text-xs font-semibold text-ink-secondary mb-1">Đến ngày</span>
+            <input
+              v-model="customTo"
+              type="date"
+              :min="customFrom || undefined"
+              class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+            />
+          </label>
+          <div class="flex gap-2">
+            <button
+              v-for="p in quickPresets"
+              :key="p.label"
+              type="button"
+              class="h-10 px-3 rounded-input border border-line-300 text-sm font-semibold text-ink-secondary hover:border-royal-700 hover:text-royal-700 whitespace-nowrap"
+              @click="applyPreset(p)"
+            >
+              {{ p.label }}
+            </button>
+          </div>
+        </div>
+        <p v-if="dateError" class="mt-2 text-sm text-red-600 font-semibold">{{ dateError }}</p>
       </div>
     </div>
 
