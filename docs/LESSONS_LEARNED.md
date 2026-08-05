@@ -413,3 +413,32 @@ throw để rollback**. Kết quả: 20→17 khớp cả 2 cột, huỷ đơn v�
 2. "Vừa sửa số xong lại lệch" = nghi CODE, đừng nghi người kiểm.
 3. Trước khi kết luận "mất hàng", tra `inventory_movements` **đủ khoảng thời gian** — lần đầu
    em lọc đúng ngày hôm nay nên không thấy đơn bán 18:39 tối trước, suýt báo sai là mất hàng.
+
+---
+
+## 04/08/2026 — 1 hàm quyền dùng cho 3 việc → muốn cho xem thêm đơn là buộc lộ lãi
+
+**Bối cảnh:** anh Philip phân việc cho 3 nhân sự vận hành (Huy giao hàng, Hiền đối soát
+chứng từ, Đức kho), cả 3 cần xem đơn toàn công ty.
+
+**Vấn đề thiết kế:** `canSeeAllOrders(role)` trong `order-service.ts` đang được dùng cho
+**3 việc khác bản chất**: (a) phạm vi đơn được xem, (b) có thấy giá vốn/lãi gộp không,
+(c) có sửa được nội dung đơn ở mọi trạng thái không. Vì gộp 1 chỗ nên cách duy nhất để
+cho ai đó xem full đơn là cấp `admin` → **lộ luôn lãi gộp từng đơn + công nợ toàn công ty**.
+
+**Cách làm (anh chọn phương án tách sau khi em đưa 2 lựa chọn):**
+- `canSeeAllOrders(user)` — phạm vi, nhận thêm cờ `users.can_view_all_orders`
+- `canSeeCost(role)` — tiền, CHỈ owner/admin
+- `canEditOrderStatus(role)` — sửa nội dung, giữ owner/admin
+Cấp bằng **cờ boolean trên users**, KHÔNG tạo role mới (repo có ~34 chỗ check
+`role === 'member'` → thêm role là vỡ nhiều nơi).
+
+**Bẫy đã gặp:** `reqUser()` chỉ trả `{id, orgId, role}` → `orderScopeWhere()` không thấy cờ
+→ user có cờ vẫn bị bó phạm vi. Phải mang cờ ra khỏi token. Và cờ nằm trong JWT nên
+**đổi cờ trong DB thì user phải đăng xuất/đăng nhập lại** — luôn dặn CEO việc này.
+
+**Verify 5 ca (backend local + JWT tự ký):** chưa cờ → 29/720 đơn · có cờ → 720/720 ·
+giá vốn/lãi ẨN với người có cờ · owner vẫn thấy · người không cờ gọi /reconcile → 403.
+
+**Bài học:** khi CEO nói "cho bạn X xem thêm dữ liệu", ĐỪNG nâng role. Kiểm role đó kéo
+theo quyền gì (ở đây admin = thấy lãi + sửa SP), rồi đưa 2 lựa chọn kèm trade-off.
