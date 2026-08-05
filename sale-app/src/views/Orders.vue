@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
+import { useAuthStore } from '../stores/auth';
 import {
   formatVND,
   statusLabel,
@@ -13,6 +14,7 @@ import {
 
 const router = useRouter();
 const pos = usePOSStore();
+const auth = useAuthStore();
 
 const reorderingId = ref(null);
 
@@ -83,6 +85,39 @@ const daysAgo = (n) => {
 const customFrom = ref(daysAgo(30));
 const customTo = ref(today);
 
+// ── ĐỐI SOÁT CHỨNG TỪ (Mai Hiền phụ trách — anh Philip giao 4/8/2026) ──
+// Chỉ người xem được full đơn mới thấy ô tick: owner/admin, hoặc member được cấp
+// cờ canViewAllOrders. Sale thường không tự tick đơn của mình (vừa bán vừa tự xác nhận).
+const canReconcile = computed(() => {
+  const u = auth.user;
+  return ['owner', 'admin'].includes(u?.role) || u?.canViewAllOrders === true;
+});
+const reconcilingId = ref(null);
+// Lọc: '' tất cả · '0' chưa đối soát · '1' đã đối soát
+const reconciledFilter = ref('');
+const reconciledOptions = [
+  { value: '', label: 'Đối soát: tất cả' },
+  { value: '0', label: 'Chưa đối soát' },
+  { value: '1', label: 'Đã đối soát' },
+];
+
+async function toggleReconcile(o) {
+  if (reconcilingId.value) return;
+  reconcilingId.value = o.id;
+  const next = !o.reconciledAt;
+  try {
+    const { data } = await api.patch(`/orders/${o.id}/reconcile`, { reconciled: next });
+    // Cập nhật ngay tại chỗ, không tải lại cả danh sách (đỡ nhảy vị trí đang xem).
+    o.reconciledAt = data.reconciledAt ?? null;
+    // Nếu đang lọc theo tình trạng đối soát thì dòng này không còn thuộc bộ lọc → tải lại.
+    if (reconciledFilter.value !== '') load();
+  } catch (err) {
+    errorMsg.value = err.response?.data?.error || 'Không cập nhật được đối soát';
+  } finally {
+    reconcilingId.value = null;
+  }
+}
+
 // Bấm nhanh các mốc hay dùng thay vì chọn tay 2 lần.
 const quickPresets = [
   { label: 'Hôm nay', calc: () => ({ from: today, to: today }) },
@@ -145,6 +180,7 @@ async function load() {
     };
     if (apiStatus) params.status = apiStatus;
     if (q.value.trim()) params.search = q.value.trim();
+    if (reconciledFilter.value !== '') params.reconciled = reconciledFilter.value;
 
     const { data } = await api.get('/orders', { params });
     orders.value = data.orders || [];
@@ -172,7 +208,7 @@ async function loadCounts() {
 }
 
 // Đổi ngày tự chọn cũng phải tải lại (cả list lẫn số đếm trên tab, để 2 chỗ khớp nhau).
-watch([q, status, range, customFrom, customTo], () => {
+watch([q, status, range, customFrom, customTo, reconciledFilter], () => {
   page.value = 1;
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(load, 250);
@@ -301,6 +337,14 @@ const pageNumbers = computed(() => {
         >
           <option v-for="opt in rangeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
+        <!-- Lọc theo tình trạng đối soát — chỉ người phụ trách đối soát mới cần -->
+        <select
+          v-if="canReconcile"
+          v-model="reconciledFilter"
+          class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm lg:col-span-1"
+        >
+          <option v-for="opt in reconciledOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
       </div>
 
       <!-- Khoảng ngày tự chọn — chỉ hiện khi chọn "Chọn khoảng ngày…" -->
@@ -402,6 +446,25 @@ const pageNumbers = computed(() => {
             Nợ {{ formatVND(o.debtAmountValue) }}
           </div>
         </div>
+        <!-- Ô tick ĐÃ ĐỐI SOÁT chứng từ (Mai Hiền phụ trách). Chỉ người xem được
+             full đơn mới thấy ô này — sale thường không tự tick đơn của mình. -->
+        <button
+          v-if="canReconcile"
+          @click.stop="toggleReconcile(o)"
+          :disabled="reconcilingId === o.id"
+          :title="o.reconciledAt ? `Đã đối soát ${formatDateTimeVN(o.reconciledAt)} — bấm để bỏ tick` : 'Bấm để đánh dấu đã đối soát chứng từ'"
+          class="shrink-0 h-8 w-8 flex items-center justify-center rounded-lg border transition disabled:opacity-50"
+          :class="o.reconciledAt
+            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+            : 'border-line-300 text-ink-secondary hover:border-emerald-500 hover:text-emerald-700'"
+        >
+          <svg v-if="reconcilingId === o.id" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="9" stroke-opacity="0.3" /><path d="M21 12a9 9 0 0 0-9-9" />
+          </svg>
+          <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </button>
         <button
           @click.stop="reorder(o)"
           :disabled="reorderingId === o.id"

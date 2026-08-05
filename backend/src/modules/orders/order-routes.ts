@@ -45,6 +45,7 @@ type OrderQuery = Partial<{
   from: string;
   to: string;
   hasDebt: string;
+  reconciled: string; // '1' = đã đối soát · '0' = chưa đối soát
   overdue: string;
 }>;
 
@@ -95,6 +96,12 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
         if (q.from) range.gte = new Date(q.from + 'T00:00:00');
         if (q.to) range.lte = new Date(q.to + 'T23:59:59');
         filters.push({ orderDate: range });
+      }
+      // Đối soát chứng từ: '0' = chưa (Mai Hiền lọc việc cần làm), '1' = đã xong.
+      if (q.reconciled === '0') {
+        filters.push({ reconciledAt: null });
+      } else if (q.reconciled === '1') {
+        filters.push({ reconciledAt: { not: null } });
       }
       if (q.hasDebt === '1') {
         filters.push({ debtAmountValue: { gt: 0 } });

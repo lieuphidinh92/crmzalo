@@ -65,6 +65,12 @@ model User {
   passwordHash String   @map("password_hash")
   fullName     String   @map("full_name")
   role         String   @default("member") // owner, admin, member
+  // Nhân sự vận hành (giao hàng, đối soát chứng từ, kho) cần xem ĐƠN của cả công
+  // ty nhưng KHÔNG được xem giá vốn/lãi gộp. Trước đây 2 việc này dùng chung
+  // điều kiện role=owner|admin nên muốn cho xem full đơn là buộc phải cấp admin
+  // → lộ lãi. Cờ này tách riêng: chỉ mở PHẠM VI đơn, tiền vẫn khoá theo role.
+  // Anh Philip chốt 4/8/2026 cho Thạch Quang Huy (giao hàng) + Mai Hiền (đối soát).
+  canViewAllOrders Boolean @default(false) @map("can_view_all_orders")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -595,6 +601,13 @@ model Order {
   vatInvoiceId     String? @map("vat_invoice_id")
   vatInvoiceStatus String  @default("not_issued") @map("vat_invoice_status")
   vatInvoiceUrl    String? @map("vat_invoice_url")
+
+  // ĐỐI SOÁT hoá đơn/chứng từ (Mai Hiền phụ trách — anh Philip giao 4/8/2026).
+  // Lưu MỐC THỜI GIAN + AI tick thay vì boolean: cần truy được ai đối soát lúc nào
+  // khi đối chiếu với kế toán. null = chưa đối soát.
+  reconciledAt   DateTime? @map("reconciled_at")
+  reconciledById String?   @map("reconciled_by")
+  reconcileNote  String?   @map("reconcile_note")
 
   // Thông tin người mua để xuất hóa đơn VAT (per-order; prefill từ Contact,
   // cho phép override vì khách có thể tách nhiều công ty). Giá đã gồm VAT

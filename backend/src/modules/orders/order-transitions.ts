@@ -25,6 +25,7 @@ import {
   normalizeStatus,
   canTransition,
   orderScopeWhere,
+  canSeeAllOrders,
   ORDER_FULL_INCLUDE,
   stripCostFromOrder,
   reqUser,
@@ -384,6 +385,55 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
     } catch (err) {
       logger.error('[orders] Update documents error:', err);
       return reply.status(500).send({ error: 'Lỗi cập nhật tài liệu đơn' });
+    }
+  });
+
+  /**
+   * PATCH /api/v1/orders/:id/reconcile — tick "đã đối soát hoá đơn/chứng từ".
+   *
+   * Mai Hiền phụ trách đối soát chứng từ toàn bộ đơn (anh Philip giao 4/8/2026).
+   * Body: { reconciled: boolean, note?: string }. Lưu MỐC + AI tick để truy được.
+   * Quyền: người xem được full đơn (owner/admin hoặc member có cờ canViewAllOrders)
+   * — sale thường KHÔNG tự tick đơn của mình được, tránh vừa bán vừa tự xác nhận.
+   * Không ràng trạng thái đơn: chứng từ có thể đối soát ở bất kỳ bước nào.
+   */
+  app.patch('/api/v1/orders/:id/reconcile', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      if (!canSeeAllOrders(user)) {
+        return reply.status(403).send({ error: 'Bạn không có quyền đối soát chứng từ đơn hàng.' });
+      }
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as { reconciled?: boolean; note?: string };
+      if (typeof body.reconciled !== 'boolean') {
+        return reply.status(400).send({ error: 'Thiếu trường reconciled (true/false).' });
+      }
+
+      const order = await prisma.order.findFirst({
+        where: { AND: [orderScopeWhere(user), { id }] },
+        select: { id: true },
+      });
+      if (!order) return reply.status(404).send({ error: 'Order not found' });
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: body.reconciled
+          ? {
+              reconciledAt: new Date(),
+              reconciledById: user.id,
+              reconcileNote: body.note?.trim() || null,
+            }
+          : { reconciledAt: null, reconciledById: null, reconcileNote: null },
+      });
+
+      const full = await prisma.order.findUnique({ where: { id: order.id }, include: ORDER_FULL_INCLUDE });
+      return {
+        ...stripCostFromOrder(full!, user.role),
+        statusNormalized: normalizeStatus(full!.status),
+      };
+    } catch (err) {
+      logger.error('[orders] Reconcile error:', err);
+      return reply.status(500).send({ error: 'Lỗi cập nhật đối soát' });
     }
   });
 

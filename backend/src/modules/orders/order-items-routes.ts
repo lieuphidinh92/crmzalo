@@ -21,7 +21,7 @@ import {
   recomputeOrderTotals,
   reqUser,
   toNumber,
-  canSeeAllOrders,
+  canSeeCost,
 } from './order-service.js';
 
 interface ItemBody {
@@ -127,7 +127,7 @@ export async function orderItemsRoutes(app: FastifyInstance): Promise<void> {
 
       await markProductsHasSales([product.id]);
       await recomputeOrderTotals(order.id);
-      return reply.status(201).send(canSeeAllOrders(user.role) ? created : { ...created, unitCost: null, lineCost: null, profit: null, costValue: null });
+      return reply.status(201).send(canSeeCost(user.role) ? created : { ...created, unitCost: null, lineCost: null, profit: null, costValue: null });
     } catch (err) {
       logger.error('[order-items] Add error:', err);
       return reply.status(500).send({ error: 'Failed to add item' });
@@ -198,7 +198,7 @@ export async function orderItemsRoutes(app: FastifyInstance): Promise<void> {
       });
 
       await recomputeOrderTotals(order.id);
-      return canSeeAllOrders(user.role) ? updated : { ...updated, unitCost: null, lineCost: null, profit: null, costValue: null };
+      return canSeeCost(user.role) ? updated : { ...updated, unitCost: null, lineCost: null, profit: null, costValue: null };
     } catch (err) {
       logger.error('[order-items] Update error:', err);
       return reply.status(500).send({ error: 'Failed to update item' });

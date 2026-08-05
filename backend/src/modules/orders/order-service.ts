@@ -68,22 +68,42 @@ export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
   return FORWARD[from].includes(to);
 }
 
-// Roles in this CRM: owner | admin | member. Owner+admin see all orders.
-// Member sees orders where they are either the assigned sale OR the
-// contact owner (assignedUserId on the contact).
-export function canSeeAllOrders(role: string): boolean {
+/**
+ * ⚠️ 3 quyền TÁCH BIỆT — đừng gộp lại (4/8/2026).
+ *
+ * Trước đây chỉ có 1 hàm `canSeeAllOrders(role)` dùng cho cả 3 việc, nên muốn cho
+ * nhân sự vận hành xem full đơn là buộc phải cấp `admin` → lộ luôn giá vốn/lãi gộp.
+ * Nay tách:
+ *
+ *   1. canSeeAllOrders(user) — PHẠM VI đơn được xem. owner/admin, HOẶC member có cờ
+ *      `canViewAllOrders` (Thạch Quang Huy giao hàng, Mai Hiền đối soát chứng từ).
+ *   2. canSeeCost(role)      — TIỀN (unitCost/lineCost/profit). CHỈ owner/admin.
+ *   3. canEditOrderContent   — sửa nội dung đơn (hàng hoá, quà, header) ở mọi trạng
+ *      thái. CHỈ owner/admin — người có cờ xem-full KHÔNG được sửa nội dung đơn của
+ *      người khác; họ chỉ chuyển trạng thái + upload tài liệu (gate theo phạm vi).
+ */
+export function canSeeAllOrders(user: { role: string; canViewAllOrders?: boolean }): boolean {
+  return user.role === 'owner' || user.role === 'admin' || user.canViewAllOrders === true;
+}
+
+/** Xem giá vốn / lãi gộp — CHỈ owner+admin. KHÔNG nới theo cờ xem-full-đơn. */
+export function canSeeCost(role: string): boolean {
   return role === 'owner' || role === 'admin';
 }
 
 export function canEditOrderStatus(role: string, status: OrderStatus): boolean {
-  if (canSeeAllOrders(role)) return true;
+  // Cố ý dùng canSeeCost (owner/admin) chứ không dùng canSeeAllOrders: người chỉ
+  // có cờ xem-full-đơn không được sửa nội dung đơn đã qua bước xác nhận.
+  if (canSeeCost(role)) return true;
   // Member can only edit orders that are still draft or confirmed.
   return status === 'draft' || status === 'confirmed';
 }
 
 // Build a Prisma `where` for "orders this user is allowed to see".
-export function orderScopeWhere(user: { orgId: string; id: string; role: string }): Prisma.OrderWhereInput {
-  if (canSeeAllOrders(user.role)) {
+export function orderScopeWhere(user: {
+  orgId: string; id: string; role: string; canViewAllOrders?: boolean;
+}): Prisma.OrderWhereInput {
+  if (canSeeAllOrders(user)) {
     return { orgId: user.orgId };
   }
   return {
@@ -227,7 +247,8 @@ export type OrderFull = Prisma.OrderGetPayload<{ include: typeof ORDER_FULL_INCL
  * snapshots when caller is not owner/admin. Mutates a shallow copy.
  */
 export function stripCostFromOrder<T extends OrderFull>(order: T, role: string): T {
-  if (canSeeAllOrders(role)) return order;
+  // Tiền: chỉ owner/admin. Người có cờ xem-full-đơn vẫn bị ẩn giá vốn/lãi.
+  if (canSeeCost(role)) return order;
   return {
     ...order,
     items: order.items.map((it) => ({
@@ -240,7 +261,10 @@ export function stripCostFromOrder<T extends OrderFull>(order: T, role: string):
 }
 
 // Helper to read user from request — narrows the type for downstream use.
-export function reqUser(request: FastifyRequest): { id: string; orgId: string; role: string } {
+export function reqUser(request: FastifyRequest): {
+  id: string; orgId: string; role: string; canViewAllOrders?: boolean;
+} {
   const u = request.user!;
-  return { id: u.id, orgId: u.orgId, role: u.role };
+  // PHẢI mang cả cờ ra, nếu không orderScopeWhere() không thấy → vẫn bị bó phạm vi.
+  return { id: u.id, orgId: u.orgId, role: u.role, canViewAllOrders: u.canViewAllOrders };
 }
