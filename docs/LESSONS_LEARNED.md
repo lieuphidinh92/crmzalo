@@ -522,3 +522,42 @@ và mobile 390px không tràn ngang.
 **Bài học:** "read-only sau khi chốt" là luật đúng cho *số*, quá chặt cho *thông tin*. Khi
 CEO xin quyền sửa, tách field theo **field nào tham gia vào số học** rồi mở đúng nhóm an
 toàn — đừng mở hết, cũng đừng bắt sửa DB tay mãi.
+
+---
+
+## 14/08/2026 — "Push xong" KHÔNG bằng "đã deploy": phải tải bundle production về kiểm
+
+**Vấn đề:** push 3 commit lên `feature/sale-app-nhom1` + cherry-pick sang `main`. Render
+(backend) và Vercel `crmzalo-pnxt` (sale-app) deploy ngon. Nhưng Vercel **`crm-halo` không
+tạo deployment nào** cho commit đó — CRM production vẫn chạy bundle từ 05/08. Nếu chỉ nhìn
+`git push` thành công thì đã báo anh "xong" trong khi 1 trong 3 app không nhận thay đổi.
+
+**Cách kiểm (không cần đăng nhập Vercel):**
+```bash
+# 1. Route backend mới có sống chưa: 401 = có route, 404 = chưa deploy
+curl -s -o /dev/null -w "%{http_code}" -X PATCH https://halo-sale-backend.onrender.com/api/v1/imports/probe
+# (kiểm đối chứng 1 route không tồn tại phải ra 404, kẻo 401 là do middleware chặn hết)
+
+# 2. Bundle frontend đã lên chưa: tìm chunk trong entry rồi grep chuỗi mới
+curl -s https://sale.halo.com.vn/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js'
+curl -s https://sale.halo.com.vn/assets/<chunk>.js | grep -c "<chuỗi mới>"
+
+# 3. Ai đã deploy commit nào (Vercel post lên GitHub Deployments):
+gh api "repos/lieuphidinh92/crmzalo/deployments?per_page=10" \
+  --jq '.[] | "\(.created_at) env=\(.environment) sha=\(.sha[0:7])"'
+gh api repos/lieuphidinh92/crmzalo/commits/<sha>/status --jq '.statuses[] | "\(.context) → \(.state)"'
+```
+
+**Bẫy:** `curl` một file `/assets/xxx.js` không tồn tại trên Vercel trả **200 + nội dung
+index.html** (SPA rewrite), không phải 404. Phải grep nội dung hoặc so kích thước, đừng tin
+mã 200.
+
+**Ghi nhận thêm:** Vercel `crm-halo` build **Preview** cho commit trên `main` → **FAILED**.
+Bình thường: `main` diverged, nhánh đó không có cấu hình build cho `frontend/` (buildCommand
+`vite build` bỏ `vue-tsc` + `.npmrc legacy-peer-deps` chỉ có ở `feature`). Preview fail
+không ảnh hưởng production, nhưng đừng thấy chữ "failure" trên commit `main` mà tưởng
+sale-app lỗi — kiểm rõ context nào fail (`crmzalo-pnxt` vs `crm-halo`).
+
+**Bài học:** định nghĩa "đã deploy" = **tải artefact production về và thấy thay đổi trong đó**,
+cho TỪNG dịch vụ. 4 dịch vụ deploy từ 2 nhánh khác nhau → mỗi lần ship phải verify 3 chỗ
+(Render backend · Vercel sale-app · Vercel CRM), không suy ra từ 1 chỗ.
