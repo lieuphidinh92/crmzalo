@@ -12,6 +12,11 @@
  * remaining `active` batches so reports continue to work for sale-side
  * estimates while the FIFO allocator (3.5B) handles real per-line cost.
  *
+ * PATCH (14/08/2026) is the ONE exception to "confirmed = read-only": it
+ * edits only fields that carry no money/stock math (mã lô, NSX, HSD, số HĐ
+ * NCC, ghi chú, ngày nhập) and mirrors them down to the batches created at
+ * confirm time. Số lượng / giá vốn / VAT / cọc vẫn bất biến sau khi chốt.
+ *
  * All endpoints require owner|admin. `member` role gets 403 — cost data
  * is sensitive.
  */
@@ -53,6 +58,65 @@ interface CreateImportBody {
 }
 
 interface UpdateImportBody extends CreateImportBody {}
+
+/** Sửa thông tin phiếu ĐÃ CHỐT — chỉ những field không đụng tiền/tồn.
+ *  `items[].id` là id dòng hàng đang có; field nào không gửi thì giữ nguyên. */
+interface PatchItemPayload {
+  id: string;
+  batchCode?: string;
+  manufactureDate?: string | null;
+  expiryDate?: string | null;
+}
+interface PatchImportBody {
+  importDate?: string | null;
+  nccInvoiceNo?: string | null;
+  notes?: string | null;
+  items?: PatchItemPayload[];
+}
+
+/** Khoảng năm hợp lệ cho ngày nhập tay (NSX / HSD / ngày nhập).
+ *  Chặn lỗi gõ thiếu số kiểu '0029-02-01' (đúng ra '2029-02-01'): lỗi này
+ *  từng làm cron đánh lô L027844 thành `expired` ngay đêm hôm nhập, kéo 262
+ *  hộp MH_01 tụt khỏi tồn kho (phát hiện 14/08/2026). `<input type="date">`
+ *  của browser KHÔNG chặn năm 2 chữ số nên backend phải tự chặn. */
+const MIN_DATE_YEAR = 2000;
+const MAX_DATE_YEAR = 2100;
+
+/** 'YYYY-MM-DD' (hoặc ISO có giờ) → Date nửa đêm UTC, dùng cho cột @db.Date.
+ *  BẮT BUỘC `T00:00:00Z`: nhét offset `+07:00` sẽ thành 17:00Z hôm trước và
+ *  Postgres cắt DATE lùi 1 ngày. Trả `undefined` nếu rỗng/sai định dạng/năm
+ *  ngoài khoảng — caller phân biệt "xoá giá trị" bằng cách check chuỗi rỗng. */
+function parseDateOnly(v: unknown): Date | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = v.trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+  const d = new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const y = d.getUTCFullYear();
+  if (y < MIN_DATE_YEAR || y > MAX_DATE_YEAR) return undefined;
+  return d;
+}
+
+/** Hôm nay theo giờ VN, dưới dạng nửa đêm UTC cho cột @db.Date.
+ *  Đừng dùng `new Date()` trơ làm ngày nhập mặc định: tạo phiếu lúc 1–7h
+ *  sáng VN thì `new Date()` = tối hôm trước theo UTC → Postgres cắt DATE lùi
+ *  1 ngày → phiếu rơi sang hôm trước (có thể sang tháng trước). */
+function vnTodayDateOnly(): Date {
+  const now = new Date(); // server chạy TZ=Asia/Ho_Chi_Minh (render.yaml)
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+}
+
+/** Lô còn hạn hay hết hạn theo HSD mới — GIỮ ĐÚNG cách so sánh của
+ *  `sweepExpiredBatches` (inventory-cron.ts) để endpoint và cron không bao
+ *  giờ chỏi nhau: mốc là 00:00 giờ VN hôm nay, HSD = hôm nay vẫn còn hạn.
+ *  `recalled` (thu hồi tay) không bị tự động bật lại. */
+function recomputeBatchStatus(currentStatus: string, expiry: Date | null): string {
+  if (currentStatus === 'recalled') return currentStatus;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (expiry && expiry.getTime() < todayStart.getTime()) return 'expired';
+  return currentStatus === 'expired' ? 'active' : currentStatus;
+}
 
 /** Ép về số nguyên VND >= 0 (an toàn với null/undefined/NaN). */
 function intVnd(v: unknown): number {
@@ -174,6 +238,15 @@ function validateItem(it: any, idx: number): string | null {
   }
   if (!Number.isFinite(it.unitCost) || it.unitCost <= 0) {
     return `Item ${idx}: giá nhập phải > 0`;
+  }
+  // Ngày phải parse được VÀ năm trong khoảng — chặn lỗi gõ '0029' thay '2029'.
+  for (const [label, raw] of [
+    ['Ngày sản xuất', it.manufactureDate],
+    ['HSD', it.expiryDate],
+  ] as const) {
+    if (raw && !parseDateOnly(raw)) {
+      return `Item ${idx}: ${label} không hợp lệ — cần dạng YYYY-MM-DD, năm từ ${MIN_DATE_YEAR} đến ${MAX_DATE_YEAR}`;
+    }
   }
   if (it.expiryDate && it.manufactureDate) {
     if (new Date(it.expiryDate) <= new Date(it.manufactureDate)) {
@@ -351,7 +424,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
             importCode,
             supplierId: body.supplierId ?? null,
             warehouseId,
-            importDate: body.importDate ? new Date(body.importDate) : new Date(),
+            importDate: parseDateOnly(body.importDate) ?? vnTodayDateOnly(),
             nccInvoiceNo: body.nccInvoiceNo ?? null,
             notes: body.notes ?? null,
             attachments: (body.attachments ?? []) as any,
@@ -372,8 +445,8 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
                 batchCode: it.batchCode.trim(),
                 quantity: it.quantity,
                 unitCost: new Prisma.Decimal(it.unitCost.toFixed(2)),
-                manufactureDate: it.manufactureDate ? new Date(it.manufactureDate) : null,
-                expiryDate: it.expiryDate ? new Date(it.expiryDate) : null,
+                manufactureDate: parseDateOnly(it.manufactureDate) ?? null,
+                expiryDate: parseDateOnly(it.expiryDate) ?? null,
                 lineTotal: new Prisma.Decimal((it.quantity * it.unitCost).toFixed(2)),
                 notes: it.notes ?? null,
               })),
@@ -433,7 +506,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
             data: {
               supplierId: body.supplierId ?? null,
               warehouseId,
-              importDate: body.importDate ? new Date(body.importDate) : undefined,
+              importDate: parseDateOnly(body.importDate) ?? undefined,
               nccInvoiceNo: body.nccInvoiceNo ?? null,
               notes: body.notes ?? null,
               ...(body.attachments !== undefined ? { attachments: body.attachments as any } : {}),
@@ -453,8 +526,8 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
                   batchCode: it.batchCode.trim(),
                   quantity: it.quantity,
                   unitCost: new Prisma.Decimal(it.unitCost.toFixed(2)),
-                  manufactureDate: it.manufactureDate ? new Date(it.manufactureDate) : null,
-                  expiryDate: it.expiryDate ? new Date(it.expiryDate) : null,
+                  manufactureDate: parseDateOnly(it.manufactureDate) ?? null,
+                  expiryDate: parseDateOnly(it.expiryDate) ?? null,
                   lineTotal: new Prisma.Decimal((it.quantity * it.unitCost).toFixed(2)),
                   notes: it.notes ?? null,
                 })),
@@ -467,6 +540,290 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
       } catch (err) {
         logger.error('[imports] update error:', err);
         return reply.status(500).send({ error: 'Không cập nhật được đơn nhập' });
+      }
+    },
+  );
+
+  // ── PATCH /api/v1/imports/:id — sửa thông tin phiếu ĐÃ CHỐT ───────
+  // Chỉ những field KHÔNG đụng tiền và KHÔNG đụng số tồn:
+  //   header: ngày nhập · số HĐ NCC · ghi chú
+  //   dòng hàng: mã lô · NSX · HSD
+  // Số lượng / giá vốn / chiết khấu / VAT / cọc vẫn bất biến sau khi chốt —
+  // sửa được thì phải đảo FIFO của hàng đã bán và tính lại công nợ NCC.
+  //
+  // Mỗi thay đổi được gương xuống đúng lô đã tạo lúc chốt, và HSD mới sẽ
+  // tính lại active/expired (chính là ca lỗi 14/08/2026: HSD gõ '0029' làm
+  // cron đánh expired, 262 hộp tụt khỏi tồn kho).
+  app.patch(
+    '/api/v1/imports/:id',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = request.user!;
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as PatchImportBody;
+
+        const order = await prisma.importOrder.findFirst({
+          where: { id, orgId: user.orgId },
+          include: { items: true, batches: true },
+        });
+        if (!order) return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
+        if (order.status !== 'confirmed') {
+          return reply
+            .status(400)
+            .send({ error: 'Phiếu còn ở trạng thái nháp — dùng chức năng Sửa nháp' });
+        }
+
+        // ── Ngày nhập (tuỳ chọn) ──
+        let newImportDate: Date | undefined;
+        if (body.importDate) {
+          newImportDate = parseDateOnly(body.importDate);
+          if (!newImportDate) {
+            return reply.status(400).send({
+              error: `Ngày nhập không hợp lệ — cần dạng YYYY-MM-DD, năm từ ${MIN_DATE_YEAR} đến ${MAX_DATE_YEAR}`,
+            });
+          }
+        }
+
+        // ── Dựng danh sách thay đổi từng dòng hàng ──
+        const patches = Array.isArray(body.items) ? body.items : [];
+        const itemById = new Map(
+          order.items.map((it: { id: string }) => [it.id, it] as const),
+        );
+
+        type Planned = {
+          itemId: string;
+          productId: string;
+          batchId: string | null;
+          batchStatus: string | null;
+          oldBatchCode: string;
+          batchCode: string;
+          manufactureDate: Date | null;
+          expiryDate: Date | null;
+        };
+        const planned: Planned[] = [];
+
+        for (const p of patches) {
+          const item: any = p && p.id ? itemById.get(p.id) : undefined;
+          if (!item) {
+            return reply.status(400).send({ error: 'Có dòng hàng không thuộc phiếu nhập này' });
+          }
+
+          // Mã lô: không gửi = giữ nguyên; gửi rỗng = lỗi (lô luôn phải có mã).
+          let batchCode = item.batchCode as string;
+          if (p.batchCode !== undefined) {
+            batchCode = String(p.batchCode).trim();
+            if (!batchCode) return reply.status(400).send({ error: 'Mã lô không được để trống' });
+          }
+
+          // NSX / HSD: field vắng mặt = giữ nguyên; gửi rỗng/null = xoá ngày.
+          let manufactureDate: Date | null = item.manufactureDate ?? null;
+          if ('manufactureDate' in p) {
+            if (!p.manufactureDate) manufactureDate = null;
+            else {
+              const d = parseDateOnly(p.manufactureDate);
+              if (!d) {
+                return reply.status(400).send({
+                  error: `Ngày sản xuất của lô ${batchCode} không hợp lệ — cần dạng YYYY-MM-DD, năm từ ${MIN_DATE_YEAR} đến ${MAX_DATE_YEAR}`,
+                });
+              }
+              manufactureDate = d;
+            }
+          }
+          let expiryDate: Date | null = item.expiryDate ?? null;
+          if ('expiryDate' in p) {
+            if (!p.expiryDate) expiryDate = null;
+            else {
+              const d = parseDateOnly(p.expiryDate);
+              if (!d) {
+                return reply.status(400).send({
+                  error: `HSD của lô ${batchCode} không hợp lệ — cần dạng YYYY-MM-DD, năm từ ${MIN_DATE_YEAR} đến ${MAX_DATE_YEAR}`,
+                });
+              }
+              expiryDate = d;
+            }
+          }
+          if (manufactureDate && expiryDate && expiryDate.getTime() <= manufactureDate.getTime()) {
+            return reply
+              .status(400)
+              .send({ error: `Lô ${batchCode}: HSD phải sau ngày sản xuất` });
+          }
+
+          // Lô tương ứng trong kho: tạo lúc chốt theo (phiếu, SP, mã lô cũ).
+          const batch: any = order.batches.find(
+            (b: { productId: string; batchCode: string }) =>
+              b.productId === item.productId && b.batchCode === item.batchCode,
+          );
+
+          planned.push({
+            itemId: item.id,
+            productId: item.productId,
+            batchId: batch?.id ?? null,
+            batchStatus: batch?.status ?? null,
+            oldBatchCode: item.batchCode,
+            batchCode,
+            manufactureDate,
+            expiryDate,
+          });
+        }
+
+        // ── Mã lô mới phải không trùng: trong chính payload, và trong kho ──
+        const renamed = planned.filter((p) => p.batchCode !== p.oldBatchCode);
+        const seen = new Set<string>();
+        for (const p of renamed) {
+          const key = `${p.productId}::${p.batchCode}`;
+          if (seen.has(key)) {
+            return reply
+              .status(400)
+              .send({ error: `Mã lô ${p.batchCode} bị trùng giữa các dòng cùng sản phẩm` });
+          }
+          seen.add(key);
+        }
+        if (renamed.length > 0) {
+          // Unique index là (orgId, productId, batchCode) — loại trừ chính lô
+          // đang sửa để đổi qua đổi lại không tự báo trùng.
+          const clash = await prisma.inventoryBatch.findFirst({
+            where: {
+              orgId: user.orgId,
+              id: { notIn: renamed.map((p) => p.batchId).filter(Boolean) as string[] },
+              OR: renamed.map((p) => ({ productId: p.productId, batchCode: p.batchCode })),
+            },
+            select: { batchCode: true },
+          });
+          if (clash) {
+            return reply.status(400).send({
+              error: `Mã lô ${clash.batchCode} đã tồn tại trong kho cho sản phẩm này. Hãy dùng mã khác.`,
+            });
+          }
+        }
+
+        // ── Ghi ──
+        const statusChanges: Array<{ batchCode: string; from: string; to: string }> = [];
+        await prisma.$transaction(async (tx: any) => {
+          // Chốt lại trạng thái dưới transaction — phòng phiếu vừa bị đổi.
+          const fresh = await tx.importOrder.findUnique({
+            where: { id },
+            select: { status: true },
+          });
+          if (!fresh || fresh.status !== 'confirmed') throw new Error('STATUS_CHANGED');
+
+          for (const p of planned) {
+            await tx.importOrderItem.update({
+              where: { id: p.itemId },
+              data: {
+                batchCode: p.batchCode,
+                manufactureDate: p.manufactureDate,
+                expiryDate: p.expiryDate,
+              },
+            });
+            if (!p.batchId) continue; // lô đã bị xoá tay — chỉ sửa dòng trên phiếu
+
+            const nextStatus = recomputeBatchStatus(p.batchStatus ?? 'active', p.expiryDate);
+            if (p.batchStatus && nextStatus !== p.batchStatus) {
+              statusChanges.push({ batchCode: p.batchCode, from: p.batchStatus, to: nextStatus });
+            }
+            await tx.inventoryBatch.update({
+              where: { id: p.batchId },
+              data: {
+                batchCode: p.batchCode,
+                manufactureDate: p.manufactureDate,
+                expiryDate: p.expiryDate,
+                status: nextStatus,
+              },
+            });
+            // Bút toán nhập ghi mã lô trong note → đổi mã thì sửa cho khớp,
+            // không thì lịch sử kho vẫn hiện mã cũ.
+            if (p.batchCode !== p.oldBatchCode) {
+              await tx.inventoryMovement.updateMany({
+                where: {
+                  batchId: p.batchId,
+                  type: 'import',
+                  referenceType: 'import_order',
+                  referenceId: order.id,
+                },
+                data: { note: `Nhập kho ${order.importCode} — lô ${p.batchCode}` },
+              });
+            }
+          }
+
+          // Header: ngày nhập đổi → hạn trả NCC tính lại theo payment terms.
+          const headerData: any = {};
+          if (newImportDate) headerData.importDate = newImportDate;
+          if (body.nccInvoiceNo !== undefined) {
+            headerData.nccInvoiceNo = body.nccInvoiceNo || null;
+          }
+          if (body.notes !== undefined) headerData.notes = body.notes || null;
+          if (newImportDate && order.supplierId) {
+            const supplier = await tx.supplier.findUnique({
+              where: { id: order.supplierId },
+              select: { paymentTermDays: true },
+            });
+            if (supplier) {
+              const due = new Date(newImportDate);
+              due.setDate(due.getDate() + supplier.paymentTermDays);
+              headerData.paymentDueDate = due;
+            }
+          }
+          if (Object.keys(headerData).length > 0) {
+            await tx.importOrder.update({ where: { id }, data: headerData });
+          }
+        });
+
+        // Lô bật lại active / tắt thành expired đều đổi tồn khả dụng →
+        // phải resync cột lưu sẵn products.totalStock, nếu không sale-app
+        // vẫn đọc số cũ (đúng ca 262 hộp MH_01 bị mất).
+        const affectedProductIds = [...new Set(planned.map((p) => p.productId))];
+        for (const pid of affectedProductIds) {
+          await syncProductCostAndStock(pid);
+        }
+
+        // Vết audit: ai sửa, sửa gì (phiếu đã chốt là dữ liệu kế toán).
+        try {
+          await prisma.activityLog.create({
+            data: {
+              orgId: user.orgId,
+              userId: user.id,
+              action: 'import_order_info_edited',
+              entityType: 'import_order',
+              entityId: order.id,
+              details: {
+                importCode: order.importCode,
+                editedByRole: user.role,
+                header: {
+                  ...(newImportDate ? { importDate: newImportDate.toISOString().slice(0, 10) } : {}),
+                  ...(body.nccInvoiceNo !== undefined ? { nccInvoiceNo: body.nccInvoiceNo || null } : {}),
+                  ...(body.notes !== undefined ? { notes: body.notes || null } : {}),
+                },
+                items: planned.map((p) => ({
+                  itemId: p.itemId,
+                  batchCodeFrom: p.oldBatchCode,
+                  batchCodeTo: p.batchCode,
+                  manufactureDate: p.manufactureDate?.toISOString().slice(0, 10) ?? null,
+                  expiryDate: p.expiryDate?.toISOString().slice(0, 10) ?? null,
+                })),
+                batchStatusChanges: statusChanges,
+              },
+            },
+          });
+        } catch (logErr) {
+          // Log lỗi KHÔNG được làm rollback thay đổi đã ghi thành công.
+          logger.error('[imports] patch activity-log error:', logErr);
+        }
+
+        return {
+          ok: true,
+          itemsUpdated: planned.length,
+          batchesUpdated: planned.filter((p) => p.batchId).length,
+          batchStatusChanges: statusChanges,
+        };
+      } catch (err: any) {
+        if (err?.message === 'STATUS_CHANGED') {
+          return reply
+            .status(409)
+            .send({ error: 'Phiếu vừa bị người khác thay đổi — tải lại rồi sửa tiếp' });
+        }
+        logger.error('[imports] patch error:', err);
+        return reply.status(500).send({ error: 'Không cập nhật được thông tin phiếu nhập' });
       }
     },
   );

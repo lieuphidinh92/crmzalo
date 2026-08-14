@@ -442,3 +442,83 @@ giá vốn/lãi ẨN với người có cờ · owner vẫn thấy · người k
 
 **Bài học:** khi CEO nói "cho bạn X xem thêm dữ liệu", ĐỪNG nâng role. Kiểm role đó kéo
 theo quyền gì (ở đây admin = thấy lãi + sửa SP), rồi đưa 2 lựa chọn kèm trade-off.
+
+---
+
+## 14/08/2026 — HSD gõ thiếu 1 số ('0029' thay '2029') làm 262 hộp biến mất khỏi kho
+
+**Vấn đề:**
+Phiếu `NK-202608-018` (13/08) nhập lô `L027844` — 546 hộp MH_01 — HSD gõ `0029-02-01`
+thay vì `2029-02-01`. Anh Philip chỉ thấy nhãn "Hết hạn" đỏ trên chi tiết phiếu, nhưng
+hậu quả thật lớn hơn nhiều:
+
+1. Cron `sweepExpiredBatches` (00:30 hằng đêm) thấy `expiry_date < today` → set lô
+   `status='expired'`.
+2. `syncProductCostAndStock` + FIFO + báo cáo tồn + catalog sale-app **chỉ đếm lô
+   `status='active'`** → `products.total_stock` của MH_01 tụt về **0**.
+3. Sale thấy "hết hàng" trong khi kho còn **262 hộp**, và `fifo-service.ts:85` không
+   cấp được lô này khi đóng gói.
+
+Tức là **1 ký tự sai trong ô date → mất trắng 1 mã hàng khỏi hệ thống sau 1 đêm**, mà
+không có cảnh báo nào. `<input type="date">` của browser **cho phép năm 2 chữ số** và
+backend lúc đó không validate năm.
+
+**Cách fix (3 lớp):**
+- *Dữ liệu:* script `scripts/fix-hsd-L027844-2026-08-14.sql` — sửa HSD ở
+  `import_order_items` + `inventory_batches`, bật lại `active`, **resync `total_stock`**.
+  Dùng `DATE '2029-02-01'` thuần trong SQL → không có bẫy múi giờ như `new Date()` ở JS.
+- *Chặn nguồn:* `parseDateOnly()` + `MIN_DATE_YEAR/MAX_DATE_YEAR` (2000–2100) trong
+  `imports-routes.ts`, áp cho cả POST/PUT/PATCH; `min`/`max` trên mọi `<input type="date">`
+  của sale-app `ImportForm.vue` + CRM `ImportFormView.vue`.
+- *Sửa được sau khi chốt:* endpoint `PATCH /api/v1/imports/:id` (owner/admin) — xem mục
+  dưới. Trước đó phiếu đã chốt là read-only tuyệt đối nên **phải sửa DB tay**.
+
+**Bẫy phát sinh trong lúc fix:**
+- Sửa `expiry_date` của lô mà **quên resync `products.total_stock`** thì sale-app vẫn đọc
+  số cũ (cột lưu sẵn, không tính sống từ lô) → tưởng fix rồi mà vẫn hết hàng.
+- Ngày nhập mặc định cũ là `new Date()` trơ cho cột `@db.Date`: tạo phiếu lúc 1–7h sáng VN
+  sẽ ghi **lùi 1 ngày** (có thể lùi sang tháng trước). Đã đổi sang `vnTodayDateOnly()`.
+
+**Bài học:**
+1. **Ô ngày nhập tay là nguồn lỗi hạng nặng, không phải lỗi cosmetic.** Ngày sai không chỉ
+   hiện sai — nó đi vào cron, và cron đổi `status`, mà `status` quyết định hàng có tồn tại
+   hay không. Luôn validate khoảng năm ở backend, đừng tin browser.
+2. Khi CEO báo "hiển thị sai chỗ này", **kiểm luôn hệ quả dây chuyền** (cron nào đọc cột
+   đó? cột lưu sẵn nào phái sinh từ nó?) trước khi sửa mỗi chỗ anh chỉ.
+3. Cột lưu sẵn `total_stock`: mọi thao tác đụng lô đều phải resync, và đối soát
+   `total_stock` vs `SUM(lô active)` phải trả **0 dòng lệch** mới gọi là xong.
+
+---
+
+## 14/08/2026 — Sửa phiếu nhập ĐÃ CHỐT: chỉ mở phần không đụng tiền/tồn
+
+**Bối cảnh:** vòng đời phiếu nhập thiết kế "confirmed = read-only, muốn sửa thì tạo phiếu
+mới". Thực tế sai HSD/mã lô là chuyện thường và tạo phiếu mới thì **cộng tồn 2 lần**.
+
+**Quyết định (anh Philip chọn sau khi em đưa 3 mức):** mở đúng nhóm field không ảnh hưởng
+số học — `mã lô · NSX · HSD · số HĐ NCC · ghi chú · ngày nhập`. **Số lượng / giá vốn /
+chiết khấu / VAT / cọc vẫn bất biến** vì sửa chúng đòi đảo FIFO của hàng đã bán và tính
+lại công nợ NCC.
+
+**Endpoint:** `PATCH /api/v1/imports/:id` (owner/admin). `PUT` vẫn chỉ cho phiếu nháp.
+
+**5 điểm phải làm đúng, dễ quên:**
+1. **Gương xuống lô trong kho** — sửa dòng trên phiếu mà không sửa `inventory_batches` là
+   phiếu nói một đằng kho làm một nẻo.
+2. **Tính lại `active`/`expired`** theo HSD mới, dùng **đúng cách so sánh của cron**
+   (mốc 00:00 giờ VN, HSD = hôm nay vẫn còn hạn) để endpoint và cron không chỏi nhau.
+   Không tự bật lại lô `recalled` (thu hồi tay là quyết định của người).
+3. **Resync `total_stock`** sau khi status đổi — chính là bài học ở mục trên.
+4. **Đổi mã lô phải check unique `(orgId, productId, batchCode)`** và **loại trừ chính lô
+   đang sửa**, nếu không đổi qua đổi lại sẽ tự báo trùng. Đồng thời sửa `note` của bút toán
+   nhập (note có nhét mã lô) kẻo lịch sử kho hiện mã cũ.
+5. **Ghi `activity_logs`** (`action='import_order_info_edited'`) — phiếu đã chốt là dữ liệu
+   kế toán, phải biết ai sửa gì. Bọc try/catch riêng: log lỗi KHÔNG được rollback phần đã ghi.
+
+**Verify:** 33 assert backend (JWT tự ký, DB local) + 19 assert UI Playwright (Chrome for
+Testing), gồm ca biên HSD = hôm nay, member bị 403, mã lô trùng, PATCH lên phiếu nháp,
+và mobile 390px không tràn ngang.
+
+**Bài học:** "read-only sau khi chốt" là luật đúng cho *số*, quá chặt cho *thông tin*. Khi
+CEO xin quyền sửa, tách field theo **field nào tham gia vào số học** rồi mở đúng nhóm an
+toàn — đừng mở hết, cũng đừng bắt sửa DB tay mãi.
