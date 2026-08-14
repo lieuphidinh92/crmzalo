@@ -72,6 +72,17 @@ function expiryState(d) {
   return null;
 }
 
+// Tiêu đề cảnh báo theo `type` backend trả về. Dùng map thay vì ternary —
+// thêm loại cảnh báo mới mà quên sửa ternary là hiện sai nhãn.
+const WARNING_TITLES = {
+  cost_above_price: '⚠ Giá vốn cao hơn giá bán',
+  price_jump: '⚠ Giá nhập tăng đột biến',
+  cost_far_below_price: '⚠ Giá vốn thấp bất thường — nghi gõ thiếu số 0',
+};
+function warningTitle(type) {
+  return WARNING_TITLES[type] || '⚠ Cảnh báo';
+}
+
 // ── Load ─────────────────────────────────────────────────────────────
 async function load() {
   await loadDetail(id);
@@ -186,8 +197,16 @@ function openConfirm() {
 async function doConfirm() {
   confirmError.value = '';
   try {
-    await confirmImport(id);
+    const res = await confirmImport(id);
     confirmStep.value = 0;
+    // Lô trùng mã + cùng HSD được GỘP vào lô đang có thay vì tạo lô mới —
+    // nói rõ ra, không thì thủ kho tưởng hàng nhập bị trôi mất.
+    const merged = res?.mergedBatchCodes || [];
+    if (merged.length) {
+      editNotice.value =
+        `Đã chốt phiếu. ${merged.length} lô trùng mã + cùng HSD đã được CỘNG DỒN vào lô ` +
+        `đang có trong kho (${merged.join(', ')}) — không tạo lô mới.`;
+    }
     await load();
   } catch (err) {
     confirmError.value = err.response?.data?.error || 'Không chốt được phiếu nhập';
@@ -286,7 +305,7 @@ async function doConfirm() {
           "
         >
           <span class="font-semibold">
-            {{ w.type === 'cost_above_price' ? '⚠ Giá vốn cao hơn giá bán' : '⚠ Giá nhập tăng đột biến' }}
+            {{ warningTitle(w.type) }}
           </span>
           <span v-if="w.message"> — {{ w.message }}</span>
         </div>
@@ -664,7 +683,7 @@ async function doConfirm() {
               "
             >
               <span class="font-semibold">
-                {{ w.type === 'cost_above_price' ? '⚠ Giá vốn cao hơn giá bán' : '⚠ Giá nhập tăng đột biến' }}
+                {{ warningTitle(w.type) }}
               </span>
               <span v-if="w.message"> — {{ w.message }}</span>
             </div>
