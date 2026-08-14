@@ -421,6 +421,12 @@ function goBack() {
   else router.push('/imports');
 }
 
+// Khoảng năm cho mọi <input type="date"> — khớp validate backend (imports-routes).
+// Không có min/max thì browser cho gõ năm 2 chữ số: '0029' thay vì '2029' đã
+// làm lô L027844 bị cron đánh hết hạn ngay đêm nhập (14/08/2026).
+const DATE_MIN = '2000-01-01';
+const DATE_MAX = '2100-12-31';
+
 // Ô input dùng chung.
 const inputCls =
   'w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-ink-primary';
@@ -576,7 +582,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
             <!-- Ngày nhập -->
             <div>
               <div :class="labelCls">Ngày nhập</div>
-              <input v-model="form.importDate" type="date" :class="inputCls" />
+              <input v-model="form.importDate" type="date" :min="DATE_MIN" :max="DATE_MAX" :class="inputCls" />
             </div>
 
             <!-- Số HĐ NCC -->
@@ -740,6 +746,8 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                   <input
                     v-model="it.expiryDate"
                     type="date"
+                    :min="DATE_MIN"
+                    :max="DATE_MAX"
                     :class="[
                       'w-full h-10 px-3 rounded-input border outline-none bg-white text-sm text-ink-primary',
                       it.expiryDate ? 'border-line-300 focus:border-royal-700' : 'border-amber-400 focus:border-amber-500',
@@ -766,7 +774,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
               <div v-if="it._open" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 pt-2 border-t border-line-100">
                 <div>
                   <div :class="labelCls">Ngày sản xuất</div>
-                  <input v-model="it.manufactureDate" type="date" :class="inputCls" />
+                  <input v-model="it.manufactureDate" type="date" :min="DATE_MIN" :max="DATE_MAX" :class="inputCls" />
                 </div>
                 <div>
                   <div :class="labelCls">Ghi chú dòng</div>

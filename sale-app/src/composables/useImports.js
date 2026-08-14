@@ -14,7 +14,8 @@ import { formatVND, formatDateVN, formatDateTimeVN } from './useFormat';
  *   - GET  /suppliers            → { suppliers: [...] }
  *   - GET  /sale-app/products/search?q= → { products: [...] }
  *   - POST /imports              → { id }
- *   - PUT  /imports/:id          → { ... }
+ *   - PUT  /imports/:id          → { ... }            (chỉ phiếu NHÁP)
+ *   - PATCH /imports/:id         → { ok, batchStatusChanges } (phiếu ĐÃ CHỐT)
  *   - DELETE /imports/:id        → { ... }
  *   - GET  /imports/:id/warnings → { warnings: [...] }
  *   - POST /imports/:id/confirm  → { ... }
@@ -120,6 +121,20 @@ export function useImports() {
     }
   }
 
+  // Sửa THÔNG TIN phiếu đã chốt (owner/admin): ngày nhập, số HĐ NCC, ghi chú,
+  // và mã lô / NSX / HSD từng dòng. Backend tự đồng bộ xuống lô trong kho +
+  // bật lại active/expired theo HSD mới. KHÔNG sửa được số lượng / giá vốn.
+  // NÉM lỗi để UI hiện message backend trả về.
+  async function patchConfirmed(id, payload) {
+    saving.value = true;
+    try {
+      const { data } = await api.patch(`/imports/${id}`, payload);
+      return data;
+    } finally {
+      saving.value = false;
+    }
+  }
+
   async function deleteDraft(id) {
     const { data } = await api.delete(`/imports/${id}`);
     return data;
@@ -185,6 +200,7 @@ export function useImports() {
     searchProducts,
     createDraft,
     updateDraft,
+    patchConfirmed,
     deleteDraft,
     loadWarnings,
     confirmImport,
