@@ -56,7 +56,7 @@
         density="compact"
       >
         <strong>
-          {{ w.type === 'cost_above_price' ? '⚠ Giá vốn cao hơn giá bán' : '⚠ Giá nhập tăng đột biến' }}
+          {{ warningTitle(w.type) }}
         </strong>
         — {{ w.message }}
       </v-alert>
@@ -220,6 +220,17 @@ async function load() {
   } else {
     warnings.value = [];
   }
+}
+
+// Nhãn cảnh báo theo `type` backend trả về — map thay vì ternary để thêm loại
+// mới không bị hiện sai nhãn.
+const WARNING_TITLES: Record<string, string> = {
+  cost_above_price: '⚠ Giá vốn cao hơn giá bán',
+  price_jump: '⚠ Giá nhập tăng đột biến',
+  cost_far_below_price: '⚠ Giá vốn thấp bất thường — nghi gõ thiếu số 0',
+};
+function warningTitle(type: string): string {
+  return WARNING_TITLES[type] || '⚠ Cảnh báo';
 }
 
 function goBack() {
