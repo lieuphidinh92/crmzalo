@@ -181,6 +181,8 @@
                           v-model="line.manufactureDate"
                           label="NSX"
                           type="date"
+                          min="2000-01-01"
+                          max="2100-12-31"
                           density="compact"
                           variant="outlined"
                           hide-details
@@ -191,6 +193,8 @@
                           v-model="line.expiryDate"
                           label="HSD"
                           type="date"
+                          min="2000-01-01"
+                          max="2100-12-31"
                           density="compact"
                           variant="outlined"
                           hide-details
@@ -237,6 +241,8 @@
             v-model="state.importDate"
             label="Ngày nhập *"
             type="date"
+            min="2000-01-01"
+            max="2100-12-31"
             density="compact"
             variant="outlined"
             hide-details
