@@ -561,3 +561,101 @@ sale-app lỗi — kiểm rõ context nào fail (`crmzalo-pnxt` vs `crm-halo`).
 **Bài học:** định nghĩa "đã deploy" = **tải artefact production về và thấy thay đổi trong đó**,
 cho TỪNG dịch vụ. 4 dịch vụ deploy từ 2 nhánh khác nhau → mỗi lần ship phải verify 3 chỗ
 (Render backend · Vercel sale-app · Vercel CRM), không suy ra từ 1 chỗ.
+
+---
+
+## 14/08/2026 — Ô "Giá vốn" `type="number"` biến `94.250` thành `94,25đ` (chia 1000)
+
+**Vấn đề:** phiếu `NK-202608-016` (11/08) có 2 lô PBB ghi giá vốn **94,25đ** và **81,25đ**
+trong khi giá nhập thật là 94.250đ và 81.250đ. Không phải người nhập bịa số — họ gõ đúng
+`94.250` theo cách viết tiền VN, nhưng ô nhập là:
+
+```html
+<input v-model.number="it.unitCost" type="number" min="0" step="1000" inputmode="numeric" />
+```
+
+`type="number"` coi dấu `.` là **dấu thập phân**, nên `94.250` → `94.25`. Chia đúng 1000.
+
+**Dây chuyền hậu quả:**
+1. `import_order_items.unit_cost` = 94.25 → tổng phiếu tính sai → **công nợ NCC thiếu ~8,4tr**.
+2. Lô sinh ra khi chốt cũng mang `import_cost` = 94.25.
+3. `syncProductCostAndStock` tính `cost_price` = TB gia quyền lô active →
+   `(48×94,25 + 3×94.250)/51 = 5.633đ` → **registry của SP bị kéo sai** (đúng phải 94.250).
+4. Khi bán, `order_item_batches.cost_at_time` ≈ 0 → **lãi gộp thổi phồng gần bằng doanh thu**.
+
+May: chưa bán hộp nào từ 2 lô này nên báo cáo quá khứ chưa hỏng.
+
+**Cách phân biệt lỗi này với hàng tặng thật:** cùng ngày 11/08 có lô `26E031` (USL_32,
+6đv) giá vốn **1,00đ tròn** — đó là **hàng tặng cố ý**: backend chặn `unitCost > 0` nên
+người nhập không ghi được 0, phải ghi 1đ. Dấu hiệu phân biệt:
+  · chia 1000 → số lẻ khớp đúng giá thật ÷ 1000 (94,25 ↔ 94.250)
+  · hàng tặng → số tròn 1đ (hoặc rất nhỏ, không liên quan giá thật)
+Đừng "sửa" hàng tặng thành giá đầy đủ — lãi gộp 100% của hàng tặng là ĐÚNG.
+
+**Đã làm:** sửa 2 lô về giá thật + resync registry (`scripts/fix-cost-pbb-va-quatang-2026-08-14.ts`).
+KHÔNG đụng phiếu nhập & công nợ NCC — đó là bút toán kế toán, chờ anh Philip đối chiếu hóa đơn BTH.
+
+**Chưa vá gốc (đề xuất):**
+1. Backend `validateItem`: từ chối tiền không nguyên đồng, kèm thông báo chỉ rõ
+   *"94.250 sẽ bị hiểu là 94,25đ — gõ 94250"*. Chặn được cả 2 app cùng lúc.
+2. Thêm cảnh báo lúc chốt phiếu: **giá vốn < 10% giá bán thấp nhất** (đối xứng với cảnh báo
+   `cost_above_price` đã có). Bắt được cả trường hợp gõ sai mà vẫn là số nguyên.
+
+**Bài học:** `type="number"` + `v-model.number` cho ô TIỀN ở app tiếng Việt là bẫy — người
+Việt gõ `1.500.000`, browser đọc thành `1.5`. Cùng họ với lỗi HSD `0029` sáng nay: **ô nhập
+không validate = sai số âm thầm, và cái sai đi thẳng vào cron / báo cáo / công nợ**.
+Query truy quét định kỳ: `import_cost <> round(import_cost)` và
+`import_cost < 0.10 × giá bán thấp nhất`.
+
+---
+
+## 15/08/2026 — Trùng mã lô: chặn cứng làm thủ kho bịa mã · và bẫy `not: null` của Prisma
+
+**Phản ánh của Đức (thủ kho) gồm 3 việc, hoá ra là 3 nguyên nhân khác nhau — đừng gộp:**
+
+1. *"Nhập chuẩn rồi mà xác nhận GIAO CHO VẬN CHUYỂN báo thiếu tồn"* (FORCE G Libido +
+   Manhae nội tiết) → chính là lô `L027844` sai HSD. Đơn `DH-202608-0065` chứa **cả 2 SP**;
+   MH_01 hết tồn ảo làm **cả đơn** không đóng gói được, nên Đức kể tên cả FORCE G dù mã này
+   không có lỗi gì. Sau khi sửa HSD lúc 15:57, đơn đóng gói thành công 16:33. → **Một dòng
+   hàng thiếu tồn là cả đơn tắc; đừng tin danh sách SP người dùng kể ra là danh sách SP lỗi.**
+2. *"2 đơn Đạt huỷ"* → **không liên quan**. Cả 2 huỷ trong vòng 1 phút sau khi tạo, chưa qua
+   bước giao nên `order_item_batches` = 0 dòng → chưa từng trừ tồn, không có gì phải trả lại.
+   "Huỷ đơn → tăng tồn" chỉ đúng khi đơn ĐÃ đóng gói.
+3. *"Cứ trùng lô là không nhập được"* → **lỗi thiết kế thật**, xử lý bên dưới.
+
+**Vấn đề trùng mã lô:** `confirm` chặn cứng khi `(orgId, productId, batchCode)` đã tồn tại,
+KHÔNG phân biệt lô còn tồn hay đã bán hết. NCC giao lại đúng lô sản xuất là chuyện thường
+→ Đức phải bịa mã: `L027844`→`L027844A`, `1440326`→`1440326A`→`1440326AB`,
+`L026443`→`L0264431`→`L026443123`. Đếm được **12 cặp**, và **65 lô tồn 0** đang giữ mã vô ích.
+Hậu quả không chỉ bất tiện: 1 lô hàng thật bị xẻ thành 3 mã → truy xuất HSD rối, báo cáo
+"lô sắp hết hạn" đếm ra lô ảo, kiểm kê không khớp mã in trên vỏ thùng.
+
+**Cách làm (anh Philip chốt 14/08/2026):** cùng mã + **cùng HSD** → GỘP vào lô đang có
+(cộng `currentQuantity` + `importQuantity`, giá vốn = TB gia quyền **theo tồn còn lại** —
+hàng cũ bán hết rồi thì giá của nó không còn ảnh hưởng). Cùng mã + **HSD khác** → chặn, nêu
+rõ cả 2 ngày và gợi ý mã thay thế. Lô `recalled` → chặn (thu hồi là quyết định của người).
+
+**3 chỗ dễ quên khi làm tính năng gộp:**
+- **2 dòng cùng mã lô trong CÙNG một phiếu:** phải dồn vào một lô qua `Map` trong vòng lặp,
+  không thì dòng thứ 2 vỡ unique index.
+- **Màn chi tiết phiếu bị trống:** lô gộp giữ `importOrderId` của phiếu ĐẦU TIÊN nên quan hệ
+  `batches` không thấy nó. Phải lấy thêm theo bút toán nhập (`referenceId = phiếu`).
+- **Nói cho người dùng biết là đã GỘP**, không thì thủ kho tưởng hàng nhập bị trôi mất.
+
+**Bẫy Prisma làm chết cả endpoint (mất 1 vòng test mới thấy):**
+```ts
+where: { ..., batchId: { not: null } }   // ❌ batchId là cột BẮT BUỘC
+```
+→ `PrismaClientValidationError` → **GET /imports/:id trả 500 với MỌI phiếu**, không chỉ phiếu
+gộp. Nguy hiểm là **`tsc --noEmit` báo 0 lỗi**: repo này chưa `prisma generate` nên type
+Prisma bị suy biến thành `{}`/`any`, tsc không bắt được sai kiểu ở tầng query.
+→ **Với repo này, compile sạch KHÔNG phải bằng chứng.** Phải gọi endpoint thật và **assert
+`status === 200`**, đừng chỉ assert nội dung — `data?.x || []` biến lỗi 500 thành mảng rỗng
+im lặng (đúng cái đã che lỗi này ở vòng test đầu).
+
+**Kèm theo:** chặn tiền không nguyên đồng + cảnh báo `cost_far_below_price` (giá vốn < 10%
+giá bán thấp nhất) — vá gốc lỗi `type="number"` ở mục 14/08. Cảnh báo là **mềm**, vì hàng
+tặng thật cũng rơi vào đây.
+
+**Verify:** 28 assert backend + 9 assert UI Playwright (gộp lô, chặn HSD khác, 2 dòng cùng mã,
+nhãn cảnh báo mới, thông báo gộp, phiếu thường vẫn xem được).

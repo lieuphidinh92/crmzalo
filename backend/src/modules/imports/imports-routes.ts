@@ -97,6 +97,25 @@ function parseDateOnly(v: unknown): Date | undefined {
   return d;
 }
 
+/** So 2 ngày date-only: cùng rỗng, hoặc cùng mốc. Giá trị cột @db.Date về
+ *  dạng nửa đêm UTC nên so `getTime()` là đủ và không lệch múi giờ. */
+function sameDateOnly(a: Date | null | undefined, b: Date | null | undefined): boolean {
+  const x = a ?? null;
+  const y = b ?? null;
+  if (x === null && y === null) return true;
+  if (x === null || y === null) return false;
+  return new Date(x).getTime() === new Date(y).getTime();
+}
+
+/** dd/mm/yyyy để nhét vào thông báo lỗi cho thủ kho đọc (rỗng → "chưa có"). */
+function fmtDateVN(d: Date | null | undefined): string {
+  if (!d) return 'chưa có';
+  const x = new Date(d);
+  const p = (n: number) => String(n).padStart(2, '0');
+  // Dùng getUTC* vì cột @db.Date lưu nửa đêm UTC — getDate() sẽ lùi 1 ngày.
+  return `${p(x.getUTCDate())}/${p(x.getUTCMonth() + 1)}/${x.getUTCFullYear()}`;
+}
+
 /** Hôm nay theo giờ VN, dưới dạng nửa đêm UTC cho cột @db.Date.
  *  Đừng dùng `new Date()` trơ làm ngày nhập mặc định: tạo phiếu lúc 1–7h
  *  sáng VN thì `new Date()` = tối hôm trước theo UTC → Postgres cắt DATE lùi
@@ -236,8 +255,23 @@ function validateItem(it: any, idx: number): string | null {
   if (!Number.isFinite(it.quantity) || it.quantity <= 0) {
     return `Item ${idx}: số lượng phải > 0`;
   }
+  if (!Number.isInteger(it.quantity)) {
+    return `Item ${idx}: số lượng phải là số nguyên`;
+  }
   if (!Number.isFinite(it.unitCost) || it.unitCost <= 0) {
     return `Item ${idx}: giá nhập phải > 0`;
+  }
+  // Tiền LUÔN là số nguyên đồng. Ô nhập là <input type="number"> nên gõ
+  // "94.250" theo cách viết tiền VN sẽ ra 94,25 (browser hiểu dấu chấm là dấu
+  // thập phân) — đúng giá thật chia 1000. Lỗi này đã xảy ra thật ở phiếu
+  // NK-202608-016 (11/08/2026): 2 lô PBB vào kho với giá 94,25đ và 81,25đ,
+  // kéo sai cả công nợ NCC lẫn giá vốn registry, và khi bán thì giá vốn ≈ 0
+  // nên lãi gộp bị thổi phồng. Chặn ở backend để cả sale-app lẫn CRM đều an toàn.
+  if (!Number.isInteger(it.unitCost)) {
+    return (
+      `Item ${idx}: giá nhập phải là số nguyên đồng (đang là ${it.unitCost}). ` +
+      `Đừng gõ dấu chấm/phẩy — "94.250" bị hiểu là 94,25đ. Gõ 94250.`
+    );
   }
   // Ngày phải parse được VÀ năm trong khoảng — chặn lỗi gõ '0029' thay '2029'.
   for (const [label, raw] of [
@@ -380,6 +414,44 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
           },
         });
         if (!order) return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
+
+        // Lô GỘP (nhập thêm vào lô có sẵn) giữ `importOrderId` của phiếu đầu
+        // tiên, nên quan hệ `batches` không thấy nó → màn chi tiết sẽ trống.
+        // Lấy thêm theo bút toán nhập của chính phiếu này rồi hợp nhất.
+        const importMovements = await prisma.inventoryMovement.findMany({
+          where: {
+            orgId: user.orgId,
+            type: 'import',
+            referenceType: 'import_order',
+            referenceId: id,
+            // `batchId` là cột BẮT BUỘC trong schema — đừng lọc `not: null`,
+            // Prisma sẽ báo PrismaClientValidationError và cả endpoint chết.
+          },
+          select: { batchId: true },
+        });
+        const known = new Set(order.batches.map((b: { id: string }) => b.id));
+        const extraIds = [
+          ...new Set(
+            importMovements
+              .map((m: { batchId: string }) => m.batchId)
+              .filter((bid: string) => bid && !known.has(bid)),
+          ),
+        ];
+        if (extraIds.length > 0) {
+          const extra = await prisma.inventoryBatch.findMany({
+            where: { id: { in: extraIds }, orgId: user.orgId },
+            select: {
+              id: true,
+              batchCode: true,
+              productId: true,
+              importQuantity: true,
+              currentQuantity: true,
+              expiryDate: true,
+              status: true,
+            },
+          });
+          order.batches = [...order.batches, ...extra];
+        }
         return { import: order };
       } catch (err) {
         logger.error('[imports] detail error:', err);
@@ -878,7 +950,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
         if (!order) return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
 
         const warnings: Array<{
-          type: 'cost_above_price' | 'price_jump';
+          type: 'cost_above_price' | 'price_jump' | 'cost_far_below_price';
           severity: 'high' | 'medium';
           productId: string;
           sku: string;
@@ -905,6 +977,26 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
               sku,
               productName: name,
               message: `${sku} ${name}: Giá vốn ${unitCostNum.toLocaleString('vi-VN')} cao hơn giá bán thấp nhất ${Number(minPrice).toLocaleString('vi-VN')}. Sẽ LỖ nếu áp tier này.`,
+            });
+          }
+
+          // Đối xứng với #4: giá vốn THẤP bất thường (<10% giá bán thấp nhất).
+          // Bắt lỗi gõ thiếu số 0 / lẫn nghìn-đồng ngay lúc chốt, trước khi lô
+          // vào kho với giá vốn ≈ 0 (lãi gộp sẽ bị thổi phồng khi bán).
+          // Hàng tặng thật cũng rơi vào đây — thủ kho đọc cảnh báo rồi chốt
+          // tiếp là được, đây là cảnh báo mềm, không chặn.
+          if (minPrice != null && Number(minPrice) > 0 && unitCostNum < 0.1 * Number(minPrice)) {
+            warnings.push({
+              type: 'cost_far_below_price',
+              severity: 'high',
+              productId: it.productId,
+              sku,
+              productName: name,
+              message:
+                `${sku} ${name}: Giá vốn ${unitCostNum.toLocaleString('vi-VN')} chỉ bằng ` +
+                `${((unitCostNum / Number(minPrice)) * 100).toFixed(1)}% giá bán thấp nhất ` +
+                `${Number(minPrice).toLocaleString('vi-VN')} — kiểm tra có gõ thiếu số 0 không ` +
+                `(vd 94.250 bị hiểu thành 94đ). Nếu là HÀNG TẶNG thì bỏ qua cảnh báo này.`,
             });
           }
 
@@ -993,10 +1085,16 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
-        // Pre-flight: detect (productId, batchCode) collisions against
-        // existing batches BEFORE we open the write transaction. This is
-        // also enforced by the unique index — surfacing a clean error.
-        const collisions = await prisma.inventoryBatch.findMany({
+        // ── Trùng mã lô: GỘP nếu cùng HSD, báo lỗi nếu HSD khác ───────────
+        // (anh Philip chốt 14/08/2026) NCC giao lại đúng lô sản xuất là chuyện
+        // thường; chặn cứng làm thủ kho phải bịa mã (L027844 → L027844A →
+        // L027844AB) khiến 1 lô hàng thật bị xẻ thành nhiều mã, truy xuất HSD
+        // rối và báo cáo "lô sắp hết hạn" đếm ra lô ảo. Lô đã bán hết (tồn 0)
+        // trước đây cũng bị chặn vô ích — có 65 lô như vậy.
+        //
+        // Cùng mã + cùng HSD  → một lô sản xuất → cộng dồn vào lô đang có.
+        // Cùng mã + HSD khác  → hai lô khác nhau thật → bắt đổi mã.
+        const existingBatches = await prisma.inventoryBatch.findMany({
           where: {
             orgId: user.orgId,
             OR: order.items.map((it: { productId: string; batchCode: string }) => ({
@@ -1004,13 +1102,54 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
               batchCode: it.batchCode,
             })),
           },
-          select: { batchCode: true, productId: true },
+          select: {
+            id: true,
+            batchCode: true,
+            productId: true,
+            expiryDate: true,
+            manufactureDate: true,
+            currentQuantity: true,
+            importCost: true,
+            status: true,
+          },
         });
-        if (collisions.length > 0) {
-          const codes = collisions.map((c: { batchCode: string }) => c.batchCode).join(', ');
-          return reply.status(400).send({
-            error: `Mã lô đã tồn tại trong kho: ${codes}. Hãy đổi mã lô khác.`,
-          });
+        const keyOf = (productId: string, batchCode: string) => `${productId}::${batchCode}`;
+        const existingByKey = new Map<string, any>(
+          existingBatches.map((b: any) => [keyOf(b.productId, b.batchCode), b]),
+        );
+
+        // Pre-flight: chặn TRƯỚC khi mở transaction ghi.
+        for (const it of order.items as any[]) {
+          const ex = existingByKey.get(keyOf(it.productId, it.batchCode));
+          if (!ex) continue;
+          if (ex.status === 'recalled') {
+            return reply.status(400).send({
+              error: `Lô ${it.batchCode} đã bị THU HỒI trong kho — không gộp hàng mới vào được. Hãy dùng mã lô khác.`,
+            });
+          }
+          if (!sameDateOnly(ex.expiryDate, it.expiryDate)) {
+            return reply.status(400).send({
+              error:
+                `Mã lô ${it.batchCode} đã có trong kho nhưng HSD khác ` +
+                `(trong kho: ${fmtDateVN(ex.expiryDate)} · phiếu này: ${fmtDateVN(it.expiryDate)}). ` +
+                `Đây là hai lô khác nhau — hãy sửa HSD cho khớp, hoặc đổi mã lô ` +
+                `(ví dụ ${it.batchCode}-2).`,
+            });
+          }
+        }
+        // Hai dòng trong CÙNG phiếu trỏ vào một lô mà HSD khác nhau → cũng chặn.
+        const seenInOrder = new Map<string, Date | null>();
+        for (const it of order.items as any[]) {
+          const k = keyOf(it.productId, it.batchCode);
+          if (seenInOrder.has(k)) {
+            if (!sameDateOnly(seenInOrder.get(k) ?? null, it.expiryDate)) {
+              return reply.status(400).send({
+                error: `Phiếu có 2 dòng cùng mã lô ${it.batchCode} nhưng HSD khác nhau — sửa lại cho khớp.`,
+              });
+            }
+          } else {
+            seenInOrder.set(k, it.expiryDate ?? null);
+          }
         }
 
         const result = await prisma.$transaction(async (tx: any) => {
@@ -1024,7 +1163,67 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
           }
 
           const createdBatchIds: string[] = [];
+          const mergedBatchCodes: string[] = [];
+          // Lô vừa tạo/gộp trong chính vòng lặp này — để 2 dòng cùng mã lô
+          // trong 1 phiếu dồn vào đúng một lô thay vì vỡ unique index.
+          const touched = new Map<string, { id: string; currentQuantity: number; importCost: number | null }>();
+
           for (const it of order.items) {
+            const k = keyOf(it.productId, it.batchCode);
+            const prior = touched.get(k);
+            const ex = prior ?? existingByKey.get(k);
+
+            if (ex) {
+              // ── GỘP vào lô đang có (cùng mã + cùng HSD) ──
+              const oldQty = Math.max(0, ex.currentQuantity);
+              const oldCost = ex.importCost == null ? null : Number(ex.importCost);
+              const newQty = oldQty + it.quantity;
+              // Giá vốn = TB gia quyền theo TỒN CÒN LẠI: hàng cũ đã bán hết thì
+              // giá của nó không còn ảnh hưởng, lấy nguyên giá lần nhập này.
+              const newCost =
+                oldQty > 0 && oldCost !== null
+                  ? (oldCost * oldQty + Number(it.unitCost) * it.quantity) / newQty
+                  : Number(it.unitCost);
+              const updated = await tx.inventoryBatch.update({
+                where: { id: ex.id },
+                data: {
+                  currentQuantity: { increment: it.quantity },
+                  importQuantity: { increment: it.quantity },
+                  importCost: new Prisma.Decimal(newCost.toFixed(2)),
+                  // NSX: lô cũ chưa có thì lấy của phiếu này.
+                  ...(it.manufactureDate && !ex.manufactureDate
+                    ? { manufactureDate: it.manufactureDate }
+                    : {}),
+                  // HSD giống nhau nên chỉ cần tính lại còn hạn / hết hạn.
+                  status: recomputeBatchStatus(ex.status ?? 'active', it.expiryDate ?? null),
+                },
+                select: { id: true, currentQuantity: true, importCost: true },
+              });
+              await tx.inventoryMovement.create({
+                data: {
+                  orgId: user.orgId,
+                  productId: it.productId,
+                  batchId: ex.id,
+                  type: 'import',
+                  quantity: it.quantity,
+                  referenceType: 'import_order',
+                  referenceId: order.id,
+                  note:
+                    `Nhập kho ${order.importCode} — lô ${it.batchCode} (gộp vào lô đang có, ` +
+                    `${oldQty} + ${it.quantity} = ${newQty})`,
+                  createdById: user.id,
+                },
+              });
+              if (!prior) mergedBatchCodes.push(it.batchCode);
+              touched.set(k, {
+                id: ex.id,
+                currentQuantity: updated.currentQuantity,
+                importCost: updated.importCost == null ? null : Number(updated.importCost),
+              });
+              continue;
+            }
+
+            // ── Tạo lô mới ──
             const batch = await tx.inventoryBatch.create({
               data: {
                 orgId: user.orgId,
@@ -1056,6 +1255,11 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
               },
             });
             createdBatchIds.push(batch.id);
+            touched.set(k, {
+              id: batch.id,
+              currentQuantity: it.quantity,
+              importCost: Number(it.unitCost),
+            });
           }
 
           // Calculate payment due date from supplier's payment terms
@@ -1102,7 +1306,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
               paymentDueDate,
             },
           });
-          return { batchIds: createdBatchIds };
+          return { batchIds: createdBatchIds, mergedBatchCodes };
         });
 
         // Sync product totals + cost price OUTSIDE the txn (multiple
@@ -1113,7 +1317,12 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
           await syncProductCostAndStock(pid);
         }
 
-        return { ok: true, batchesCreated: result.batchIds.length };
+        return {
+          ok: true,
+          batchesCreated: result.batchIds.length,
+          batchesMerged: result.mergedBatchCodes.length,
+          mergedBatchCodes: result.mergedBatchCodes,
+        };
       } catch (err: any) {
         if (err?.message === 'CONCURRENT_CONFIRM') {
           return reply.status(409).send({ error: 'Đơn vừa được xác nhận bởi người khác' });
