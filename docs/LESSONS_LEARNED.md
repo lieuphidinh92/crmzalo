@@ -1,661 +1,122 @@
-# LESSONS_LEARNED.md
+# LESSONS_LEARNED.md — luật đang hiệu lực
 
-Bài học rút ra qua từng session để không lặp lỗi cũ. Đầu mỗi session
-mới, đọc file này trước khi code (Rule 3 trong CLAUDE.md).
+Đọc file này trước khi code (RULE 3). **Cố tình ngắn**: mỗi bài học 1–3 dòng,
+đủ để không lặp lỗi. Cần diễn giải đầy đủ (bối cảnh, số liệu, cách fix từng
+bước) thì mở đúng mục trong
+[archive/LESSONS_2026-05_2026-08.md](archive/LESSONS_2026-05_2026-08.md).
 
-Format: `[Ngày] - [Vấn đề] - [Cách fix] - [Bài học]`
-
----
-
-## 30/05/2026 — Sale Lite Phase 1 build trước khi có UI_SPEC
-
-**Vấn đề**:
-Phase 1 sale-app build xong với theme cam (#F97316) + bottom nav
-4-tab phẳng, dựa trên 1 spec prompt KiotViet generic. Ngay sau commit
-(`89c62fb`), CEO gửi mockup mới + spec UI_SPEC.md chi tiết: navy
-sidebar (#0A2540) + royal-blue CTA (#1E40AF) + 5-tab bottom nav với
-centre "Tạo đơn" FAB. Nghĩa là phần shell của Phase 1 sẽ phải rebuild
-ở Phase 2 trước khi build tiếp Sản phẩm / Đơn hàng / Tồn kho.
-
-**Cách fix**:
-- Giữ Phase 1 (backend endpoints + logic POS đã verified working).
-- Tạo 3 docs cố định hướng cho session sau:
-  - `docs/UI_SPEC.md` (exact text CEO chốt)
-  - `docs/DESIGN_SYSTEM.md` (tokens + components + Tailwind mapping)
-  - `docs/FEATURE_SPEC.md` (per-screen + Phase 1→spec gap analysis ở §8)
-- Memory entry `project_sale_app_direction.md` để load tự động.
-- Phase 2 mở đầu = rebuild shell, KHÔNG xoá Phase 1 logic.
-
-**Bài học**:
-1. **UI spec phải có TRƯỚC khi code Phase đầu**, nhất là cho app
-   greenfield. Em nhảy vào build với 1 mô tả prompt "inspired KiotViet"
-   mà không yêu cầu mockup / token cụ thể → 4h work shell phải redo.
-   Lần sau: nếu greenfield app + không có mockup → DỪNG hỏi CEO
-   "anh có ảnh tham khảo + bảng màu cố định chưa?" trước khi setup
-   Vite/Tailwind.
-2. **Backend logic và UI shell tách rời nhau là ích lợi**. Phase 1
-   backend (5 endpoint sale-app) sống sót qua thay đổi design vì
-   không nhúng vào UI. Pattern: ship API trước, UI sau, redesign UI
-   không cần đụng API. Áp dụng cho mọi PWA / SPA mới.
-3. **Doc không phải overhead — doc là single source of truth**.
-   3 file md (UI_SPEC + DESIGN_SYSTEM + FEATURE_SPEC) cho phép
-   session khác (kể cả model/agent khác) hiểu hướng mà không cần
-   transfer conversation. Memory entry chỉ là index trỏ tới docs;
-   nội dung thật trong docs để git-version + diff được.
-4. **Claude Code không extract được binary của ảnh CEO đính kèm**
-   trong chat. Khi cần asset gốc (mockup, logo), bảo CEO save tay
-   vào path cụ thể, đừng giả định em tự lấy được. Workflow:
-   `Finder → drag file → đường dẫn tuyệt đối`.
+> **Vì sao gọn:** bản cũ phình 63 → 661 dòng (~14.000 token) và bị nạp lại mỗi
+> phiên → phiên nào cũng chậm dần. Gọn hoá 15/08/2026. **Thêm bài học mới thì
+> viết 1–3 dòng vào đây + diễn giải dài vào archive**, đừng để file này phình lại.
 
 ---
 
-## 09/05/2026 — Module Giá Vốn FIFO build xong (Phần A)
-
-**Phạm vi 4 sub-session đã xong**:
-- 3.5A: Schema + Backend `/imports` + Seed
-- 3.5B: FIFO core (processFIFO, reverseFIFO, transactional Serializable, P2034 catch)
-- 3.5C: Frontend `/imports` (List/Form/Detail + ItemPicker + Excel upload + Sidebar menu)
-- 3.5D-1: Permission audit (4 endpoints) + cron expire + 2 cảnh báo confirm
-
-**Bài học rút ra**:
-
-1. **OrderItemBatch trace là vô giá khi audit**. 1 OrderItem có thể trừ
-   từ NHIỀU lô (FIFO chia line). Không có trace thì không biết line đó
-   tính cost theo lô nào → không thể audit margin sai. Schema design
-   ban đầu phải có table trace, đừng cố nhồi vào JSON column.
-
-2. **Two related FK columns ≠ một** (lặp lại bài 08/05): `cost_value`
-   (per-unit cost) vs `line_cost` (qty × unit_cost). Code dùng nhầm
-   → margin 95% (bug đã commit `7f0cd75`). Naming tốt + comment
-   rõ ràng ngay tại schema giúp người sau không nhầm.
-
-3. **Permission audit phải scan TOÀN BỘ endpoints, không chỉ
-   "endpoint chính"**. 4 endpoint rò cost: inventory/batches,
-   inventory/summary, reports/overview/{kpi,top-products,top-customers},
-   contacts/list. Mỗi endpoint thêm field cost cần đính kèm strip helper
-   ngay từ commit đầu, đừng để "session sau audit".
-
-4. **Polymorphic FK = bỏ FK constraint**. `inventory_movements
-   .reference_id` cần trỏ tới orders HOẶC import_orders → Prisma FK
-   relation không đủ flexibility. Bỏ relation, giữ string column +
-   `referenceType` discriminator, hydrate manual qua từng caller. Có
-   chỗ tốn 1 round trip nhưng schema cleaner.
-
-5. **Serializable isolation cho FIFO + catch P2034 là MUST**. Nếu chỉ
-   dùng default READ COMMITTED, 2 đơn cùng pack 1 SKU vừa đủ → cả 2
-   thấy stock đủ → cả 2 trừ → âm tồn kho. Code path đã có (3.5B), chỉ
-   cần test 2-tab thực để xác nhận.
-
-6. **Cron expire phải anchor day-start local TZ**, không phải UTC.
-   Schema dùng `timestamp without time zone` → Prisma parse Date có
-   giờ-offset. Filter `expiryDate < new Date(...)` ở chỗ today=00:00
-   local đảm bảo lô có HSD đúng hôm nay KHÔNG bị flip expired sớm.
-
-7. **Backfill `legacyCost = true` cho đơn cũ TRƯỚC khi merge FIFO
-   logic** — nếu không, FIFO sẽ chạm vào 399 đơn MISA và phá data.
-   Pattern: schema field mới + backfill SQL + code branch theo flag.
-
----
-
-## 08/05/2026 — Filter "Cần chăm 30-60d" hiện KH chỉ 8-29 ngày do anchor lệch
-
-**Vấn đề**:
-Section "Cần chăm ngay (30-60 ngày)" trên Báo cáo tổng quan hiện ra
-KH có days_inactive 8-29 ngày (Chị Quyên 14d, Mẹ Rofi 10d...) — sai
-range. Cùng pattern: Group "Ngủ dài >60d" và "VIP at-risk" của
-top-customers cũng sai.
-
-**Root cause**:
-- Filter cutoff anchor on `filters.to` (cuối khoảng date pill),
-  daysInactive hiển thị anchor on `today`.
-- Khi user chọn "Tháng này" (today=08/05, to=31/05 → +1 day=01/06),
-  cutoff30 = 02/05, cutoff60 = 02/04. Filter Group A:
-  `lastOrder ∈ [02/04, 02/05)` lọt **42 KH**, trong đó **27 KH có
-  days_today < 30**.
-- 5 KH CEO báo cụ thể đều khớp pattern (lastOrder 24-28/04 → days
-  10-14, nhưng cutoff window kéo về 02/04 → vẫn lọt).
-
-Comment cũ ở `getAtRiskCustomers` thừa nhận trade-off "anchored on
-filters.to ... shifts cutoff" nhưng không lường được conflict với
-daysInactive.
-
-**Cách fix**:
-- `getAtRiskCustomers`: cutoff30/60 anchor on `today`, không trên
-  `filters.to`. Boundary 30d tròn → Group A (đổi `<` thành `<=` cho
-  cutoff30). Boundary 60d tròn → Group A (giữ `>=` cho cutoff60).
-  61+ → Group B.
-- `getTopCustomers` mode `at_risk`: cùng đổi cutoff anchor today,
-  daysInactive cũng anchor today (trước đó cũng dùng `to`).
-- Header comment cập nhật: "Cutoffs anchor on today, NOT
-  filters.to — at-risk là real-time health check, decoupled từ
-  filter pill".
-- "Cần chăm" + "Ngủ dài" + "VIP at-risk" giờ KHÔNG đổi khi user click
-  filter pill — đúng intent.
-
-**Bài học**:
-1. **Filter anchor và display anchor phải cùng reference**. Nếu
-   filter dùng cutoff anchor X mà UI hiển thị "X ngày" tính từ Y →
-   user thấy mâu thuẫn. Hai anchor phải nhất quán.
-2. **`filters.to` thường ở tương lai vs `today`**. "Tháng này" =
-   01-31 mà today = ngày 8 → `to` lệch +23 ngày. Ngày kéo về sau
-   theo `to` nghĩa là cửa sổ filter dịch +23 ngày so với ngày thực.
-3. **Không phải mọi widget cần "shift theo filter pill"**. Date
-   pill phù hợp với KPI/Top SP/Top KH/Top NV Sale (ai chốt được bao
-   nhiêu tháng X). Nhưng "Cần chăm/Ngủ dài/At-risk" là health check
-   real-time — phải decouple. Khi viết widget mới, hỏi rõ semantic
-   trước.
-4. **Test với boundary case**. KH chính xác 30d / 60d / 61d phải
-   được cover trong test plan, không chỉ "nhìn thấy list có 10
-   record".
-5. **Timezone day-diff bẫy ngầm**: PG lưu `timestamp without time zone`
-   như giờ VN local, Prisma đọc về JS Date parse là UTC → lệch 7h.
-   Tính `Math.floor((today - last) / 86400000)` cho ra 29 ngày trong
-   khi PG `EXTRACT(DAY)` cho 30 → KH boundary 30d/60d bị MISS khỏi
-   nhóm A. Fix bằng helper `vnLocalDayIndex(d)` đặt cả 2 endpoint về
-   day-index trong VN local rồi diff. Test boundary 30d tròn (Thái
-   Oanh) lúc đầu fail rồi pass sau khi áp dụng helper.
-
----
-
-## 08/05/2026 — DS NV Sale tính sai 92% do nhầm `contact.assignedUserId` với `order.assignedSaleId`
-
-**Vấn đề**:
-- Sale "Nguyễn Thành Đạt" hiển thị 1.4tr trên "Top NV Sale tháng",
-  ground truth từ DB là 16.265tr (sai 92%).
-- Lan rộng: Sale Performance Dashboard CEO, member view KPI/Top SP/
-  Top KH cũng cùng sai semantic.
-
-**Root cause**:
-Hai khái niệm khác nhau bị code nhầm là một:
-- `contact.assigned_user_id` = "ai sở hữu/quản lý contact này"
-- `order.assigned_sale_id` = "ai chốt đơn này"
-
-Logic doanh số sale (`calculateResaleRevenue`,
-`calculateNewAgentRevenue`, `withSaleScope` ở overview-service) đều
-filter qua `contact.assignedUserId` thay vì `order.assignedSaleId`.
-
-Bug bị khuếch đại bởi MISA import script: contact mới import
-default-own = Admin, nên 5/6 đơn của Đạt bị tính lệch sang Admin.
-
-**Cách fix (Option B — fix gốc)**:
-- `calculateResaleRevenue`, `calculateNewAgentRevenue`: đổi filter
-  `contact: { assignedUserId, ... }` → `assignedSaleId, contact: { ... }`
-- `withSaleScope`: đổi từ thêm `contact.assignedUserId` → thêm
-  `assignedSaleId` ở cấp order
-- Inline filters trong `getTopCustomers` (at_risk) và
-  `getAtRiskCustomers`: tương tự
-- Bonus filter status: thêm `status IN (confirmed, shipped, completed)`
-  cho mọi aggregate revenue (loại `draft` chưa chốt + `cancelled`)
-- KHÔNG đổi semantic của `calculateActiveRate`, `calculateNewAgents`,
-  `calculateRetention90d`, `calculateConversionRate`,
-  `calculateAiInsightUsageScore` — những hàm này đếm CONTACTS, semantic
-  `contact.assignedUserId` ("đại lý của tôi") là đúng.
-
-**Bài học**:
-1. **Hai cột FK lookup khác nhau ≠ đồng nhất.** Khi schema có cả
-   `order.assigned_sale_id` lẫn `contact.assigned_user_id`, mỗi cột
-   đại diện cho 1 semantic riêng. Trước khi viết logic
-   "doanh số/đại lý của sale X", hỏi rõ: tính theo ai chốt đơn hay ai
-   sở hữu contact?
-2. **Test với data mismatch.** Lỗi này không xuất hiện trên data
-   seed (mọi contact tự-assign đúng sale tạo nó). Chỉ lộ ra khi MISA
-   import gây mismatch giữa 2 cột. → Test case bắt buộc: tạo đơn
-   của sale A cho contact của sale B, verify metric.
-3. **Filter status mặc định.** Đơn `draft` chưa chốt và `cancelled`
-   đã huỷ KHÔNG được đếm vào doanh số. Mọi aggregate revenue mới
-   phải gate `status IN (confirmed, shipped, completed)`.
-4. **Audit ground truth trước khi sửa.** Khi user báo "số sai",
-   chạy SQL trực tiếp để có "truth" tuyệt đối, rồi reproduce lại
-   logic API bằng SQL để xác định chính xác đơn nào bị thiếu/dư.
-   Không đoán mò "có thể do X".
-5. **Cache không phải scapegoat đầu tiên.** Cache 5min với key chứa
-   `from+to+saleId+orgId` → cache miss đúng khi đổi range. Nếu data
-   sai khớp với DB query trực tiếp → không phải cache, là logic.
-
----
-
-## 19/05/2026 — Re-import MISA 01-18/5 (loại nháp, áp giá vốn mới)
-
-**Bối cảnh**: anh Philip phát hiện DB lệch MISA → yêu cầu xoá 113 đơn 1-18/5 + import lại 121 đơn sạch từ Sổ chi tiết, với bảng giá vốn mới áp 1/5/2026.
-
-**Bài học rút ra**:
-
-1. **MISA có đơn nháp lệch số liệu — đối chiếu 2 file trước khi tin**.
-   File "Bán hàng" gồm CẢ đơn nháp; File "Sổ chi tiết bán hàng" CHỈ có
-   đơn thật. Diff `Set(BanHang.MaCT) - Set(SCT.MaCT)` = list nháp.
-   Ngày 1-18/5 có 1 đơn nháp duy nhất (XK5832 Nga Lâm 7.065.000đ).
-   → Workflow chuẩn: kế toán phải gửi anh BOTH file, hoặc anh tự
-   export 2 file và Claude diff để phát hiện nháp.
-
-2. **Cost registry TS file dễ drift với products.cost_price (DB)**.
-   Em từng maintain `sku-cost-registry.ts` cho daily imports — sau
-   2 tuần đã lệch với DB ở 7/16 SKU (MH_04, MH_07, BIO_01, BIO_02,
-   BIO_06, BIO_07, NEU_01, NEU_07). Anh quyết định: dùng `products.
-   cost_price` (DB) làm single source of truth, registry TS chỉ là
-   convenience helper. Mỗi khi cost đổi → update DB trước, registry
-   theo sau (hoặc bỏ registry hẳn).
-
-3. **VAT inconsistency giữa total_amount vs line_total**.
-   Đơn XK5858 có VAT 105.556đ: anh chốt `total_amount = 1.425.000`
-   (gross) nhưng `line_total = 1.319.444` (net). Khi tính margin
-   bằng `SUM(profit)/SUM(line_total)` thì kết quả "đúng" (theo net,
-   không tính VAT). Khi cộng `SUM(total_amount)` thì có 105.556đ
-   "extra" so với SCT MISA. Cần ghi chú rõ trong report 2 con số
-   này khác nhau ở đâu, đừng để CEO confuse.
-
-4. **Khi user nói "biên LN kỳ vọng 30-50%" mà thực tế 11%**.
-   Không phải lỗi script — verify SKU/cost/qty đúng theo MISA, rồi
-   báo rõ root cause (MH_03 margin 12%, BIO_06/07 lỗ với cost mới)
-   để CEO quyết: chấp nhận margin thực, đàm phán cost, hay đổi giá
-   bán. Đừng tự "fudge" số để khớp expectation.
-
-5. **Convert Excel → JSON intermediate giúp script TS sạch**.
-   Backend chưa có `xlsx` package — thay vì npm install, dùng
-   Python openpyxl → JSON ở `/tmp/`, TS script đọc JSON. Vừa
-   tránh dependency mới, vừa dễ debug (JSON readable, có thể
-   pipe vào jq để verify trước khi --apply).
-
-6. **Idempotent script bằng `existingOrderCodes` set**. Re-import
-   script check `prisma.order.findMany({ orderCode: { in: codes }})`
-   trước khi create. Re-chạy --apply = no-op. An toàn cho CEO
-   re-run khi nghi ngờ.
-
----
-
-## 15/07/2026 — Tồn kho sale-app lệch kiểm kê: "tồn ma" demo + cột total_stock lưu sẵn
-
-**Vấn đề:** CEO thấy MH_01 (Manhae Menopause 30v) tồn 90 hộp trên sale-app
-nhưng file kiểm kê 14/7 không có mã này ("lệch hẳn").
-
-**Root cause (2 tầng):**
-1. Đợt kiểm kê 14/7 nạp tồn thật bằng cách THÊM 1 lô mới (created_at tháng 7,
-   type=`adjust`/`stocktake`) cho từng SKU thật, nhưng KHÔNG dọn các lô
-   demo/test cũ từ tháng 5/2026. → 10 SKU giữ "tồn ma" (tổng 934 đv), gồm cả
-   lô `L2605-TEST`. Nhận diện: SKU còn tồn nhưng `count(batches created_at>=2026-07-01)=0`.
-2. **`products.total_stock` là cột DENORMALIZED** — sale-app `/sale-app/products`
-   trả `stock: p.totalStock` (sale-app-routes.ts:327), KHÔNG tính sống từ lô.
-   → Sửa `inventory_batches.current_quantity` là CHƯA đủ; phải resync `total_stock`.
-
-**Cách fix (an toàn, đã verify local):**
-- Backup 20 lô ra CSV trước.
-- Transaction: insert `inventory_movements` (adjust/stocktake, qty âm, note kiểm toán)
-  rồi set `current_quantity=0` cho lô ma (đều `so_lan_ban_ra=0` nên không hỏng đơn).
-- Resync `products.total_stock = sum(current_quantity)` cho 10 SKU.
-- Verify toàn catalog: `total_stock` khớp 100% tổng lô, 0 mã lệch.
-- Backend đọc DB sống → không restart; chỉ hard-refresh PWA.
-
-**Bài học:**
-- Mọi thao tác sửa tồn kho phải đụng CẢ HAI: `inventory_batches.current_quantity`
-  VÀ `products.total_stock`. Query reconcile sau khi sửa:
-  `products having total_stock <> sum(batch.current_quantity)` phải trả 0 dòng.
-- Nạp kiểm kê lần sau: phải ZERO/dọn lô cũ trước khi thêm lô đếm mới, tránh cộng dồn tồn ma.
-- Fix mới làm ở DB LOCAL. Production (Supabase) nhiều khả năng dính y hệt — chờ CEO duyệt.
-
----
-
-## 17/07/2026 — Dashboard CRM ra doanh số 0 dù có đơn: sai vocabulary status (`shipped` vs `shipping`)
-
-**Hiện tượng:** Sau khi deploy CRM đầy đủ lên crm.halo.com.vn, Dashboard "Báo cáo tổng quan"
-+ Top NV Sale/CEO + xếp hạng/chăm sóc KH đều ra **doanh số 0** cho tháng hiện tại, dù
-danh sách Đơn hàng hiện đủ (813 đơn, Đang giao 85, Hoàn tất 700). "Đại lý active" vẫn đúng
-(đếm contacts, không đụng orders) → khoanh vùng: chỉ phần gom số từ ORDERS bị lỗi.
-
-**Root cause:** Các module thống kê CRM lọc doanh số bằng `['confirmed','shipped','completed']`.
-Nhưng vocabulary status chuẩn (`orders/order-service.ts` → `ORDER_STATUSES`) là
-`draft,confirmed,packing,shipping,completed,returned,cancelled`. `shipped`/`paid`/`new` chỉ là
-**tên legacy** (LEGACY_STATUS_MAP: shipped→shipping, paid→completed) — DB có **0 đơn** status
-`shipped`. Mọi đơn "Đang giao" = `shipping`. Vì tháng 7 phần lớn là đơn Đang giao → bị loại sạch.
-Bằng chứng DB local: doanh số list-sai vs list-đúng chênh đúng 143.760.000đ = 3 đơn `shipping`.
-
-**Cách fix:** đổi list ở 5 file CRM sang khớp sale-app (đã đúng sẵn):
-`['confirmed','packing','shipping','completed','shipped','paid']`.
-Files: `reports/overview-service.ts`, `dashboard/sale-performance-service.ts`,
-`contacts/{contact-routes,customer-rank-service,contact-care-routes}.ts` (cả mảng TS lẫn SQL `IN (...)`).
-Không đụng DB. cancelled/returned/draft/opening_balance vẫn loại (không phải doanh số thật).
-
-**Bài học:**
-- KHÔNG hardcode danh sách status rải rác. Vocabulary chuẩn = `ORDER_STATUSES` trong
-  `orders/order-service.ts`; "đếm được doanh số" = trừ `draft,cancelled,returned,opening_balance`.
-  sale-app và CRM PHẢI dùng chung 1 list, nếu lệch → số 2 app không khớp.
-- Data "trắng" trên dashboard ≠ thiếu data. Kiểm tra thứ tự: danh sách đơn có hiện không?
-  Nếu có → lỗi query aggregate (status/ngày), KHÔNG phải thiếu data → KHÔNG kéo/copy DB.
-- Suýt copy DB local đè production (production đang có 813 đơn + 1,3 tỷ công nợ thật, sale team
-  nhập trực tiếp). May là dừng lại verify trước. Local chỉ là bản dev cũ, KHÔNG phải nguồn thật.
-
----
-
-## 03/08/2026 — Kiểm kê "đầu ngày" áp thẳng vào production sẽ xoá giao dịch trong ngày
-
-**Vấn đề:** CEO gửi file kiểm thực tế 3/8 (92 SKU, kho tầng 1) để cập nhật tồn. Nếu áp
-`tồn = số kiểm` như đợt 14/7 thì sai, vì file kiểm lúc ĐẦU NGÀY còn production vẫn chạy:
-lúc 09:46 nhập 20đv SM_01 (phiếu NK-202608-001), 14:08–14:54 đóng gói xuất OL_02 −50đv,
-MH_07 −22đv, và 14:51 huỷ 2 đơn cũ → hoàn kho MH_02 +429đv.
-
-**LẦN ĐẦU LÀM SAI — bài học chính:** công thức `tồn = kiểm + Σ movement sau mốc kiểm`
-là CHƯA ĐỦ, vì nó gộp 2 loại movement khác bản chất. Áp xong OL_02 ra 155 và MH_07 ra 17
-(TRỪ 2 LẦN), phải chạy phiên `KK-202608-003` sửa lại thành 205 và 39.
-
-**Công thức đúng — phân biệt theo CHỨNG TỪ GỐC:**
-```
-tồn đích = số kiểm + Σ movement sau mốc kiểm CÓ chứng từ gốc cũng tạo sau mốc kiểm
-```
-- **Chứng từ tạo sau mốc kiểm = hàng thật** → cộng/trừ. Vd `NK-202608-001` tạo 09:46 nhập
-  20đv SM_01 → tồn = kiểm + 20.
-- **Chứng từ tạo từ trước (tháng 7) = DỌN DỮ LIỆU** → BỎ QUA. 12:00 Đức sửa trạng thái
-  loạt đơn sai: 4 đơn cũ (DH-202607-0131/0178/0174/0106, tạo 20–31/7) chuyển `completed`
-  → FIFO trừ kho lúc 14h; 2 đơn cũ (DH-202607-0089 shipped 17/7, DH-202607-0156 shipped
-  31/7) bị huỷ → hoàn kho +429đv MH_02. Hàng các đơn này đã rời kho từ tháng 7 → lúc kiểm
-  08:00 đã không có trong kho → **số kiểm đã đúng, cộng/trừ thêm là tính 2 lần**.
-- Cách tra: `inventory_movements.reference_type` + `reference_id` → `orders.created_at` /
-  `import_orders.created_at`. So với mốc kiểm. KHÔNG dựa vào `movement.created_at`.
-- Cũng loại `referenceType='stocktake'` (movement của chính phiên kiểm) để giữ idempotent.
-
-**Hỏi CEO mốc kiểm CHÍNH XÁC ngay từ đầu:** lần này ban đầu em đoán "đầu ngày" = 00:00;
-thực tế Đức kiểm **08:00** và 12:00 mới dọn đơn. Không hỏi thì không thể phân biệt được
-đâu là hàng thật đâu là dọn dữ liệu → sai số lớn.
-
-**Ngoại lệ phải hỏi CEO, không tự quyết:** MH_02 kiểm = 0 nhưng hệ thống hoàn kho 429đv.
-CEO xác nhận kho trống thật → hàng đã đi rồi mà đơn vẫn bị huỷ → áp 0, còn phải rà lại
-2 đơn đó (có thể đang mất doanh thu + công nợ 429 hộp).
-Bài học: chênh lệch lớn giữa số kiểm và số hệ thống = câu hỏi nghiệp vụ, KHÔNG phải bug.
-
-**2 bẫy kỹ thuật gặp khi viết script (đã fix, xem `scripts/kiemke-2026-08-03.ts`):**
-1. Cột `@db.Date` (`inventory_batches.expiry_date`): ghi `new Date('2028-06-01T00:00:00+07:00')`
-   → 2028-05-31T17:00Z → Postgres cắt DATE **lùi 1 ngày, lệch tháng HSD** → lần chạy sau
-   không khớp lại lô vừa tạo → P2002 trùng `(org_id, product_id, batch_code)`.
-   Đúng: **luôn `T00:00:00Z`** cho mọi giá trị ngày-không-giờ.
-2. File backup dùng tên cố định → chạy `--apply` lần 2 ghi đè backup lần 1 (backup mới chỉ
-   còn trạng thái ĐÃ sửa) = **mất đường lùi**. Phải gắn timestamp vào tên file backup.
-
-**Kiểm kê theo từng lô:** file ghi NM_1 2 lô (9/2027=17, 12/2027=191) nhưng DB có lô
-10/2027 (10đv) không ai kiểm. Không zero lô ngoài danh sách → tồn ra 218 thay vì 208.
-Quy tắc: lô không có trong file kiểm → về 0 (khi CEO chốt "file = toàn bộ tồn").
-
-**Kết quả:** `KK-202608-002` (57 lô, −1033đv) + `KK-202608-003` (2 lô, sửa vụ trừ 2 lần).
-92 SKU khớp file kiểm, Inocare giữ nguyên 8.601đv (chặn 2 tầng: brand + tiền tố SKU),
-tổng tồn **10.982đv** = 2.361 (kiểm) + 20 (nhập NK-202608-001) + 8.601 (Inocare).
-Chạy lại = no-op.
-
-**Còn treo:** 7 mã Inocare lệch `total_stock` vs tổng lô 48đv (có SẴN trước khi kiểm, đã
-verify bằng backup — sale-app đang hiện cao hơn tồn thật); 4 lô mới thiếu `importCost`
-(NM_1 9/2027, BIO_03, BIO_06, BIO_07); phiên `KK-202608-001` do `admin@local.dev` mở
-3/8 14:34 còn `counting` 0/139 lô → **để mở là app CHẶN tạo phiên kiểm mới**, nên huỷ.
-
----
-
-## 04/08/2026 — Bán hàng KHÔNG sync `products.total_stock`: tồn trên app cao hơn thật, lệch dồn mãi
-
-**Triệu chứng:** hôm 3/8 vừa kiểm kê xong cho khớp 100%, sang 4/8 đã lệch lại 4 mã
-(NEU_01, NM_1 −80, SM_01 −20, HC_11 −20). Ban đầu tưởng mất hàng.
-
-**Root cause:** `products.total_stock` là cột denormalized mà sale-app đọc để hiện tồn
-(KHÔNG tính sống từ lô). Có 4 đường thay đổi số lượng lô, nhưng chỉ 3 đường sync cột này:
-- ✅ sửa lô tay — `inventory/batch-routes.ts`
-- ✅ kiểm kho — `inventory/stocktake-routes.ts`
-- ✅ nhập hàng — `imports/imports-routes.ts`
-- ❌ **BÁN HÀNG** — `orders/fifo-service.ts` (`processFIFO` khi giao, `reverseFIFO` khi huỷ)
-
-→ Mỗi đơn giao xong: lô giảm đúng, `total_stock` đứng im → app hiện thừa. Mỗi đơn huỷ:
-ngược lại, app hiện thiếu. Lệch cộng dồn theo từng đơn, nên "kiểm kê xong vẫn lệch sau
-vài ngày" là hệ quả tất yếu, không phải kiểm sai. Rủi ro thật: sale thấy hàng ảo → bán vượt tồn.
-
-**Fix:** thêm `syncTotalStock(tx, productId)` trong `fifo-service.ts`, gọi trong CÙNG
-transaction của caller — `processFIFO` sync sau mỗi item, `reverseFIFO` sync 1 lần/SP
-(dedupe khi 1 SP hoàn từ nhiều lô). Cùng quy tắc `hasSales=true` khi có tồn như 3 đường kia.
-
-**Cách verify (làm được mà không đụng production):** script test trên local tạo đơn giả →
-gọi `processFIFO` → so `total_stock` với tổng lô → gọi `reverseFIFO` → so lại → **cố tình
-throw để rollback**. Kết quả: 20→17 khớp cả 2 cột, huỷ đơn về đúng 20, local không đổi data.
-
-**Bài học rút ra:**
-1. Thêm 1 đường ghi mới vào cột denormalized → phải grep TẤT CẢ đường ghi khác và đối chiếu.
-   Ở đây 3/4 đường đúng nên bug ẩn lâu.
-2. "Vừa sửa số xong lại lệch" = nghi CODE, đừng nghi người kiểm.
-3. Trước khi kết luận "mất hàng", tra `inventory_movements` **đủ khoảng thời gian** — lần đầu
-   em lọc đúng ngày hôm nay nên không thấy đơn bán 18:39 tối trước, suýt báo sai là mất hàng.
-
----
-
-## 04/08/2026 — 1 hàm quyền dùng cho 3 việc → muốn cho xem thêm đơn là buộc lộ lãi
-
-**Bối cảnh:** anh Philip phân việc cho 3 nhân sự vận hành (Huy giao hàng, Hiền đối soát
-chứng từ, Đức kho), cả 3 cần xem đơn toàn công ty.
-
-**Vấn đề thiết kế:** `canSeeAllOrders(role)` trong `order-service.ts` đang được dùng cho
-**3 việc khác bản chất**: (a) phạm vi đơn được xem, (b) có thấy giá vốn/lãi gộp không,
-(c) có sửa được nội dung đơn ở mọi trạng thái không. Vì gộp 1 chỗ nên cách duy nhất để
-cho ai đó xem full đơn là cấp `admin` → **lộ luôn lãi gộp từng đơn + công nợ toàn công ty**.
-
-**Cách làm (anh chọn phương án tách sau khi em đưa 2 lựa chọn):**
-- `canSeeAllOrders(user)` — phạm vi, nhận thêm cờ `users.can_view_all_orders`
-- `canSeeCost(role)` — tiền, CHỈ owner/admin
-- `canEditOrderStatus(role)` — sửa nội dung, giữ owner/admin
-Cấp bằng **cờ boolean trên users**, KHÔNG tạo role mới (repo có ~34 chỗ check
-`role === 'member'` → thêm role là vỡ nhiều nơi).
-
-**Bẫy đã gặp:** `reqUser()` chỉ trả `{id, orgId, role}` → `orderScopeWhere()` không thấy cờ
-→ user có cờ vẫn bị bó phạm vi. Phải mang cờ ra khỏi token. Và cờ nằm trong JWT nên
-**đổi cờ trong DB thì user phải đăng xuất/đăng nhập lại** — luôn dặn CEO việc này.
-
-**Verify 5 ca (backend local + JWT tự ký):** chưa cờ → 29/720 đơn · có cờ → 720/720 ·
-giá vốn/lãi ẨN với người có cờ · owner vẫn thấy · người không cờ gọi /reconcile → 403.
-
-**Bài học:** khi CEO nói "cho bạn X xem thêm dữ liệu", ĐỪNG nâng role. Kiểm role đó kéo
-theo quyền gì (ở đây admin = thấy lãi + sửa SP), rồi đưa 2 lựa chọn kèm trade-off.
-
----
-
-## 14/08/2026 — HSD gõ thiếu 1 số ('0029' thay '2029') làm 262 hộp biến mất khỏi kho
-
-**Vấn đề:**
-Phiếu `NK-202608-018` (13/08) nhập lô `L027844` — 546 hộp MH_01 — HSD gõ `0029-02-01`
-thay vì `2029-02-01`. Anh Philip chỉ thấy nhãn "Hết hạn" đỏ trên chi tiết phiếu, nhưng
-hậu quả thật lớn hơn nhiều:
-
-1. Cron `sweepExpiredBatches` (00:30 hằng đêm) thấy `expiry_date < today` → set lô
-   `status='expired'`.
-2. `syncProductCostAndStock` + FIFO + báo cáo tồn + catalog sale-app **chỉ đếm lô
-   `status='active'`** → `products.total_stock` của MH_01 tụt về **0**.
-3. Sale thấy "hết hàng" trong khi kho còn **262 hộp**, và `fifo-service.ts:85` không
-   cấp được lô này khi đóng gói.
-
-Tức là **1 ký tự sai trong ô date → mất trắng 1 mã hàng khỏi hệ thống sau 1 đêm**, mà
-không có cảnh báo nào. `<input type="date">` của browser **cho phép năm 2 chữ số** và
-backend lúc đó không validate năm.
-
-**Cách fix (3 lớp):**
-- *Dữ liệu:* script `scripts/fix-hsd-L027844-2026-08-14.sql` — sửa HSD ở
-  `import_order_items` + `inventory_batches`, bật lại `active`, **resync `total_stock`**.
-  Dùng `DATE '2029-02-01'` thuần trong SQL → không có bẫy múi giờ như `new Date()` ở JS.
-- *Chặn nguồn:* `parseDateOnly()` + `MIN_DATE_YEAR/MAX_DATE_YEAR` (2000–2100) trong
-  `imports-routes.ts`, áp cho cả POST/PUT/PATCH; `min`/`max` trên mọi `<input type="date">`
-  của sale-app `ImportForm.vue` + CRM `ImportFormView.vue`.
-- *Sửa được sau khi chốt:* endpoint `PATCH /api/v1/imports/:id` (owner/admin) — xem mục
-  dưới. Trước đó phiếu đã chốt là read-only tuyệt đối nên **phải sửa DB tay**.
-
-**Bẫy phát sinh trong lúc fix:**
-- Sửa `expiry_date` của lô mà **quên resync `products.total_stock`** thì sale-app vẫn đọc
-  số cũ (cột lưu sẵn, không tính sống từ lô) → tưởng fix rồi mà vẫn hết hàng.
-- Ngày nhập mặc định cũ là `new Date()` trơ cho cột `@db.Date`: tạo phiếu lúc 1–7h sáng VN
-  sẽ ghi **lùi 1 ngày** (có thể lùi sang tháng trước). Đã đổi sang `vnTodayDateOnly()`.
-
-**Bài học:**
-1. **Ô ngày nhập tay là nguồn lỗi hạng nặng, không phải lỗi cosmetic.** Ngày sai không chỉ
-   hiện sai — nó đi vào cron, và cron đổi `status`, mà `status` quyết định hàng có tồn tại
-   hay không. Luôn validate khoảng năm ở backend, đừng tin browser.
-2. Khi CEO báo "hiển thị sai chỗ này", **kiểm luôn hệ quả dây chuyền** (cron nào đọc cột
-   đó? cột lưu sẵn nào phái sinh từ nó?) trước khi sửa mỗi chỗ anh chỉ.
-3. Cột lưu sẵn `total_stock`: mọi thao tác đụng lô đều phải resync, và đối soát
-   `total_stock` vs `SUM(lô active)` phải trả **0 dòng lệch** mới gọi là xong.
-
----
-
-## 14/08/2026 — Sửa phiếu nhập ĐÃ CHỐT: chỉ mở phần không đụng tiền/tồn
-
-**Bối cảnh:** vòng đời phiếu nhập thiết kế "confirmed = read-only, muốn sửa thì tạo phiếu
-mới". Thực tế sai HSD/mã lô là chuyện thường và tạo phiếu mới thì **cộng tồn 2 lần**.
-
-**Quyết định (anh Philip chọn sau khi em đưa 3 mức):** mở đúng nhóm field không ảnh hưởng
-số học — `mã lô · NSX · HSD · số HĐ NCC · ghi chú · ngày nhập`. **Số lượng / giá vốn /
-chiết khấu / VAT / cọc vẫn bất biến** vì sửa chúng đòi đảo FIFO của hàng đã bán và tính
-lại công nợ NCC.
-
-**Endpoint:** `PATCH /api/v1/imports/:id` (owner/admin). `PUT` vẫn chỉ cho phiếu nháp.
-
-**5 điểm phải làm đúng, dễ quên:**
-1. **Gương xuống lô trong kho** — sửa dòng trên phiếu mà không sửa `inventory_batches` là
-   phiếu nói một đằng kho làm một nẻo.
-2. **Tính lại `active`/`expired`** theo HSD mới, dùng **đúng cách so sánh của cron**
-   (mốc 00:00 giờ VN, HSD = hôm nay vẫn còn hạn) để endpoint và cron không chỏi nhau.
-   Không tự bật lại lô `recalled` (thu hồi tay là quyết định của người).
-3. **Resync `total_stock`** sau khi status đổi — chính là bài học ở mục trên.
-4. **Đổi mã lô phải check unique `(orgId, productId, batchCode)`** và **loại trừ chính lô
-   đang sửa**, nếu không đổi qua đổi lại sẽ tự báo trùng. Đồng thời sửa `note` của bút toán
-   nhập (note có nhét mã lô) kẻo lịch sử kho hiện mã cũ.
-5. **Ghi `activity_logs`** (`action='import_order_info_edited'`) — phiếu đã chốt là dữ liệu
-   kế toán, phải biết ai sửa gì. Bọc try/catch riêng: log lỗi KHÔNG được rollback phần đã ghi.
-
-**Verify:** 33 assert backend (JWT tự ký, DB local) + 19 assert UI Playwright (Chrome for
-Testing), gồm ca biên HSD = hôm nay, member bị 403, mã lô trùng, PATCH lên phiếu nháp,
-và mobile 390px không tràn ngang.
-
-**Bài học:** "read-only sau khi chốt" là luật đúng cho *số*, quá chặt cho *thông tin*. Khi
-CEO xin quyền sửa, tách field theo **field nào tham gia vào số học** rồi mở đúng nhóm an
-toàn — đừng mở hết, cũng đừng bắt sửa DB tay mãi.
-
----
-
-## 14/08/2026 — "Push xong" KHÔNG bằng "đã deploy": phải tải bundle production về kiểm
-
-**Vấn đề:** push 3 commit lên `feature/sale-app-nhom1` + cherry-pick sang `main`. Render
-(backend) và Vercel `crmzalo-pnxt` (sale-app) deploy ngon. Nhưng Vercel **`crm-halo` không
-tạo deployment nào** cho commit đó — CRM production vẫn chạy bundle từ 05/08. Nếu chỉ nhìn
-`git push` thành công thì đã báo anh "xong" trong khi 1 trong 3 app không nhận thay đổi.
-
-**Cách kiểm (không cần đăng nhập Vercel):**
-```bash
-# 1. Route backend mới có sống chưa: 401 = có route, 404 = chưa deploy
-curl -s -o /dev/null -w "%{http_code}" -X PATCH https://halo-sale-backend.onrender.com/api/v1/imports/probe
-# (kiểm đối chứng 1 route không tồn tại phải ra 404, kẻo 401 là do middleware chặn hết)
-
-# 2. Bundle frontend đã lên chưa: tìm chunk trong entry rồi grep chuỗi mới
-curl -s https://sale.halo.com.vn/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js'
-curl -s https://sale.halo.com.vn/assets/<chunk>.js | grep -c "<chuỗi mới>"
-
-# 3. Ai đã deploy commit nào (Vercel post lên GitHub Deployments):
-gh api "repos/lieuphidinh92/crmzalo/deployments?per_page=10" \
-  --jq '.[] | "\(.created_at) env=\(.environment) sha=\(.sha[0:7])"'
-gh api repos/lieuphidinh92/crmzalo/commits/<sha>/status --jq '.statuses[] | "\(.context) → \(.state)"'
-```
-
-**Bẫy:** `curl` một file `/assets/xxx.js` không tồn tại trên Vercel trả **200 + nội dung
-index.html** (SPA rewrite), không phải 404. Phải grep nội dung hoặc so kích thước, đừng tin
-mã 200.
-
-**Ghi nhận thêm:** Vercel `crm-halo` build **Preview** cho commit trên `main` → **FAILED**.
-Bình thường: `main` diverged, nhánh đó không có cấu hình build cho `frontend/` (buildCommand
-`vite build` bỏ `vue-tsc` + `.npmrc legacy-peer-deps` chỉ có ở `feature`). Preview fail
-không ảnh hưởng production, nhưng đừng thấy chữ "failure" trên commit `main` mà tưởng
-sale-app lỗi — kiểm rõ context nào fail (`crmzalo-pnxt` vs `crm-halo`).
-
-**Bài học:** định nghĩa "đã deploy" = **tải artefact production về và thấy thay đổi trong đó**,
-cho TỪNG dịch vụ. 4 dịch vụ deploy từ 2 nhánh khác nhau → mỗi lần ship phải verify 3 chỗ
-(Render backend · Vercel sale-app · Vercel CRM), không suy ra từ 1 chỗ.
-
----
-
-## 14/08/2026 — Ô "Giá vốn" `type="number"` biến `94.250` thành `94,25đ` (chia 1000)
-
-**Vấn đề:** phiếu `NK-202608-016` (11/08) có 2 lô PBB ghi giá vốn **94,25đ** và **81,25đ**
-trong khi giá nhập thật là 94.250đ và 81.250đ. Không phải người nhập bịa số — họ gõ đúng
-`94.250` theo cách viết tiền VN, nhưng ô nhập là:
-
-```html
-<input v-model.number="it.unitCost" type="number" min="0" step="1000" inputmode="numeric" />
-```
-
-`type="number"` coi dấu `.` là **dấu thập phân**, nên `94.250` → `94.25`. Chia đúng 1000.
-
-**Dây chuyền hậu quả:**
-1. `import_order_items.unit_cost` = 94.25 → tổng phiếu tính sai → **công nợ NCC thiếu ~8,4tr**.
-2. Lô sinh ra khi chốt cũng mang `import_cost` = 94.25.
-3. `syncProductCostAndStock` tính `cost_price` = TB gia quyền lô active →
-   `(48×94,25 + 3×94.250)/51 = 5.633đ` → **registry của SP bị kéo sai** (đúng phải 94.250).
-4. Khi bán, `order_item_batches.cost_at_time` ≈ 0 → **lãi gộp thổi phồng gần bằng doanh thu**.
-
-May: chưa bán hộp nào từ 2 lô này nên báo cáo quá khứ chưa hỏng.
-
-**Cách phân biệt lỗi này với hàng tặng thật:** cùng ngày 11/08 có lô `26E031` (USL_32,
-6đv) giá vốn **1,00đ tròn** — đó là **hàng tặng cố ý**: backend chặn `unitCost > 0` nên
-người nhập không ghi được 0, phải ghi 1đ. Dấu hiệu phân biệt:
-  · chia 1000 → số lẻ khớp đúng giá thật ÷ 1000 (94,25 ↔ 94.250)
-  · hàng tặng → số tròn 1đ (hoặc rất nhỏ, không liên quan giá thật)
-Đừng "sửa" hàng tặng thành giá đầy đủ — lãi gộp 100% của hàng tặng là ĐÚNG.
-
-**Đã làm:** sửa 2 lô về giá thật + resync registry (`scripts/fix-cost-pbb-va-quatang-2026-08-14.ts`).
-KHÔNG đụng phiếu nhập & công nợ NCC — đó là bút toán kế toán, chờ anh Philip đối chiếu hóa đơn BTH.
-
-**Chưa vá gốc (đề xuất):**
-1. Backend `validateItem`: từ chối tiền không nguyên đồng, kèm thông báo chỉ rõ
-   *"94.250 sẽ bị hiểu là 94,25đ — gõ 94250"*. Chặn được cả 2 app cùng lúc.
-2. Thêm cảnh báo lúc chốt phiếu: **giá vốn < 10% giá bán thấp nhất** (đối xứng với cảnh báo
-   `cost_above_price` đã có). Bắt được cả trường hợp gõ sai mà vẫn là số nguyên.
-
-**Bài học:** `type="number"` + `v-model.number` cho ô TIỀN ở app tiếng Việt là bẫy — người
-Việt gõ `1.500.000`, browser đọc thành `1.5`. Cùng họ với lỗi HSD `0029` sáng nay: **ô nhập
-không validate = sai số âm thầm, và cái sai đi thẳng vào cron / báo cáo / công nợ**.
-Query truy quét định kỳ: `import_cost <> round(import_cost)` và
-`import_cost < 0.10 × giá bán thấp nhất`.
-
----
-
-## 15/08/2026 — Trùng mã lô: chặn cứng làm thủ kho bịa mã · và bẫy `not: null` của Prisma
-
-**Phản ánh của Đức (thủ kho) gồm 3 việc, hoá ra là 3 nguyên nhân khác nhau — đừng gộp:**
-
-1. *"Nhập chuẩn rồi mà xác nhận GIAO CHO VẬN CHUYỂN báo thiếu tồn"* (FORCE G Libido +
-   Manhae nội tiết) → chính là lô `L027844` sai HSD. Đơn `DH-202608-0065` chứa **cả 2 SP**;
-   MH_01 hết tồn ảo làm **cả đơn** không đóng gói được, nên Đức kể tên cả FORCE G dù mã này
-   không có lỗi gì. Sau khi sửa HSD lúc 15:57, đơn đóng gói thành công 16:33. → **Một dòng
-   hàng thiếu tồn là cả đơn tắc; đừng tin danh sách SP người dùng kể ra là danh sách SP lỗi.**
-2. *"2 đơn Đạt huỷ"* → **không liên quan**. Cả 2 huỷ trong vòng 1 phút sau khi tạo, chưa qua
-   bước giao nên `order_item_batches` = 0 dòng → chưa từng trừ tồn, không có gì phải trả lại.
-   "Huỷ đơn → tăng tồn" chỉ đúng khi đơn ĐÃ đóng gói.
-3. *"Cứ trùng lô là không nhập được"* → **lỗi thiết kế thật**, xử lý bên dưới.
-
-**Vấn đề trùng mã lô:** `confirm` chặn cứng khi `(orgId, productId, batchCode)` đã tồn tại,
-KHÔNG phân biệt lô còn tồn hay đã bán hết. NCC giao lại đúng lô sản xuất là chuyện thường
-→ Đức phải bịa mã: `L027844`→`L027844A`, `1440326`→`1440326A`→`1440326AB`,
-`L026443`→`L0264431`→`L026443123`. Đếm được **12 cặp**, và **65 lô tồn 0** đang giữ mã vô ích.
-Hậu quả không chỉ bất tiện: 1 lô hàng thật bị xẻ thành 3 mã → truy xuất HSD rối, báo cáo
-"lô sắp hết hạn" đếm ra lô ảo, kiểm kê không khớp mã in trên vỏ thùng.
-
-**Cách làm (anh Philip chốt 14/08/2026):** cùng mã + **cùng HSD** → GỘP vào lô đang có
-(cộng `currentQuantity` + `importQuantity`, giá vốn = TB gia quyền **theo tồn còn lại** —
-hàng cũ bán hết rồi thì giá của nó không còn ảnh hưởng). Cùng mã + **HSD khác** → chặn, nêu
-rõ cả 2 ngày và gợi ý mã thay thế. Lô `recalled` → chặn (thu hồi là quyết định của người).
-
-**3 chỗ dễ quên khi làm tính năng gộp:**
-- **2 dòng cùng mã lô trong CÙNG một phiếu:** phải dồn vào một lô qua `Map` trong vòng lặp,
-  không thì dòng thứ 2 vỡ unique index.
-- **Màn chi tiết phiếu bị trống:** lô gộp giữ `importOrderId` của phiếu ĐẦU TIÊN nên quan hệ
-  `batches` không thấy nó. Phải lấy thêm theo bút toán nhập (`referenceId = phiếu`).
-- **Nói cho người dùng biết là đã GỘP**, không thì thủ kho tưởng hàng nhập bị trôi mất.
-
-**Bẫy Prisma làm chết cả endpoint (mất 1 vòng test mới thấy):**
-```ts
-where: { ..., batchId: { not: null } }   // ❌ batchId là cột BẮT BUỘC
-```
-→ `PrismaClientValidationError` → **GET /imports/:id trả 500 với MỌI phiếu**, không chỉ phiếu
-gộp. Nguy hiểm là **`tsc --noEmit` báo 0 lỗi**: repo này chưa `prisma generate` nên type
-Prisma bị suy biến thành `{}`/`any`, tsc không bắt được sai kiểu ở tầng query.
-→ **Với repo này, compile sạch KHÔNG phải bằng chứng.** Phải gọi endpoint thật và **assert
-`status === 200`**, đừng chỉ assert nội dung — `data?.x || []` biến lỗi 500 thành mảng rỗng
-im lặng (đúng cái đã che lỗi này ở vòng test đầu).
-
-**Kèm theo:** chặn tiền không nguyên đồng + cảnh báo `cost_far_below_price` (giá vốn < 10%
-giá bán thấp nhất) — vá gốc lỗi `type="number"` ở mục 14/08. Cảnh báo là **mềm**, vì hàng
-tặng thật cũng rơi vào đây.
-
-**Verify:** 28 assert backend + 9 assert UI Playwright (gộp lô, chặn HSD khác, 2 dòng cùng mã,
-nhãn cảnh báo mới, thông báo gộp, phiếu thường vẫn xem được).
+## 🔢 Tiền & giá vốn
+
+- **Tiền LUÔN là số nguyên đồng.** Ô nhập `type="number"` + `v-model.number` coi
+  dấu chấm là dấu thập phân → gõ `94.250` kiểu VN ra **94,25đ** (chia 1000). Đã
+  làm sai công nợ NCC + giá vốn registry + lãi gộp (phiếu NK-202608-016, 11/08).
+  Backend `validateItem` giờ chặn; đừng bỏ chặn đó.
+- **Giá vốn `1,00đ` tròn = HÀNG TẶNG cố ý**, không phải lỗi — backend chặn
+  `unitCost > 0` nên người nhập không ghi được 0. Đừng "sửa" thành giá đầy đủ:
+  lãi gộp 100% của hàng tặng là đúng. Chia-1000 thì số lẻ khớp giá thật ÷ 1000.
+- **Nguồn giá vốn chuẩn = cost registry `products.cost_price` trong CRM**, KHÔNG
+  tin Excel MISA; lệch >5% thì cảnh báo, đừng tự ghi đè.
+- **Lô thiếu `import_cost` là mìn:** `fifo-service.ts` coi null là **0** → bán ra
+  ghi giá vốn 0 → lãi gộp thổi phồng bằng cả doanh thu. Truy quét định kỳ:
+  `import_cost IS NULL` · `import_cost <> round(import_cost)` ·
+  `import_cost < 10% giá bán thấp nhất`.
+- **Doanh thu tính lãi gộp dùng số CÓ VAT** (registry đã gồm VAT đầu vào).
+
+## 📦 Tồn kho
+
+- **`products.total_stock` là cột LƯU SẴN** — sale-app đọc nó, không tính sống từ
+  lô. Mọi thao tác đụng lô **phải resync**. Đối soát bắt buộc trả **0 dòng**:
+  `total_stock <> SUM(lô active)`.
+- Chỉ lô **`status='active'`** được tính vào tồn và được FIFO cấp hàng. Lô
+  `expired`/`recalled` là hàng **vô hình** với toàn hệ thống.
+- **Kiểm kê "đầu ngày" phải cộng/trừ giao dịch trong ngày**, áp thẳng số kiểm sẽ
+  xoá phiếu nhập vừa nhập + cộng lại hàng đã bán. Lệch lớn → hỏi anh Philip.
+- **Nạp kiểm kê phải zero/dọn lô cũ trước** khi thêm lô đếm mới, tránh cộng dồn.
+- **Trùng mã lô + CÙNG HSD → gộp vào lô đang có** (giá vốn = TB gia quyền theo
+  tồn còn lại). HSD khác → chặn, đó là 2 lô khác nhau thật. Chặn cứng như trước
+  làm thủ kho bịa mã (`L027844A`, `1440326AB`) → 1 lô hàng thật bị xẻ nhiều mã.
+- **"Vừa kiểm kê xong lại lệch" → nghi CODE trước, đừng nghi người kiểm.**
+
+## 🕐 Ngày tháng (đọc kèm mục LUẬT MÚI GIỜ trong CLAUDE.md)
+
+- Cột `@db.Date` phải ghi `new Date('YYYY-MM-DDT00:00:00Z')` — **có `Z`**. Gắn
+  `+07:00` thành 17:00Z hôm trước → Postgres cắt DATE **lùi 1 ngày**.
+- **Validate khoảng năm 2000–2100 ở backend.** Browser cho gõ năm 2 chữ số:
+  HSD `0029` (đúng ra 2029) làm cron đánh lô `expired` ngay đêm nhập → **262 hộp
+  MH_01 biến mất khỏi kho**, sale báo hết hàng dù kho còn hàng (13–14/08).
+- Ngày mặc định đừng dùng `new Date()` trơ cho cột `@db.Date`: tạo lúc 1–7h sáng
+  VN sẽ ghi **lùi 1 ngày** (có thể lùi sang tháng trước). Dùng `vnTodayDateOnly()`.
+- Lọc khoảng ngày: BE `new Date(from+'T00:00:00')` và `new Date(to+'T23:59:59')`;
+  FE tự format từ `getFullYear/getMonth/getDate`, **đừng `toISOString()`**.
+- Anchor "N ngày qua" phải tính từ **00:00 hôm nay giờ VN**, không phải "lúc này".
+
+## 🔐 Quyền
+
+- **Tách "quyền xem phạm vi" khỏi "quyền xem tiền".** Đừng nâng ai lên `admin`
+  chỉ để cho xem thêm đơn — admin kéo theo giá vốn/lãi gộp. Dùng cờ
+  `users.can_view_all_orders`.
+- Cờ nằm trong JWT → **đổi cờ trong DB thì user phải đăng xuất/đăng nhập lại**.
+  Luôn dặn anh Philip việc này.
+- Phiếu nhập đã chốt: `PATCH /imports/:id` chỉ mở field **không tham gia số học**
+  (mã lô, NSX, HSD, số HĐ, ghi chú, ngày nhập). Số lượng/giá vốn bất biến.
+
+## 🏷️ Dữ liệu & vocabulary
+
+- Status đơn là **`shipping` / `completed`**, KHÔNG phải `shipped`/`paid`. Nguồn
+  chuẩn: `ORDER_STATUSES` trong `order-service.ts`. Hardcode sai từng làm
+  dashboard ra **doanh số 0** dù có đơn (17/07). Dashboard trắng ≠ thiếu data.
+- Hiển thị catalog do **`hasSales`** quyết định, KHÔNG phải `status`. Có tồn thì
+  auto hiện. Nhưng `status='discontinued'` vẫn bị loại khỏi báo cáo tồn + cảnh
+  báo tồn thấp → bật bán lại phải sửa **cả hai**.
+- Đừng nhầm `contact.assignedUserId` (ai chăm KH) với `order.assignedSaleId` (ai
+  chốt đơn) — từng làm DS nhân viên sai 92%.
+- Tạo user mới **phải check trùng TÊN**, không chỉ email — trùng tên chia đôi
+  doanh số.
+
+## 🧪 Verify (đây là chỗ hay ăn đòn nhất)
+
+- **`tsc --noEmit` sạch KHÔNG phải bằng chứng.** Repo chưa `prisma generate` nên
+  type Prisma suy biến thành `any` — sai kiểu ở tầng query lọt hết. `batchId:
+  { not: null }` (cột bắt buộc) từng làm **GET /imports/:id trả 500 với MỌI
+  phiếu** mà tsc báo 0 lỗi.
+- Test endpoint phải **assert `status === 200`** trước khi assert nội dung.
+  `data?.x || []` biến lỗi 500 thành mảng rỗng im lặng.
+- Luôn có 1 ca **"đường đi bình thường vẫn chạy"**, không chỉ ca tính năng mới.
+- **"Push xong" ≠ "đã deploy".** Verify TỪNG dịch vụ bằng cách tải artefact
+  production về: route mới trả 401 (route ảo trả 404 để đối chứng) · bundle FE
+  grep chuỗi mới. Vercel `crm-halo` đã từng **bỏ sót 1 push** 13 phút.
+  ⚠️ Vercel trả **200 + index.html** cho file `/assets/` không tồn tại (SPA
+  rewrite) → grep nội dung, đừng tin mã 200.
+- Khi test fail, **đọc log backend**: `PrismaClientValidationError` hiện rõ ở đó
+  dù HTTP chỉ trả 500 chung chung.
+
+## 🎨 UI
+
+- **Đừng đặt class trùng utility Tailwind cho thẻ HTML:** `class="grid"` biến
+  `<table>` thành CSS grid → `colspan`/`colgroup` vô nghĩa. Check
+  `getComputedStyle().display === 'table'`.
+- Nhãn theo `type` dùng **MAP, không ternary** — ternary 2 nhánh làm loại thứ 3
+  hiện sai nhãn.
+- Chứng từ A4: chữ ký bị cắt do height cứng + `overflow:hidden` + flex shrink →
+  `flex:none`, nén vừa 297mm, verify bằng đo DOM.
+- PWA `autoUpdate`: sau deploy phải dặn anh **hard-refresh 1 lần**.
+
+## ⚙️ Quy trình
+
+- **1 việc / 1 phiên.** Phiên dài làm mọi lượt sau chậm dần vì phải nạp lại toàn
+  bộ hội thoại. Xong 1 việc → `/clear`.
+- `main` và `feature/sale-app-nhom1` **đã DIVERGED**: backend + CRM → `feature`;
+  sale-app → phải tới `main` (cherry-pick).
+- Script sửa dữ liệu production: **dry-run trước · backup ra `scripts/backups/`
+  · idempotent · verify sau khi ghi**. Lọc theo **ĐIỀU KIỆN**, đừng lọc theo
+  prefix mã — script 3/8 lọc `KK20260803-*` nên bỏ sót 26 lô của kiểm kê 14/07.
+- Người dùng báo lỗi kèm danh sách sản phẩm → **đó không phải danh sách SP lỗi**.
+  Một dòng hàng thiếu tồn là **cả đơn tắc**, nên họ kể tên hết cả đơn.
+- Sửa 1 cột dữ liệu → **kiểm hệ quả dây chuyền**: cron nào đọc nó, cột lưu sẵn
+  nào phái sinh từ nó, báo cáo nào dùng nó.
