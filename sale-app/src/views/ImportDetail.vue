@@ -15,13 +15,20 @@ const {
   detailError,
   warnings,
   confirming,
+  saving,
   loadDetail,
   loadWarnings,
   confirmImport,
+  patchConfirmed,
   deleteDraft,
   formatVND,
   formatDateVN,
 } = useImports();
+
+// Khoảng năm cho mọi <input type="date"> ở màn này — khớp validate backend.
+// Browser mặc định cho gõ năm 2 chữ số ('0029'), min/max chặn ngay tại form.
+const DATE_MIN = '2000-01-01';
+const DATE_MAX = '2100-12-31';
 
 const id = String(route.params.id);
 
@@ -97,6 +104,75 @@ async function onDelete() {
   }
 }
 
+// ── Sửa thông tin phiếu ĐÃ CHỐT (owner/admin) ────────────────────────
+// Chỉ field không đụng tiền/tồn: ngày nhập, số HĐ NCC, ghi chú + mã lô /
+// NSX / HSD từng dòng. Backend gương thay đổi xuống lô trong kho và tính
+// lại active/expired theo HSD mới.
+const showEdit = ref(false);
+const editError = ref('');
+const editNotice = ref('');
+const editForm = ref({ importDate: '', nccInvoiceNo: '', notes: '', items: [] });
+
+// Cột @db.Date về client dạng '2029-02-01T00:00:00.000Z' → cắt 10 ký tự đầu
+// là đúng ngày. KHÔNG dùng new Date().toISOString() (lệch ngày trước 7h VN).
+function toDateInput(v) {
+  return v ? String(v).slice(0, 10) : '';
+}
+
+function openEdit() {
+  editError.value = '';
+  editNotice.value = '';
+  editForm.value = {
+    importDate: toDateInput(imp.value?.importDate),
+    nccInvoiceNo: imp.value?.nccInvoiceNo || '',
+    notes: imp.value?.notes || '',
+    items: (imp.value?.items || []).map((line) => ({
+      id: line.id,
+      name: line.product?.name || line.productId,
+      sku: line.product?.sku || '',
+      quantity: num(line.quantity),
+      unit: line.product?.unit || '',
+      batchCode: line.batchCode || '',
+      manufactureDate: toDateInput(line.manufactureDate),
+      expiryDate: toDateInput(line.expiryDate),
+    })),
+  };
+  showEdit.value = true;
+}
+
+async function onSaveEdit() {
+  editError.value = '';
+  try {
+    const res = await patchConfirmed(id, {
+      // Ngày nhập rỗng = không đổi (backend giữ nguyên khi thiếu field).
+      ...(editForm.value.importDate ? { importDate: editForm.value.importDate } : {}),
+      nccInvoiceNo: editForm.value.nccInvoiceNo,
+      notes: editForm.value.notes,
+      items: editForm.value.items.map((it) => ({
+        id: it.id,
+        batchCode: it.batchCode,
+        manufactureDate: it.manufactureDate || null,
+        expiryDate: it.expiryDate || null,
+      })),
+    });
+    showEdit.value = false;
+    const changes = res?.batchStatusChanges || [];
+    editNotice.value = changes.length
+      ? 'Đã lưu. ' +
+        changes
+          .map((c) =>
+            c.to === 'active'
+              ? `Lô ${c.batchCode} còn hạn trở lại → tồn kho được tính lại.`
+              : `Lô ${c.batchCode} chuyển sang hết hạn (${c.to}) → không còn tính vào tồn bán.`,
+          )
+          .join(' ')
+      : 'Đã lưu thông tin phiếu.';
+    await load();
+  } catch (err) {
+    editError.value = err.response?.data?.error || 'Không lưu được thay đổi';
+  }
+}
+
 // ── Chốt phiếu (dialog 2 bước) ───────────────────────────────────────
 // confirmStep: 0 = đóng · 1 = liệt kê cảnh báo · 2 = xác nhận cuối.
 const confirmStep = ref(0);
@@ -149,6 +225,15 @@ async function doConfirm() {
     </div>
 
     <template v-else-if="imp">
+      <!-- Thông báo sau khi sửa thông tin phiếu đã chốt -->
+      <div
+        v-if="editNotice"
+        class="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-card px-4 py-3 text-sm mb-3 flex items-start justify-between gap-3"
+      >
+        <span>{{ editNotice }}</span>
+        <button @click="editNotice = ''" class="text-emerald-700 hover:text-emerald-900 leading-none">✕</button>
+      </div>
+
       <!-- Header card -->
       <div class="bg-white border border-line-200 rounded-card p-5 shadow-card mb-3">
         <div class="flex items-start justify-between gap-3 mb-4">
@@ -379,7 +464,151 @@ async function doConfirm() {
           </button>
         </div>
       </template>
+
+      <!-- Sửa thông tin phiếu đã chốt (chỉ owner/admin) -->
+      <template v-if="isConfirmed && isAdmin">
+        <button
+          @click="openEdit"
+          class="w-full h-11 rounded-xl border border-line-300 text-ink-primary font-semibold hover:bg-surface-50 flex items-center justify-center gap-2"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" />
+          </svg>
+          Sửa thông tin phiếu
+        </button>
+        <p class="text-[11px] text-ink-secondary text-center mt-1.5 leading-snug">
+          Sửa được mã lô · NSX · HSD · số HĐ NCC · ghi chú · ngày nhập.
+          Số lượng và giá vốn đã chốt thì không sửa được.
+        </p>
+      </template>
     </template>
+
+    <!-- Dialog sửa thông tin phiếu đã chốt -->
+    <div v-if="showEdit" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[88vh] flex flex-col">
+        <div class="flex items-center justify-between p-5 pb-3 border-b border-line-200">
+          <div>
+            <h3 class="text-lg font-bold text-ink-primary">Sửa thông tin phiếu</h3>
+            <div class="text-xs text-ink-secondary font-mono">{{ imp?.importCode }}</div>
+          </div>
+          <button @click="showEdit = false" class="text-ink-disabled hover:text-ink-primary text-xl leading-none">✕</button>
+        </div>
+
+        <div class="p-5 overflow-y-auto space-y-4">
+          <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 text-xs leading-snug">
+            Phiếu đã cộng tồn kho. Ở đây chỉ sửa <span class="font-semibold">thông tin</span> —
+            số lượng và giá vốn giữ nguyên. Đổi HSD sẽ tự cập nhật lô trong kho:
+            HSD còn hạn thì lô được bán lại, HSD đã qua thì lô ngừng bán.
+          </div>
+
+          <!-- Header -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1">Ngày nhập</div>
+              <input
+                v-model="editForm.importDate"
+                type="date"
+                :min="DATE_MIN"
+                :max="DATE_MAX"
+                class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-ink-primary"
+              />
+            </div>
+            <div>
+              <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1">Số HĐ NCC</div>
+              <input
+                v-model="editForm.nccInvoiceNo"
+                type="text"
+                placeholder="Để trống nếu chưa có"
+                class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-ink-primary"
+              />
+            </div>
+          </div>
+          <div>
+            <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1">Ghi chú</div>
+            <textarea
+              v-model="editForm.notes"
+              rows="2"
+              class="w-full px-3 py-2 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-ink-primary"
+            ></textarea>
+          </div>
+
+          <!-- Từng dòng hàng -->
+          <div class="space-y-3">
+            <div class="text-[11px] font-semibold text-ink-secondary uppercase">
+              Lô hàng ({{ editForm.items.length }})
+            </div>
+            <div
+              v-for="line in editForm.items"
+              :key="line.id"
+              class="border border-line-200 rounded-xl p-3"
+            >
+              <div class="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <div class="text-sm font-medium text-ink-primary leading-snug">{{ line.name }}</div>
+                  <div class="text-[11px] font-mono text-ink-secondary">{{ line.sku }}</div>
+                </div>
+                <div class="text-xs text-ink-secondary whitespace-nowrap font-mono">
+                  {{ line.quantity }} {{ line.unit }}
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1">Mã lô</div>
+                  <input
+                    v-model="line.batchCode"
+                    type="text"
+                    class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-ink-primary font-mono"
+                  />
+                </div>
+                <div>
+                  <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1">Ngày sản xuất</div>
+                  <input
+                    v-model="line.manufactureDate"
+                    type="date"
+                    :min="DATE_MIN"
+                    :max="DATE_MAX"
+                    class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-ink-primary"
+                  />
+                </div>
+                <div>
+                  <div class="text-[11px] uppercase tracking-wide text-ink-secondary mb-1">HSD</div>
+                  <input
+                    v-model="line.expiryDate"
+                    type="date"
+                    :min="DATE_MIN"
+                    :max="DATE_MAX"
+                    class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-ink-primary"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="editError" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {{ editError }}
+          </div>
+        </div>
+
+        <div class="flex gap-2 p-5 pt-3 border-t border-line-200">
+          <button
+            type="button"
+            @click="showEdit = false"
+            :disabled="saving"
+            class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50"
+          >
+            Quay lại
+          </button>
+          <button
+            type="button"
+            @click="onSaveEdit"
+            :disabled="saving"
+            class="flex-1 h-11 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-semibold disabled:opacity-50"
+          >
+            {{ saving ? 'Đang lưu...' : 'Lưu thay đổi' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Dialog xoá nháp -->
     <div v-if="showDelete" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
