@@ -9,6 +9,7 @@
       <v-tab value="users">Nhân viên</v-tab>
       <v-tab value="teams">Đội nhóm</v-tab>
       <v-tab value="org">Tổ chức</v-tab>
+      <v-tab v-if="authStore.isAdmin" value="api-keys">Mã API</v-tab>
     </v-tabs>
 
     <v-window v-model="tab">
@@ -175,6 +176,11 @@
       <v-window-item value="org">
         <OrgSettings />
       </v-window-item>
+
+      <!-- Tab 4: Mã API cho nhân viên tự viết app (owner/admin) -->
+      <v-window-item value="api-keys">
+        <ApiKeyManagement v-if="authStore.isAdmin" />
+      </v-window-item>
     </v-window>
   </div>
 </template>
@@ -185,6 +191,7 @@ import { useUsers, type OrgUser } from '@/composables/use-users';
 import { useAuthStore } from '@/stores/auth';
 import TeamManagement from '@/components/settings/TeamManagement.vue';
 import OrgSettings from '@/components/settings/OrgSettings.vue';
+import ApiKeyManagement from '@/components/settings/ApiKeyManagement.vue';
 
 const { users, loading, error, fetchUsers, createUser, updateUser, resetPassword, autoResetPassword } = useUsers();
 const authStore = useAuthStore();

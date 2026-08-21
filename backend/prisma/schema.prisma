@@ -39,6 +39,7 @@ model Organization {
   supplierPayments    SupplierPayment[]
   customerPayments    CustomerPayment[]
   stocktakeSessions   StocktakeSession[]
+  apiKeys             ApiKey[]
 
   @@map("organizations")
 }
@@ -89,6 +90,7 @@ model User {
   assignedTasks    Task[]              @relation("AssignedTasks")
   learningProgress LearningProgress[]
   careLogs         ContactCareLog[]    @relation("CareLogsCreated")
+  apiKeys          ApiKey[]            @relation("ApiKeyOwner")
 
   @@map("users")
 }
@@ -1328,4 +1330,46 @@ model LearningProgress {
 
   @@unique([userId, moduleId])
   @@map("learning_progress")
+}
+
+// Mã API cấp cho TỪNG nhân viên để họ tự viết app/tool riêng gọi vào CRM
+// (anh Philip chốt 21/8/2026 — Đức tự làm app quản lý khách của Đức).
+//
+// Vì sao không dùng token đăng nhập (JWT): JWT hết hạn 7 ngày, app chạy máy
+// không có ai bấm login lại. Mã này không hết hạn, thu hồi bằng 1 click.
+//
+// Vì sao phạm vi khoá theo userId, KHÔNG theo role: Đức đang là admin —
+// nếu mã "mượn" quyền admin thì đọc được khách của cả công ty + giá vốn.
+// Mã chỉ mở PHẠM VI dữ liệu của đúng 1 nhân viên (cùng tinh thần với
+// cờ canViewAllOrders: tách quyền phạm vi khỏi quyền xem tiền).
+model ApiKey {
+  id        String @id @default(uuid())
+  orgId     String @map("org_id")
+  // Nhân viên sở hữu mã. Mọi request bằng mã này chỉ chạm được dữ liệu
+  // gắn assignedUserId = userId này.
+  userId    String @map("user_id")
+  // Tên gợi nhớ do anh đặt: "App khách hàng của Đức".
+  name      String
+  // 8 ký tự đầu của mã (không phải bí mật) — hiện trên UI để anh nhận ra
+  // mã nào là mã nào mà không cần lưu mã gốc.
+  keyPrefix String @map("key_prefix")
+  // SHA-256 của mã gốc. Mã gốc KHÔNG BAO GIỜ được lưu — mất thì cấp lại.
+  // Dùng SHA-256 (không bcrypt) vì phải tra mỗi request; mã do máy sinh
+  // 32 byte ngẫu nhiên nên không bị đoán như mật khẩu người tự đặt.
+  keyHash   String @unique @map("key_hash")
+  // Phạm vi. Đợt 1 chỉ có 'own_customers_read' (đọc khách của mình).
+  // Đợt 2 thêm 'own_customers_write'.
+  scope     String @default("own_customers_read")
+
+  lastUsedAt      DateTime? @map("last_used_at")
+  revokedAt       DateTime? @map("revoked_at")
+  createdByUserId String    @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation("ApiKeyOwner", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId])
+  @@index([keyPrefix])
+  @@map("api_keys")
 }

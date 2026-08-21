@@ -80,6 +80,8 @@ import { saleAppRoutes } from './modules/sale-app/sale-app-routes.js';
 import { debtRoutes } from './modules/sale-app/debt-routes.js';
 import { followUpRoutes } from './modules/sale-app/follow-up-routes.js';
 import { productEditRoutes } from './modules/sale-app/product-edit-routes.js';
+import { apiKeyRoutes } from './modules/auth/api-key-routes.js';
+import { extCustomerRoutes } from './modules/external/ext-customer-routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,6 +166,9 @@ async function bootstrap() {
   await app.register(userRoutes);
   await app.register(teamRoutes);
   await app.register(orgRoutes);
+  await app.register(apiKeyRoutes);
+  // Mã API cho app do nhân viên tự viết — xác thực bằng X-Api-Key, không JWT.
+  await app.register(extCustomerRoutes);
   await app.register(zaloAccessRoutes);
   await app.register(zaloSyncRoutes);
   await app.register(jobRoutes);

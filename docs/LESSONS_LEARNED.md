@@ -120,3 +120,10 @@ bước) thì mở đúng mục trong
   Một dòng hàng thiếu tồn là **cả đơn tắc**, nên họ kể tên hết cả đơn.
 - Sửa 1 cột dữ liệu → **kiểm hệ quả dây chuyền**: cron nào đọc nó, cột lưu sẵn
   nào phái sinh từ nó, báo cáo nào dùng nó.
+- **Mã API cho người ngoài app: khoá phạm vi theo `userId`, KHÔNG theo `role`.**
+  Đức là admin — nếu mã "mượn" quyền role thì đọc luôn khách cả công ty + giá vốn.
+  Namespace `/api/ext/v1` bắt buộc `assignedUserId = ctx.userId` + whitelist field.
+- **Kiểm chứng SQL: cột Prisma là `timestamp without time zone` (naive UTC).**
+  So sánh với literal có offset (`'2026-07-16 00:00:00+07'`) thì Postgres quy đổi
+  theo TZ *phiên psql* → lệch 7h, ra số sai. Muốn mốc 00:00 giờ VN thì viết literal
+  naive đã trừ 7h (`'2026-07-15 17:00:00'`), hoặc `col AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh'`.
