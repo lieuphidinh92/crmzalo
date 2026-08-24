@@ -23,11 +23,142 @@ export async function notificationRoutes(app: FastifyInstance) {
     const user = request.user!;
     const notifications: NotificationItem[] = [];
 
-    // 1. Unreplied conversations > 30 min
+    // ── BẮN HẾT TRUY VẤN CÙNG LÚC (25/8/2026) ──────────────────────────────
+    // Trước đây 9 truy vấn này chạy NỐI ĐUÔI nhau. Chuông tải ở mọi màn hình nên
+    // đó là 9 lượt chờ mạng cộng dồn (đo được 13 câu lệnh cho 1 lần bấm chuông).
+    // Chúng độc lập nhau nên gom vào Promise.all: vẫn 13 câu lệnh nhưng chỉ tốn
+    // thời gian bằng câu CHẬM NHẤT.
+    const now = new Date();
     const thirtyMinAgo = new Date(Date.now() - 30 * 60000);
-    const unreplied = await prisma.conversation.count({
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    const tomorrowStart = new Date(todayEnd);
+    const tomorrowEnd = new Date(tomorrowStart);
+    tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+    const horizon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000);
+    const isAdmin = user.role === 'owner' || user.role === 'admin';
+    // Cùng phạm vi với orderScopeWhere(): owner/admin thấy tất, member chỉ đơn mình.
+    const orderScope = isAdmin
+      ? { orgId: user.orgId }
+      : {
+          orgId: user.orgId,
+          OR: [
+            { assignedSaleId: user.id },
+            { createdByUserId: user.id },
+            { contact: { assignedUserId: user.id } },
+          ],
+        };
+    const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const [
+      unrepliedRes, todayAptsRes, tmrAptsRes, overdueDebtListRes, expiringBatchesRes,
+      overdueImportsRes, thisMonthSessionRes, accountsRes, justIssuedRes,
+    ] = await Promise.all([
+      prisma.conversation.count({
       where: { orgId: user.orgId, isReplied: false, lastMessageAt: { lt: thirtyMinAgo } },
-    });
+      }),
+      prisma.appointment.findMany({
+      where: {
+      orgId: user.orgId,
+      appointmentDate: { gte: todayStart, lt: todayEnd },
+      status: 'scheduled',
+      },
+      include: { contact: { select: { fullName: true } } },
+      take: 5,
+      }),
+      prisma.appointment.count({
+      where: {
+      orgId: user.orgId,
+      appointmentDate: { gte: tomorrowStart, lt: tomorrowEnd },
+      status: 'scheduled',
+      },
+      }),
+      prisma.order.findMany({
+      where: {
+      AND: [
+      orderScope,
+      {
+      debtAmountValue: { gt: 0 },
+      debtDueDate: { lt: new Date() },
+      status: { notIn: ['cancelled', 'returned'] },
+      },
+      ],
+      },
+      select: {
+      id: true,
+      orderCode: true,
+      debtAmountValue: true,
+      debtDueDate: true,
+      contact: { select: { fullName: true, phone: true } },
+      },
+      orderBy: { debtDueDate: 'asc' },
+      take: 5,
+      }),
+      prisma.inventoryBatch.findMany({
+      where: {
+      orgId: user.orgId,
+      status: 'active',
+      currentQuantity: { gt: 0 },
+      expiryDate: { not: null, lt: horizon },
+      },
+      select: {
+      id: true,
+      batchCode: true,
+      currentQuantity: true,
+      expiryDate: true,
+      product: { select: { sku: true, name: true } },
+      },
+      orderBy: { expiryDate: 'asc' },
+      take: 3,
+      }),
+      // 2 mục chỉ dành cho owner/admin — member không xem công nợ NCC / kiểm kho.
+      isAdmin ? prisma.importOrder.findMany({
+      where: {
+      orgId: user.orgId,
+      status: 'confirmed',
+      debtAmount: { gt: 0 },
+      paymentDueDate: { lt: new Date() },
+      },
+      select: {
+      id: true,
+      importCode: true,
+      debtAmount: true,
+      paymentDueDate: true,
+      supplier: { select: { name: true } },
+      },
+      orderBy: { paymentDueDate: 'asc' },
+      take: 5,
+      }) : Promise.resolve([]),
+      isAdmin ? prisma.stocktakeSession.findFirst({
+      where: { orgId: user.orgId, periodMonth, status: { not: 'cancelled' } },
+      select: { id: true },
+      }) : Promise.resolve(null),
+      prisma.zaloAccount.findMany({
+      where: { orgId: user.orgId },
+      select: { id: true, displayName: true },
+      }),
+      prisma.order.findMany({
+      where: {
+      orgId: user.orgId,
+      assignedSaleId: user.id,
+      // Cả 'partial': khách/sale cần biết ngay khi có hoá đơn đầu tiên, không
+      // đợi tới lúc xuất đủ tiền.
+      vatInvoiceStatus: { in: ['issued', 'partial'] },
+      vatIssuedAt: { gte: sevenDaysAgo },
+      },
+      select: {
+      id: true, orderCode: true, vatInvoiceId: true, vatIssuedAt: true,
+      vatInvoiceStatus: true, vatIssuedAmount: true,
+      },
+      orderBy: { vatIssuedAt: 'desc' },
+      take: 5,
+      }),
+    ]);
+
+
+    const unreplied = unrepliedRes;
     if (unreplied > 0) {
       notifications.push({
         id: 'unreplied',
@@ -39,21 +170,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       });
     }
 
-    // 2. Today's appointments
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayEnd = new Date(todayStart);
-    todayEnd.setDate(todayEnd.getDate() + 1);
-
-    const todayApts = await prisma.appointment.findMany({
-      where: {
-        orgId: user.orgId,
-        appointmentDate: { gte: todayStart, lt: todayEnd },
-        status: 'scheduled',
-      },
-      include: { contact: { select: { fullName: true } } },
-      take: 5,
-    });
+    const todayApts = todayAptsRes;
     for (const apt of todayApts) {
       notifications.push({
         id: `apt-${apt.id}`,
@@ -65,18 +182,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       });
     }
 
-    // 3. Tomorrow's appointments
-    const tomorrowStart = new Date(todayEnd);
-    const tomorrowEnd = new Date(tomorrowStart);
-    tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
-
-    const tmrApts = await prisma.appointment.count({
-      where: {
-        orgId: user.orgId,
-        appointmentDate: { gte: tomorrowStart, lt: tomorrowEnd },
-        status: 'scheduled',
-      },
-    });
+    const tmrApts = tmrAptsRes;
     if (tmrApts > 0) {
       notifications.push({
         id: 'tmr-apts',
@@ -91,39 +197,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     // 4. Overdue debt — orders with debt past due date, scoped to user.
     //    Same scope as orderScopeWhere(): owner+admin see all, member only
     //    sees orders they own.
-    const isAdmin = user.role === 'owner' || user.role === 'admin';
-    const orderScope = isAdmin
-      ? { orgId: user.orgId }
-      : {
-          orgId: user.orgId,
-          OR: [
-            { assignedSaleId: user.id },
-            { createdByUserId: user.id },
-            { contact: { assignedUserId: user.id } },
-          ],
-        };
-
-    const overdueDebtList = await prisma.order.findMany({
-      where: {
-        AND: [
-          orderScope,
-          {
-            debtAmountValue: { gt: 0 },
-            debtDueDate: { lt: new Date() },
-            status: { notIn: ['cancelled', 'returned'] },
-          },
-        ],
-      },
-      select: {
-        id: true,
-        orderCode: true,
-        debtAmountValue: true,
-        debtDueDate: true,
-        contact: { select: { fullName: true, phone: true } },
-      },
-      orderBy: { debtDueDate: 'asc' },
-      take: 5,
-    });
+    const overdueDebtList = overdueDebtListRes;
     for (const o of overdueDebtList) {
       const days = o.debtDueDate
         ? Math.ceil((Date.now() - o.debtDueDate.getTime()) / (24 * 60 * 60 * 1000))
@@ -139,24 +213,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     }
 
     // 5. Expiring batches (90 days). Org-wide — anyone in org should know.
-    const horizon = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-    const expiringBatches = await prisma.inventoryBatch.findMany({
-      where: {
-        orgId: user.orgId,
-        status: 'active',
-        currentQuantity: { gt: 0 },
-        expiryDate: { not: null, lt: horizon },
-      },
-      select: {
-        id: true,
-        batchCode: true,
-        currentQuantity: true,
-        expiryDate: true,
-        product: { select: { sku: true, name: true } },
-      },
-      orderBy: { expiryDate: 'asc' },
-      take: 3,
-    });
+    const expiringBatches = expiringBatchesRes;
     for (const b of expiringBatches) {
       const days = b.expiryDate
         ? Math.ceil((b.expiryDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
@@ -176,23 +233,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     // 6b. Overdue supplier payments (công nợ NCC quá hạn) — owner/admin only
     //     (cost/debt-sensitive; member không thấy công nợ NCC).
     if (isAdmin) {
-      const overdueImports = await prisma.importOrder.findMany({
-        where: {
-          orgId: user.orgId,
-          status: 'confirmed',
-          debtAmount: { gt: 0 },
-          paymentDueDate: { lt: new Date() },
-        },
-        select: {
-          id: true,
-          importCode: true,
-          debtAmount: true,
-          paymentDueDate: true,
-          supplier: { select: { name: true } },
-        },
-        orderBy: { paymentDueDate: 'asc' },
-        take: 5,
-      });
+      const overdueImports = overdueImportsRes;
       for (const o of overdueImports) {
         const days = o.paymentDueDate
           ? Math.ceil((Date.now() - o.paymentDueDate.getTime()) / (24 * 60 * 60 * 1000))
@@ -213,11 +254,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     //     "kiểm 1 lần/tháng" cadence isn't missed. Persists once the month's
     //     session exists in any state except cancelled.
     if (isAdmin) {
-      const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const thisMonthSession = await prisma.stocktakeSession.findFirst({
-        where: { orgId: user.orgId, periodMonth, status: { not: 'cancelled' } },
-        select: { id: true },
-      });
+      const thisMonthSession = thisMonthSessionRes;
       if (!thisMonthSession) {
         notifications.push({
           id: `stocktake-${periodMonth}`,
@@ -231,10 +268,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     }
 
     // 6. Disconnected Zalo accounts
-    const accounts = await prisma.zaloAccount.findMany({
-      where: { orgId: user.orgId },
-      select: { id: true, displayName: true },
-    });
+    const accounts = accountsRes;
     for (const acc of accounts) {
       const status = zaloPool.getStatus(acc.id);
       if (status !== 'connected') {
@@ -253,23 +287,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     // Kế toán xuất trên phần mềm ngoài rồi đánh dấu trong sale-app → báo lại cho
     // đúng sale phụ trách đơn. Cố ý lọc `assignedSaleId = user.id` kể cả với
     // admin: đây là tin của người bán, không phải bảng theo dõi toàn công ty.
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000);
-    const justIssued = await prisma.order.findMany({
-      where: {
-        orgId: user.orgId,
-        assignedSaleId: user.id,
-        // Cả 'partial': khách/sale cần biết ngay khi có hoá đơn đầu tiên, không
-        // đợi tới lúc xuất đủ tiền.
-        vatInvoiceStatus: { in: ['issued', 'partial'] },
-        vatIssuedAt: { gte: sevenDaysAgo },
-      },
-      select: {
-        id: true, orderCode: true, vatInvoiceId: true, vatIssuedAt: true,
-        vatInvoiceStatus: true, vatIssuedAmount: true,
-      },
-      orderBy: { vatIssuedAt: 'desc' },
-      take: 5,
-    });
+    const justIssued = justIssuedRes;
     for (const o of justIssued) {
       const partial = o.vatInvoiceStatus === 'partial';
       notifications.push({

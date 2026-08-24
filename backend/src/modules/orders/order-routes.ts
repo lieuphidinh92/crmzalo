@@ -141,7 +141,56 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       const [rows, total] = await Promise.all([
         prisma.order.findMany({
           where,
-          include: {
+          // CHỌN ĐÚNG CỘT CẦN (25/8/2026). Trước dùng `include` → Prisma trả về
+          // CẢ 73 cột của đơn, trong đó có ghi chú dài, lý do huỷ, ảnh giao hàng
+          // (trung bình 234 ký tự/đơn trên production), thông tin xuất hoá đơn...
+          // Màn danh sách KHÔNG dùng những thứ đó — bấm vào đơn là sang trang chi
+          // tiết và tải lại bản đầy đủ. Đã rà 10 file màn danh sách của cả 2 app
+          // trước khi cắt; thêm cột mới cho danh sách thì nhớ khai báo ở đây.
+          select: {
+            id: true,
+            orderCode: true,
+            orderDate: true,
+            createdAt: true,
+            updatedAt: true,
+            status: true,
+            source: true,
+            orgId: true,
+            contactId: true,
+            assignedSaleId: true,
+            mktOwnerId: true,
+            conversationId: true,
+            // Tiền
+            totalAmount: true,
+            totalAmountValue: true,
+            subtotalAmount: true,
+            discountType: true,
+            discountValue: true,
+            discountAmount: true,
+            shippingFee: true,
+            paidAmount: true,
+            debtAmountValue: true,
+            debtDueDate: true,
+            paymentMethod: true,
+            // Giao hàng (chỉ phần danh sách hiển thị)
+            shippingMethod: true,
+            shippingProvider: true,
+            // Đối soát + xuất VAT (nhãn trên từng dòng)
+            reconciledAt: true,
+            needsVatInvoice: true,
+            vatInvoiceStatus: true,
+            vatInvoiceId: true,
+            vatIssuedAmount: true,
+            vatIssuedAt: true,
+            vatRequestedAt: true,
+            vatSkipReason: true,
+            // Mốc trạng thái (dòng thời gian rút gọn)
+            confirmedAt: true,
+            shippedAt: true,
+            completedAt: true,
+            cancelledAt: true,
+            returnedAt: true,
+            referrerName: true,
             contact: {
               select: {
                 id: true,
@@ -154,7 +203,10 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
             assignedSale: { select: { id: true, fullName: true, email: true } },
             createdBy: { select: { id: true, fullName: true } },
           },
-          orderBy: [{ orderDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+          // Bỏ `nulls: 'last'` để dùng được index (orgId, orderDate desc, createdAt desc).
+          // An toàn: cả 2 đường tạo đơn đều LUÔN gán orderDate, và kiểm production
+          // 25/8/2026 có 0/1064 đơn thiếu ngày — không có dòng null nào để bị xếp sai.
+          orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
           skip: (page - 1) * limit,
           take: limit,
         }),

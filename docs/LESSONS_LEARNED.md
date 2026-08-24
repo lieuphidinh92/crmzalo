@@ -134,3 +134,13 @@ bước) thì mở đúng mục trong
 - **Ép phạm vi SAU khi build xong `where`.** Route nào có
   `if (assignedUserId) where.assignedUserId = <query>` mà ép phạm vi trước thì
   member chỉ cần truyền `?assignedUserId=<người khác>` là ghi đè được (export dính thật).
+- **Chậm là do gọi nhiều lần, không phải do code chậm.** Đo 25/8/2026: mỗi lần
+  gọi API tới Singapore ~85ms, app không cache → mỗi lần chuyển màn trả giá lại
+  từ đầu. Giữ màn bằng `<KeepAlive>` + làm mới ngầm cắt 58% thời gian chờ.
+- **`include` của Prisma kéo về TOÀN BỘ cột.** Danh sách đơn từng chở 73 cột/đơn
+  (ghi chú, lý do huỷ, ảnh giao hàng) — đổi sang `select` giảm 37% dữ liệu.
+- **`nulls last` trong orderBy làm Postgres bỏ index.** Cùng truy vấn: 36,7ms quét
+  toàn bảng → 0,2ms dùng index sau khi bỏ `nulls last` + khai index đúng chiều sắp xếp.
+- **Trước khi tối ưu phải ĐO.** Nghi Vercel là nút thắt (đo lần đầu +250ms), giữ
+  kết nối đo lại thì gần bằng nhau — nút thắt thật nằm ở chỗ khác. Nếu tin số đo
+  đầu tiên thì đã đi sửa nhầm chỗ.

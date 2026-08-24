@@ -692,6 +692,13 @@ model Order {
 
   @@unique([orgId, orderCode])
   @@index([orgId, orderDate])
+  // Index khớp ĐÚNG thứ tự sắp xếp của màn Danh sách đơn (25/8/2026).
+  // Trước đó truy vấn phải QUÉT TOÀN BẢNG rồi sắp xếp lại (đo trên production:
+  // 1.053 dòng, 36ms chạy + 39ms lập kế hoạch) vì index cũ chỉ có (orgId, orderDate)
+  // tăng dần, không dùng lại được cho `order by ... desc`.
+  @@index([orgId, orderDate(sort: Desc), createdAt(sort: Desc)])
+  // Hàng chờ xuất VAT của kế toán: lọc theo trạng thái, sắp theo ngày yêu cầu.
+  @@index([orgId, vatInvoiceStatus, vatRequestedAt])
   @@index([orgId, contactId])
   @@index([orgId, status])
   @@index([orgId, assignedSaleId])
