@@ -14,6 +14,7 @@ import { invalidateCacheByPrefix } from '../reports/resale-service.js';
 import { logCompliance } from '../../shared/utils/compliance-logger.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 import { getNextCustomerCode } from './customer-code-service.js';
+import { applyContactScope, contactScopeWhere } from './contact-scope.js';
 
 // ── Label maps cho file Excel xuất KH ─────────────────────────────────────
 // Backend không có chỗ nào tập trung label như frontend, nên dump tại chỗ
@@ -186,6 +187,10 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         where.lastOrderDate = null;
       }
 
+      // Phạm vi: member chỉ thấy KH được giao cho mình. Gọi SAU cùng để query
+      // `?assignedUserId=` của member không ghi đè được phạm vi.
+      applyContactScope(where, user);
+
       const pageNum = parseInt(page);
       const limitNum = parseInt(limit);
 
@@ -233,12 +238,15 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         orderClause = { [SCALAR_ORDER_MAP[orderBy]]: { sort: sortDir, nulls: 'last' } };
       }
 
+      // Số tổng hợp phải cùng phạm vi với danh sách bên dưới, nếu không member
+      // thấy "đang mua: 120" nhưng list chỉ ra 14 KH của mình.
+      const summaryScope = contactScopeWhere(user);
       const summaryActiveQ = prisma.contact.count({
-        where: { orgId: user.orgId, lastOrderDate: { gte: daysAgo(DAYS_BUCKET_ACTIVE_MAX) } },
+        where: { ...summaryScope, lastOrderDate: { gte: daysAgo(DAYS_BUCKET_ACTIVE_MAX) } },
       });
       const summaryNeedCareQ = prisma.contact.count({
         where: {
-          orgId: user.orgId,
+          ...summaryScope,
           lastOrderDate: {
             lte: daysAgo(DAYS_BUCKET_NEEDCARE_MIN),
             gte: daysAgo(DAYS_BUCKET_NEEDCARE_MAX),
@@ -523,9 +531,6 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       } = q;
 
       const where: any = { orgId: user.orgId };
-      // Member chỉ xuất KH được assign cho mình — khớp với chính sách
-      // hiển thị của list endpoint (frontend ẩn KH khác).
-      if (user.role === 'member') where.assignedUserId = user.id;
       if (source) where.source = source;
       if (assignedUserId) where.assignedUserId = assignedUserId;
       if (customerType) where.customerType = customerType;
@@ -571,6 +576,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       } else if (daysInactiveBucket === 'never') {
         where.lastOrderDate = null;
       }
+
+      // Phạm vi: member chỉ xuất KH của mình. Trước đây dòng này nằm TRƯỚC
+      // `if (assignedUserId) where.assignedUserId = assignedUserId` nên member
+      // truyền `?assignedUserId=<người khác>` là xuất được KH của người khác.
+      applyContactScope(where, user);
 
       // Lấy hết KH (no pagination), sort theo mã KH cho dễ đọc khi mở file.
       const contacts: any[] = await prisma.contact.findMany({
@@ -877,11 +887,12 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/contacts/pipeline', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
-      const orgId = user.orgId;
+      // Phạm vi: member chỉ thấy KH của mình (cả số đếm lẫn thẻ kanban).
+      const scope = contactScopeWhere(user);
 
       const grouped = await prisma.contact.groupBy({
         by: ['stage'],
-        where: { orgId },
+        where: { ...scope },
         _count: { id: true },
       });
 
@@ -891,7 +902,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
 
       await Promise.all(
         stages.map(async (stage) => {
-          const where: any = { orgId, stage: stage === 'unknown' ? null : stage };
+          const where: any = { ...scope, stage: stage === 'unknown' ? null : stage };
           const contacts = await prisma.contact.findMany({
             where,
             select: {
@@ -935,7 +946,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const { id } = request.params as { id: string };
 
       const contact = await prisma.contact.findFirst({
-        where: { id, orgId: user.orgId },
+        where: { id, ...contactScopeWhere(user) },
         include: {
           assignedUser: { select: { id: true, fullName: true, email: true } },
           appointments: { orderBy: { appointmentDate: 'desc' }, take: 10 },
@@ -1037,7 +1048,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const { id } = request.params as { id: string };
       const body = request.body as Record<string, any>;
 
-      const existing = await prisma.contact.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
+      const existing = await prisma.contact.findFirst({ where: { id, ...contactScopeWhere(user) }, select: { id: true } });
       if (!existing) return reply.status(404).send({ error: 'Contact not found' });
 
       // Chuẩn hoá SĐT khi PUT. Cho phép clear (null/empty). Reject khi
@@ -1262,7 +1273,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
 
       if (!Array.isArray(tags)) return reply.status(400).send({ error: 'tags must be an array' });
 
-      const existing = await prisma.contact.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
+      const existing = await prisma.contact.findFirst({ where: { id, ...contactScopeWhere(user) }, select: { id: true } });
       if (!existing) return reply.status(404).send({ error: 'Contact not found' });
 
       const updated = await prisma.contact.update({ where: { id }, data: { tags } });
@@ -1279,7 +1290,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const user = request.user!;
       const { id } = request.params as { id: string };
 
-      const existing = await prisma.contact.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
+      const existing = await prisma.contact.findFirst({ where: { id, ...contactScopeWhere(user) }, select: { id: true } });
       if (!existing) return reply.status(404).send({ error: 'Contact not found' });
 
       await prisma.contact.delete({ where: { id } });

@@ -127,3 +127,10 @@ bước) thì mở đúng mục trong
   So sánh với literal có offset (`'2026-07-16 00:00:00+07'`) thì Postgres quy đổi
   theo TZ *phiên psql* → lệch 7h, ra số sai. Muốn mốc 00:00 giờ VN thì viết literal
   naive đã trừ 7h (`'2026-07-15 17:00:00'`), hoặc `col AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh'`.
+- **Lọc phạm vi phải ở BACKEND — comment "frontend ẩn rồi" là không đủ.**
+  `/contacts/export` lọc member đúng kèm ghi chú "frontend ẩn KH khác", nhưng
+  frontend không hề lọc và list/detail/pipeline thì quên → mọi user CRM đọc được
+  khách cả công ty (fix 24/8/2026, `modules/contacts/contact-scope.ts`).
+- **Ép phạm vi SAU khi build xong `where`.** Route nào có
+  `if (assignedUserId) where.assignedUserId = <query>` mà ép phạm vi trước thì
+  member chỉ cần truyền `?assignedUserId=<người khác>` là ghi đè được (export dính thật).

@@ -9,7 +9,6 @@
     "build": "tsc",
     "start": "node dist/app.js",
     "start:prod": "tsx src/app.ts",
-    "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio"
