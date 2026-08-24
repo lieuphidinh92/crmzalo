@@ -22,6 +22,9 @@ const ALLOWED_MIME: Record<string, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
   'application/pdf': 'pdf',
+  // Hoá đơn điện tử tải về thường là cặp PDF + XML (bản gốc có chữ ký số).
+  'application/xml': 'xml',
+  'text/xml': 'xml',
 };
 
 export function storageConfigured(): boolean {

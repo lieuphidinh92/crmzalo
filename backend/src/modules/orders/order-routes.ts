@@ -46,6 +46,7 @@ type OrderQuery = Partial<{
   to: string;
   hasDebt: string;
   reconciled: string; // '1' = đã đối soát · '0' = chưa đối soát
+  vatStatus: string;  // requested = chờ xuất VAT · issued = đã xuất · not_issued = chưa yêu cầu
   overdue: string;
 }>;
 
@@ -102,6 +103,14 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
         filters.push({ reconciledAt: null });
       } else if (q.reconciled === '1') {
         filters.push({ reconciledAt: { not: null } });
+      }
+      // Hàng chờ xuất hoá đơn VAT — kế toán lọc `requested` để biết cần xuất đơn nào.
+      if (q.vatStatus) {
+        const wanted = q.vatStatus
+          .split(',')
+          .map((v) => v.trim())
+          .filter((v) => ['not_issued', 'requested', 'issued'].includes(v));
+        if (wanted.length) filters.push({ vatInvoiceStatus: { in: wanted } });
       }
       if (q.hasDebt === '1') {
         filters.push({ debtAmountValue: { gt: 0 } });

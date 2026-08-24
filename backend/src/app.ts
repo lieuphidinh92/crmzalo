@@ -56,6 +56,7 @@ import { notificationRoutes } from './modules/notifications/notification-routes.
 import { searchRoutes } from './modules/search/search-routes.js';
 import { orderRoutes } from './modules/orders/order-routes.js';
 import { orderTransitionRoutes } from './modules/orders/order-transitions.js';
+import { vatRoutes } from './modules/orders/vat-routes.js';
 import { orderItemsRoutes } from './modules/orders/order-items-routes.js';
 import { orderGiftsRoutes } from './modules/orders/order-gifts-routes.js';
 import { orderPaymentRoutes } from './modules/orders/order-payment-routes.js';
@@ -177,6 +178,7 @@ async function bootstrap() {
   await app.register(searchRoutes);
   await app.register(orderRoutes);
   await app.register(orderTransitionRoutes);
+  await app.register(vatRoutes);
   await app.register(orderItemsRoutes);
   await app.register(orderGiftsRoutes);
   await app.register(orderPaymentRoutes);

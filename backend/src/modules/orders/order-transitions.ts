@@ -437,6 +437,151 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
     }
   });
 
+  /**
+   * POST /api/v1/orders/:id/vat-request — sale gửi yêu cầu xuất hoá đơn VAT.
+   *
+   * Anh Philip chốt 24/8/2026 (sale-app). Giai đoạn này CHƯA nối API Vietinvoice:
+   * bấm nút = ghi nhận yêu cầu + đẩy đơn vào hàng chờ để kế toán xuất tay.
+   * Vòng đời `vatInvoiceStatus`: not_issued → requested → issued.
+   *
+   * Quyền: dùng `orderScopeWhere` — sale (member) gửi được cho ĐƠN CỦA MÌNH,
+   * owner/admin gửi được mọi đơn. Cố ý KHÔNG dùng `canSeeAllOrders` như ô đối
+   * soát: sale là người trực tiếp nghe khách đòi hoá đơn.
+   *
+   * Chỉ nhận đơn đã `completed` — không xuất hoá đơn cho đơn chưa giao xong,
+   * càng không cho đơn huỷ/hoàn (không phát sinh doanh thu).
+   *
+   * Gửi lại được (sửa thông tin sai) khi còn `requested`; đã `issued` thì khoá.
+   */
+  app.post('/api/v1/orders/:id/vat-request', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as {
+        invoiceFormat?: string;
+        invoiceBuyerType?: string;
+        invoiceBuyerName?: string;
+        invoiceTaxCode?: string;
+        invoiceAddress?: string;
+        invoiceEmail?: string;
+        invoiceReceiverName?: string;
+        invoiceReceiverPhone?: string;
+        invoiceNote?: string;
+        saveInvoiceToCustomer?: boolean;
+      };
+
+      const order = await prisma.order.findFirst({
+        where: { AND: [orderScopeWhere(user), { id }] },
+        select: { id: true, status: true, contactId: true, vatInvoiceStatus: true },
+      });
+      if (!order) return reply.status(404).send({ error: 'Order not found' });
+
+      if (normalizeStatus(order.status) !== 'completed') {
+        return reply.status(400).send({
+          error: 'Chỉ yêu cầu xuất VAT cho đơn đã hoàn tất.',
+        });
+      }
+      if (order.vatInvoiceStatus === 'issued') {
+        return reply.status(400).send({
+          error: 'Đơn này đã xuất hoá đơn — muốn sửa phải báo kế toán.',
+        });
+      }
+
+      const str = (v?: string) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+      const invoiceFormat = str(body.invoiceFormat) ?? 'dien_tu';
+      if (!['dien_tu', 'giay'].includes(invoiceFormat)) {
+        return reply.status(400).send({ error: 'Hình thức hoá đơn không hợp lệ.' });
+      }
+
+      const buyerType = str(body.invoiceBuyerType) ?? 'cong_ty';
+      if (!['ca_nhan', 'ho_kinh_doanh', 'cong_ty'].includes(buyerType)) {
+        return reply.status(400).send({ error: 'Loại người mua không hợp lệ.' });
+      }
+
+      const buyerName = str(body.invoiceBuyerName);
+      const address = str(body.invoiceAddress);
+      const email = str(body.invoiceEmail);
+      const taxCode = str(body.invoiceTaxCode);
+
+      if (!buyerName) {
+        return reply.status(400).send({
+          error: buyerType === 'ca_nhan' ? 'Thiếu họ tên người mua.' : 'Thiếu tên công ty / đơn vị.',
+        });
+      }
+      if (!address) return reply.status(400).send({ error: 'Thiếu địa chỉ trên hoá đơn.' });
+      if (!email) return reply.status(400).send({ error: 'Thiếu email nhận hoá đơn.' });
+      // Kiểm tối thiểu: có @ và có dấu chấm ở phần domain. Sai email = kế toán
+      // xuất xong hoá đơn không tới tay khách, phải phát hành lại rất phiền.
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return reply.status(400).send({ error: 'Email nhận hoá đơn không hợp lệ.' });
+      }
+      if (buyerType !== 'ca_nhan') {
+        if (!taxCode) return reply.status(400).send({ error: 'Thiếu mã số thuế.' });
+        // MST Việt Nam: 10 số, hoặc 13 số dạng chi nhánh (10-3). Chỉ chặn ca rõ
+        // ràng sai để không cản kế toán khi gặp mã ngoại lệ.
+        if (!/^\d{10}(-\d{3})?$/.test(taxCode.replace(/\s/g, ''))) {
+          return reply.status(400).send({ error: 'Mã số thuế phải là 10 số (hoặc 13 số dạng 1234567890-001).' });
+        }
+      }
+
+      const note = str(body.invoiceNote);
+      if (note && note.length > 250) {
+        return reply.status(400).send({ error: 'Ghi chú cho kế toán tối đa 250 ký tự.' });
+      }
+
+      const invoice = {
+        invoiceFormat,
+        invoiceBuyerType: buyerType,
+        invoiceBuyerName: buyerName,
+        invoiceTaxCode: buyerType === 'ca_nhan' ? taxCode : taxCode!.replace(/\s/g, ''),
+        invoiceAddress: address,
+        invoiceEmail: email,
+        invoiceReceiverName: str(body.invoiceReceiverName),
+        invoiceReceiverPhone: str(body.invoiceReceiverPhone),
+      };
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          ...invoice,
+          invoiceNote: note,
+          needsVatInvoice: true,
+          vatInvoiceStatus: 'requested',
+          // Gửi lại thì GIỮ mốc yêu cầu đầu tiên — kế toán xếp hàng theo mốc này.
+          vatRequestedAt: order.vatInvoiceStatus === 'requested' ? undefined : new Date(),
+          vatRequestedById: order.vatInvoiceStatus === 'requested' ? undefined : user.id,
+        },
+      });
+
+      // "Lưu thông tin cho lần sau" → ghi vào hồ sơ VAT của khách để đơn sau tự điền.
+      if (body.saveInvoiceToCustomer === true && order.contactId) {
+        await prisma.contact.updateMany({
+          where: { id: order.contactId, orgId: user.orgId },
+          data: {
+            invoiceFormat,
+            invoiceBuyerType: buyerType,
+            invoiceBuyerName: buyerName,
+            invoiceTaxCode: invoice.invoiceTaxCode,
+            invoiceAddress: address,
+            invoiceEmail: email,
+            invoiceReceiverName: invoice.invoiceReceiverName,
+            invoiceReceiverPhone: invoice.invoiceReceiverPhone,
+          },
+        });
+      }
+
+      const full = await prisma.order.findUnique({ where: { id: order.id }, include: ORDER_FULL_INCLUDE });
+      return {
+        ...stripCostFromOrder(full!, user.role),
+        statusNormalized: normalizeStatus(full!.status),
+      };
+    } catch (err) {
+      logger.error('[orders] VAT request error:', err);
+      return reply.status(500).send({ error: 'Lỗi gửi yêu cầu xuất VAT' });
+    }
+  });
+
   // POST /api/v1/orders/:id/cancel — cancel + restock if needed
   app.post('/api/v1/orders/:id/cancel', async (request: FastifyRequest, reply: FastifyReply) => {
     try {

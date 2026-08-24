@@ -249,6 +249,46 @@ export async function notificationRoutes(app: FastifyInstance) {
       }
     }
 
+    // 7. Hoá đơn VAT vừa xuất cho ĐƠN CỦA MÌNH (24/8/2026)
+    // Kế toán xuất trên phần mềm ngoài rồi đánh dấu trong sale-app → báo lại cho
+    // đúng sale phụ trách đơn. Cố ý lọc `assignedSaleId = user.id` kể cả với
+    // admin: đây là tin của người bán, không phải bảng theo dõi toàn công ty.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000);
+    const justIssued = await prisma.order.findMany({
+      where: {
+        orgId: user.orgId,
+        assignedSaleId: user.id,
+        // Cả 'partial': khách/sale cần biết ngay khi có hoá đơn đầu tiên, không
+        // đợi tới lúc xuất đủ tiền.
+        vatInvoiceStatus: { in: ['issued', 'partial'] },
+        vatIssuedAt: { gte: sevenDaysAgo },
+      },
+      select: {
+        id: true, orderCode: true, vatInvoiceId: true, vatIssuedAt: true,
+        vatInvoiceStatus: true, vatIssuedAmount: true,
+      },
+      orderBy: { vatIssuedAt: 'desc' },
+      take: 5,
+    });
+    for (const o of justIssued) {
+      const partial = o.vatInvoiceStatus === 'partial';
+      notifications.push({
+        id: `vat-issued-${o.id}`,
+        type: 'success',
+        priority: 'normal',
+        title: partial
+          ? `Đã xuất một phần hoá đơn VAT cho đơn ${o.orderCode}`
+          : `Đã xuất hoá đơn VAT cho đơn ${o.orderCode}`,
+        detail: [
+          o.vatInvoiceId ? `Số hoá đơn: ${o.vatInvoiceId}` : 'Kế toán đã phát hành hoá đơn',
+          partial ? `Đã xuất ${(o.vatIssuedAmount ?? 0).toLocaleString('vi-VN')}đ` : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        createdAt: (o.vatIssuedAt ?? new Date()).toISOString(),
+      });
+    }
+
     return { notifications };
   });
 }

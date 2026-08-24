@@ -24,6 +24,7 @@ model Organization {
   dailyStats          DailyMessageStat[]
   settings            AppSetting[]
   orders              Order[]
+  vatInvoices         VatInvoice[]
   quickReplyTemplates QuickReplyTemplate[]
   tasks               Task[]
   recurringTaskRules  RecurringTaskRule[]
@@ -72,6 +73,11 @@ model User {
   // → lộ lãi. Cờ này tách riêng: chỉ mở PHẠM VI đơn, tiền vẫn khoá theo role.
   // Anh Philip chốt 4/8/2026 cho Thạch Quang Huy (giao hàng) + Mai Hiền (đối soát).
   canViewAllOrders Boolean @default(false) @map("can_view_all_orders")
+  // Quyền LÀM HOÁ ĐƠN VAT — tách riêng khỏi canViewAllOrders (anh Philip chốt
+  // 24/8/2026). Lý do: Huy giao hàng có canViewAllOrders để xem đơn đi giao,
+  // KHÔNG phải để xác nhận hoá đơn. Cùng tinh thần "tách quyền phạm vi khỏi
+  // quyền nghiệp vụ". owner/admin luôn có; member phải bật cờ này (chị Mai Hiền).
+  canIssueVat      Boolean @default(false) @map("can_issue_vat")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -84,6 +90,7 @@ model User {
   appointments     Appointment[]
   repliedMessages  Message[]           @relation("RepliedMessages")
   activityLogs     ActivityLog[]
+  vatInvoices      VatInvoice[]        @relation("IssuedVatInvoices")
   createdOrders    Order[]             @relation("CreatedOrders")
   saleOrders       Order[]             @relation("AssignedSaleOrders")
   mktOrders        Order[]             @relation("MktOwnerOrders")
@@ -182,6 +189,11 @@ model Contact {
   invoiceTaxCode         String?   @map("invoice_tax_code")
   invoiceAddress         String?   @map("invoice_address")
   invoiceEmail           String?   @map("invoice_email")
+  // Bổ sung 24/8/2026 cho form "Yêu cầu xuất VAT" ở sale-app (tick "lưu cho
+  // lần sau" ghi xuống đây để đơn sau tự điền).
+  invoiceFormat          String?   @map("invoice_format") // dien_tu | giay
+  invoiceReceiverName    String?   @map("invoice_receiver_name")
+  invoiceReceiverPhone   String?   @map("invoice_receiver_phone")
   currentProducts        Json      @default("[]") @map("current_products")
   currentSupplier        String?   @map("current_supplier")
   monthlyRevenueEstimate String?   @map("monthly_revenue_estimate")
@@ -621,6 +633,35 @@ model Order {
   invoiceAddress   String? @map("invoice_address")
   invoiceEmail     String? @map("invoice_email")
 
+  // ── Yêu cầu xuất hóa đơn VAT từ sale-app (anh Philip chốt 24/8/2026) ──
+  // Sale bấm "Yêu cầu xuất VAT" trên đơn ĐÃ HOÀN TẤT → đơn vào hàng chờ để kế
+  // toán xuất. Chưa nối API Vietinvoice: giai đoạn này chỉ ghi nhận yêu cầu.
+  // Vòng đời `vatInvoiceStatus`: not_issued → requested → issued.
+  invoiceFormat        String?   @map("invoice_format") // dien_tu | giay
+  invoiceReceiverName  String?   @map("invoice_receiver_name")
+  invoiceReceiverPhone String?   @map("invoice_receiver_phone")
+  invoiceNote          String?   @map("invoice_note") // ghi chú cho kế toán
+  // Lưu MỐC + AI bấm (giống reconciledAt) để truy khi đối chiếu với kế toán.
+  vatRequestedAt       DateTime? @map("vat_requested_at")
+  vatRequestedById     String?   @map("vat_requested_by")
+  // Kế toán xuất hoá đơn trên phần mềm ngoài (Vietinvoice) rồi quay lại đánh dấu
+  // ở đây — CRM không tự biết. Số hoá đơn lưu ở `vatInvoiceId`, link PDF ở
+  // `vatInvoiceUrl` (2 cột placeholder có sẵn từ trước).
+  // Mốc + người của LẦN XUẤT GẦN NHẤT (chi tiết từng lần nằm ở bảng VatInvoice).
+  vatIssuedAt          DateTime? @map("vat_issued_at")
+  vatIssuedById        String?   @map("vat_issued_by")
+  // Tổng tiền ĐÃ xuất hoá đơn, cộng dồn từ VatInvoice. Cột lưu sẵn để lọc/đếm
+  // hàng chờ mà không phải join — PHẢI tính lại trong cùng transaction mỗi lần
+  // thêm/xoá hoá đơn (bài học total_stock: cột lưu sẵn lệch là hỏng báo cáo).
+  vatIssuedAmount      Int       @default(0) @map("vat_issued_amount")
+  // "Không xuất": khách đổi ý, sai MST, đơn huỷ... Bắt buộc có lý do để 3 tháng
+  // sau còn truy được vì sao đơn này không có hoá đơn.
+  vatSkipReason        String?   @map("vat_skip_reason")
+  vatSkippedAt         DateTime? @map("vat_skipped_at")
+  vatSkippedById       String?   @map("vat_skipped_by")
+
+  vatInvoices          VatInvoice[]
+
   // Người giới thiệu đơn/khách (free text — có thể là đại lý, CTV, hoặc tên ngoài).
   referrerName     String? @map("referrer_name")
 
@@ -662,6 +703,43 @@ model Order {
 // future order entry forms. Master Order keeps total/status; OrderItem
 // powers product-level analytics (top SKU, brand mix, repurchase per SKU).
 // `costValue` is sensitive (giá vốn) — only owner role may read it via API.
+/// Mỗi LẦN kế toán xuất hoá đơn VAT cho 1 đơn (anh Philip chốt 24/8/2026).
+///
+/// Vì sao bảng riêng chứ không phải cột trên Order: 1 đơn có thể xuất NHIỀU
+/// hoá đơn, cộng dồn tới khi đủ tổng tiền đơn ("Xuất một phần" → "Đã xuất đủ"),
+/// và màn chi tiết đơn có nút "Xem lịch sử xuất VAT".
+///
+/// Vòng đời `orders.vat_invoice_status`:
+///   not_issued (chưa ai yêu cầu) → requested (chờ kế toán xuất)
+///   → partial (xuất chưa đủ tiền) → issued (đủ) · hoặc skipped (không xuất).
+model VatInvoice {
+  id     String @id @default(uuid())
+  orgId  String @map("org_id")
+  orderId String @map("order_id")
+
+  invoiceNumber String   @map("invoice_number") // số hoá đơn trên phần mềm hoá đơn
+  // Mã tra cứu trên website nhà cung cấp hoá đơn — khách dùng mã này tự tra bản
+  // gốc, kế toán khỏi phải gửi lại file khi khách hỏi.
+  lookupCode    String?  @map("lookup_code")
+  // Ngày trên hoá đơn — cột DATE (không giờ). Ghi PHẢI dùng
+  // `new Date('YYYY-MM-DDT00:00:00Z')`; nhét offset +07:00 vào cột @db.Date là
+  // Postgres cắt lùi 1 ngày (đã dính vụ expiry_date 3/8/2026).
+  invoiceDate   DateTime @map("invoice_date") @db.Date
+  amount        Int // giá trị hoá đơn, VND integer (KHÔNG float)
+  fileUrl       String?  @map("file_url") // PDF/XML trên Supabase Storage
+  note          String?
+  issuedById    String?  @map("issued_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  order    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  issuedBy User?        @relation("IssuedVatInvoices", fields: [issuedById], references: [id])
+
+  @@index([orgId, orderId])
+  @@index([orgId, createdAt])
+  @@map("vat_invoices")
+}
+
 model OrderItem {
   id            String   @id @default(uuid())
   orderId       String   @map("order_id")

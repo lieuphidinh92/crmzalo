@@ -218,6 +218,16 @@ export const ORDER_FULL_INCLUDE = {
       policyTier: true,
       stage: true,
       assignedUserId: true,
+      // Hồ sơ VAT đã lưu của khách — form "Yêu cầu xuất VAT" ở sale-app tự điền
+      // sẵn từ đây (vẫn sửa được trước khi gửi).
+      invoiceFormat: true,
+      invoiceBuyerType: true,
+      invoiceBuyerName: true,
+      invoiceTaxCode: true,
+      invoiceAddress: true,
+      invoiceEmail: true,
+      invoiceReceiverName: true,
+      invoiceReceiverPhone: true,
     },
   },
   assignedSale: { select: { id: true, fullName: true, email: true } },
@@ -262,9 +272,13 @@ export function stripCostFromOrder<T extends OrderFull>(order: T, role: string):
 
 // Helper to read user from request — narrows the type for downstream use.
 export function reqUser(request: FastifyRequest): {
-  id: string; orgId: string; role: string; canViewAllOrders?: boolean;
+  id: string; orgId: string; role: string; canViewAllOrders?: boolean; canIssueVat?: boolean;
 } {
   const u = request.user!;
   // PHẢI mang cả cờ ra, nếu không orderScopeWhere() không thấy → vẫn bị bó phạm vi.
-  return { id: u.id, orgId: u.orgId, role: u.role, canViewAllOrders: u.canViewAllOrders };
+  return {
+    id: u.id, orgId: u.orgId, role: u.role,
+    canViewAllOrders: u.canViewAllOrders,
+    canIssueVat: u.canIssueVat,
+  };
 }
