@@ -79,9 +79,11 @@ function markAllRead() {
 }
 
 function iconForType(type) {
-  // type from backend: warning/info/error
+  // type from backend: warning/info/error/success
   if (type === 'error') return { emoji: '⚠️', cls: 'bg-red-50 text-red-700' };
   if (type === 'warning') return { emoji: '🔔', cls: 'bg-amber-50 text-amber-700' };
+  // success: tin vui, không phải việc cần làm (vd hoá đơn VAT đã xuất).
+  if (type === 'success') return { emoji: '🧾', cls: 'bg-emerald-50 text-emerald-700' };
   return { emoji: 'ℹ️', cls: 'bg-royal-50 text-royal-700' };
 }
 

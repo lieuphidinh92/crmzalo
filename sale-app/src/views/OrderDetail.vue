@@ -208,6 +208,34 @@ const isPickup = computed(() => order.value?.shippingMethod === 'pickup_at_wareh
 const orderTotal = computed(() => Number(order.value?.totalAmountValue ?? order.value?.totalAmount ?? 0));
 const paid = computed(() => Number(order.value?.paidAmount ?? 0));
 const orderCode = computed(() => order.value?.orderCode || order.value?.order_code || '');
+
+// ── Trạng thái xuất VAT (quy trình anh Philip chốt 24/8/2026) ──────────
+const VAT_LABEL = {
+  requested: { text: 'CHỜ KẾ TOÁN XUẤT VAT', cls: 'bg-amber-100 text-amber-700' },
+  partial: { text: 'XUẤT MỘT PHẦN', cls: 'bg-royal-100 text-royal-700' },
+  issued: { text: 'ĐÃ XUẤT VAT', cls: 'bg-emerald-100 text-emerald-700' },
+  skipped: { text: 'KHÔNG XUẤT VAT', cls: 'bg-slate-200 text-slate-700' },
+};
+const vatStatus = computed(() => order.value?.vatInvoiceStatus || 'not_issued');
+const vatBadgeInfo = computed(() => VAT_LABEL[vatStatus.value] || null);
+const vatIssuedAmount = computed(() => Number(order.value?.vatIssuedAmount || 0));
+
+const vatHistory = ref([]);
+const vatHistoryOpen = ref(false);
+const vatHistoryLoading = ref(false);
+async function toggleVatHistory() {
+  vatHistoryOpen.value = !vatHistoryOpen.value;
+  if (!vatHistoryOpen.value || vatHistory.value.length) return;
+  vatHistoryLoading.value = true;
+  try {
+    const { data } = await api.get(`/orders/${order.value.id}/vat-invoices`);
+    vatHistory.value = data.invoices || [];
+  } catch {
+    vatHistory.value = [];
+  } finally {
+    vatHistoryLoading.value = false;
+  }
+}
 const orderDateVN = computed(() => formatDateVN(order.value?.orderDate || order.value?.createdAt));
 
 // Đích Zalo: ưu tiên zaloUid, fallback số điện thoại (chỉ giữ chữ số)
@@ -777,6 +805,80 @@ async function saveStageDocs() {
         </div>
         <div v-if="order.assignedSale?.fullName" class="text-[11px] text-ink-disabled mt-2">
           Phụ trách: {{ order.assignedSale.fullName }}
+        </div>
+      </div>
+
+      <!-- Trạng thái xuất VAT — chỉ hiện khi đơn đã vào quy trình xuất hoá đơn -->
+      <div v-if="vatBadgeInfo" class="bg-white border border-line-200 rounded-card p-5 shadow-card mb-3">
+        <div class="flex items-center justify-between gap-3 mb-2">
+          <div class="text-xs font-semibold text-ink-secondary uppercase">Trạng thái xuất VAT</div>
+          <span class="text-[10px] uppercase font-bold px-2 py-1 rounded" :class="vatBadgeInfo.cls">
+            {{ vatBadgeInfo.text }}
+          </span>
+        </div>
+
+        <div v-if="order.vatRequestedAt" class="text-[12px] text-ink-secondary">
+          Yêu cầu xuất lúc: {{ formatDateTimeVN(order.vatRequestedAt) }}
+        </div>
+        <div v-if="vatIssuedAmount > 0" class="text-[12px] text-ink-secondary mt-0.5">
+          Đã xuất: <span class="font-semibold text-ink-primary">{{ formatVND(vatIssuedAmount) }}</span>
+          <template v-if="vatStatus === 'partial'">
+            · còn lại {{ formatVND(Math.max(0, orderTotal - vatIssuedAmount)) }}
+          </template>
+          <template v-if="order.vatInvoiceId"> · số HĐ gần nhất: {{ order.vatInvoiceId }}</template>
+        </div>
+        <div v-if="order.vatSkipReason" class="text-[12px] text-ink-secondary mt-0.5">
+          Lý do không xuất: {{ order.vatSkipReason }}
+        </div>
+
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button
+            @click="toggleVatHistory"
+            class="h-9 px-3 rounded-btn border border-line-300 text-[13px] font-semibold text-ink-secondary hover:border-royal-700 hover:text-royal-700 transition"
+          >
+            {{ vatHistoryOpen ? 'Ẩn lịch sử xuất VAT' : 'Xem lịch sử xuất VAT' }}
+          </button>
+          <a
+            v-if="order.vatInvoiceUrl"
+            :href="order.vatInvoiceUrl"
+            target="_blank"
+            rel="noopener"
+            class="h-9 px-3 rounded-btn border border-royal-700 text-royal-700 text-[13px] font-semibold hover:bg-royal-50 transition flex items-center"
+          >
+            Xem hoá đơn
+          </a>
+        </div>
+
+        <div v-if="vatHistoryOpen" class="mt-3 border-t border-line-200 pt-3">
+          <div v-if="vatHistoryLoading" class="h-10 bg-surface-soft animate-pulse rounded"></div>
+          <div v-else-if="!vatHistory.length" class="text-[12px] text-ink-secondary">
+            Chưa có hoá đơn nào được xuất cho đơn này.
+          </div>
+          <div v-else class="space-y-2">
+            <div
+              v-for="inv in vatHistory"
+              :key="inv.id"
+              class="flex items-start justify-between gap-3 text-[12px] border border-line-200 rounded-lg px-3 py-2"
+            >
+              <div class="min-w-0">
+                <div class="font-semibold text-ink-primary">
+                  HĐ {{ inv.invoiceNumber }}
+                  <a v-if="inv.fileUrl" :href="inv.fileUrl" target="_blank" rel="noopener" class="ml-1.5 text-royal-700 underline font-normal">
+                    file
+                  </a>
+                </div>
+                <div class="text-ink-secondary">
+                  Ngày {{ String(inv.invoiceDate).slice(0, 10).split('-').reverse().join('/') }}
+                  · {{ inv.issuedBy?.fullName || '—' }}
+                </div>
+                <div v-if="inv.lookupCode" class="text-ink-secondary">
+                  Mã tra cứu: <span class="font-mono">{{ inv.lookupCode }}</span>
+                </div>
+                <div v-if="inv.note" class="text-ink-disabled truncate">{{ inv.note }}</div>
+              </div>
+              <div class="font-semibold tabular-nums shrink-0">{{ formatVND(inv.amount) }}</div>
+            </div>
+          </div>
         </div>
       </div>
 
