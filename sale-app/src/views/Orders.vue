@@ -11,6 +11,9 @@ import {
   formatDateTimeVN,
   formatRelativeTime,
 } from '../composables/useFormat';
+import VatRequestDrawer from '../components/VatRequestDrawer.vue';
+import VatConfirmDialog from '../components/VatConfirmDialog.vue';
+import VatViewDialog from '../components/VatViewDialog.vue';
 
 const router = useRouter();
 const pos = usePOSStore();
@@ -118,6 +121,96 @@ async function toggleReconcile(o) {
   }
 }
 
+// ── YÊU CẦU XUẤT VAT (anh Philip chốt 24/8/2026) ──────────────────────
+// Sale bấm trên đơn ĐÃ HOÀN TẤT → đơn vào hàng chờ để kế toán xuất hoá đơn.
+// Chưa nối API Vietinvoice: giai đoạn này chỉ ghi nhận yêu cầu.
+const vatOrder = ref(null); // đơn đang mở form VAT (null = đóng)
+// Bàn xuất VAT của kế toán (owner/admin hoặc member có cờ can_issue_vat —
+// chị Mai Hiền). Anh Philip chốt 24/8/2026: KHÔNG làm menu riêng ở sidebar,
+// vào bằng 1 nút ngay trên màn Danh sách đơn hàng này.
+const isVatDesk = computed(() => {
+  const u = auth.user;
+  // Quyền LÀM HOÁ ĐƠN — cờ riêng, KHÔNG dùng canViewAllOrders (cờ đó của người
+  // giao hàng/đối soát, họ không làm hoá đơn). Anh Philip chốt 24/8/2026.
+  return ['owner', 'admin'].includes(u?.role) || u?.canIssueVat === true;
+});
+// Số đơn đang chờ xuất — hiện lên nút để kế toán biết còn việc mà không phải mở.
+const vatPending = ref(0);
+async function loadVatPending() {
+  if (!isVatDesk.value) return;
+  try {
+    const { data } = await api.get('/vat/summary');
+    vatPending.value = data.summary?.requested?.count ?? 0;
+  } catch {
+    vatPending.value = 0;
+  }
+}
+// Lọc: '' tất cả · requested chờ xuất · issued đã xuất
+const vatFilter = ref('');
+const vatOptions = [
+  { value: '', label: 'VAT: tất cả' },
+  { value: 'requested', label: 'Chờ xuất VAT' },
+  { value: 'issued', label: 'Đã xuất VAT' },
+];
+
+// Chỉ đơn hoàn tất mới xuất hoá đơn — đơn huỷ/hoàn không phát sinh doanh thu.
+function canRequestVat(o) {
+  return (o.statusNormalized || o.status) === 'completed';
+}
+function vatBadge(o) {
+  const st = o.vatInvoiceStatus;
+  if (st === 'issued') return { label: 'Đã xuất VAT', cls: 'border-emerald-500 bg-emerald-50 text-emerald-700' };
+  if (st === 'partial') return { label: 'Xuất 1 phần', cls: 'border-royal-500 bg-royal-50 text-royal-700' };
+  if (st === 'skipped') return { label: 'Không xuất VAT', cls: 'border-line-300 bg-surface-soft text-ink-secondary' };
+  if (st === 'requested') return { label: 'Đã yêu cầu VAT', cls: 'border-amber-500 bg-amber-50 text-amber-700' };
+  return { label: 'Yêu cầu xuất VAT', cls: 'border-royal-700 text-royal-700 hover:bg-royal-50' };
+}
+// Đơn đang mở popup xem hoá đơn đã ký (null = đóng).
+const vatViewOrder = ref(null);
+// Đơn đã bắt đầu quy trình VAT → hiện thêm nút xem / sửa cạnh nhãn.
+const hasVatFlow = (o) => ['requested', 'partial', 'issued'].includes(o.vatInvoiceStatus);
+const hasVatFile = (o) => ['partial', 'issued'].includes(o.vatInvoiceStatus);
+
+// Đơn kế toán đang xác nhận đã xuất (null = đóng popup).
+const vatConfirmOrder = ref(null);
+
+/**
+ * Bấm vào nhãn VAT trên dòng đơn:
+ *  - Kế toán/quản lý + đơn đang chờ xuất (hoặc mới xuất một phần) → mở thẳng
+ *    popup "Xác nhận đã xuất" của chính đơn đó (anh Philip chốt 24/8/2026),
+ *    khỏi phải sang màn Quản lý Xuất VAT tìm lại.
+ *  - Còn lại (sale, hoặc đơn đã xong) → mở form yêu cầu để xem/sửa.
+ */
+function onVatClick(o) {
+  const st = o.vatInvoiceStatus;
+  if (isVatDesk.value && (st === 'requested' || st === 'partial')) {
+    const total = Number(totalOf(o)) || 0;
+    vatConfirmOrder.value = {
+      id: o.id,
+      orderCode: o.orderCode,
+      // Popup cần biết còn phải xuất bao nhiêu; danh sách đơn không có sẵn cột
+      // này (chỉ /vat/queue mới tính) nên tính tại chỗ.
+      remainingAmount: Math.max(0, Math.round(total) - (o.vatIssuedAmount || 0)),
+    };
+    return;
+  }
+  vatOrder.value = o;
+}
+
+// Đơn vừa gửi yêu cầu — cập nhật tại chỗ để khỏi tải lại cả danh sách.
+function onVatSaved(updated) {
+  const row = orders.value.find((o) => o.id === updated.id);
+  if (row) {
+    row.vatInvoiceStatus = updated.vatInvoiceStatus;
+    row.vatRequestedAt = updated.vatRequestedAt;
+    row.vatInvoiceId = updated.vatInvoiceId;
+    row.vatIssuedAt = updated.vatIssuedAt;
+  }
+  // Đang lọc theo VAT thì dòng này có thể không còn thuộc bộ lọc → tải lại.
+  if (vatFilter.value !== '') load();
+  loadVatPending();
+}
+
 // Bấm nhanh các mốc hay dùng thay vì chọn tay 2 lần.
 const quickPresets = [
   { label: 'Hôm nay', calc: () => ({ from: today, to: today }) },
@@ -181,6 +274,7 @@ async function load() {
     if (apiStatus) params.status = apiStatus;
     if (q.value.trim()) params.search = q.value.trim();
     if (reconciledFilter.value !== '') params.reconciled = reconciledFilter.value;
+    if (vatFilter.value !== '') params.vatStatus = vatFilter.value;
 
     const { data } = await api.get('/orders', { params });
     orders.value = data.orders || [];
@@ -208,7 +302,7 @@ async function loadCounts() {
 }
 
 // Đổi ngày tự chọn cũng phải tải lại (cả list lẫn số đếm trên tab, để 2 chỗ khớp nhau).
-watch([q, status, range, customFrom, customTo, reconciledFilter], () => {
+watch([q, status, range, customFrom, customTo, reconciledFilter, vatFilter], () => {
   page.value = 1;
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(load, 250);
@@ -221,6 +315,7 @@ watch(page, load);
 onMounted(() => {
   load();
   loadCounts();
+  loadVatPending();
 });
 
 function totalOf(o) {
@@ -281,6 +376,23 @@ const pageNumbers = computed(() => {
         <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Danh sách Đơn hàng</h1>
         <p class="text-xs text-ink-secondary mt-0.5">{{ total.toLocaleString('vi-VN') }} đơn</p>
       </div>
+      <!-- Quản lý Xuất VAT — chỉ kế toán/quản lý thấy. Sale theo dõi VAT bằng
+           nhãn trên từng dòng đơn, không cần vào đây. -->
+      <button
+        v-if="isVatDesk"
+        @click="router.push('/vat/requested')"
+        class="h-10 px-4 rounded-btn border border-royal-700 text-royal-700 hover:bg-royal-50 text-sm font-semibold flex items-center gap-2 transition"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 4h16v16l-2.5-1.5L15 20l-2.5-1.5L10 20l-2.5-1.5L5 20 4 19z" />
+          <line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="13" y2="13" />
+        </svg>
+        Quản lý Xuất VAT
+        <span
+          v-if="vatPending"
+          class="text-[11px] font-bold bg-amber-500 text-navy-900 px-1.5 py-0.5 rounded-full"
+        >{{ vatPending }}</span>
+      </button>
       <button
         @click="router.push('/pos')"
         class="h-10 px-4 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-2"
@@ -344,6 +456,13 @@ const pageNumbers = computed(() => {
           class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm lg:col-span-1"
         >
           <option v-for="opt in reconciledOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+        <!-- Lọc hàng chờ xuất hoá đơn VAT — kế toán mở "Chờ xuất VAT" là ra việc cần làm -->
+        <select
+          v-model="vatFilter"
+          class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm lg:col-span-1"
+        >
+          <option v-for="opt in vatOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
       </div>
 
@@ -446,6 +565,53 @@ const pageNumbers = computed(() => {
             Nợ {{ formatVND(o.debtAmountValue) }}
           </div>
         </div>
+        <!-- Yêu cầu xuất hoá đơn VAT — chỉ đơn đã hoàn tất. Đơn đã gửi thì nút đổi
+             thành nhãn trạng thái, bấm lại để xem/sửa cho tới khi kế toán xuất. -->
+        <button
+          v-if="canRequestVat(o)"
+          @click.stop="onVatClick(o)"
+          :title="o.vatInvoiceStatus === 'issued' || o.vatInvoiceStatus === 'partial'
+            ? `Đã xuất hoá đơn${o.vatInvoiceId ? ' số ' + o.vatInvoiceId : ''} ${formatDateTimeVN(o.vatIssuedAt)}`
+            : o.vatInvoiceStatus === 'skipped'
+              ? `Không xuất hoá đơn — ${o.vatSkipReason || 'không rõ lý do'}`
+              : o.vatInvoiceStatus === 'requested'
+              ? (isVatDesk
+                  ? `Yêu cầu lúc ${formatDateTimeVN(o.vatRequestedAt)} — bấm để xác nhận đã xuất`
+                  : `Đã yêu cầu xuất VAT ${formatDateTimeVN(o.vatRequestedAt)} — bấm để xem/sửa`)
+              : 'Yêu cầu kế toán xuất hoá đơn VAT cho đơn này'"
+          class="shrink-0 h-8 flex items-center justify-center rounded-lg border text-[12px] font-semibold transition w-8 sm:w-auto sm:px-2.5"
+          :class="vatBadge(o).cls"
+        >
+          <!-- Điện thoại chỉ đủ chỗ cho icon; máy tính hiện đủ chữ. -->
+          <svg class="w-4 h-4 sm:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h16v16l-2.5-1.5L15 20l-2.5-1.5L10 20l-2.5-1.5L5 20 4 19z" />
+            <line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="13" y2="13" />
+          </svg>
+          <span class="hidden sm:inline">{{ vatBadge(o).label }}</span>
+        </button>
+        <!-- Xem hoá đơn đã ký (chỉ đơn đã có hoá đơn) -->
+        <button
+          v-if="hasVatFile(o)"
+          @click.stop="vatViewOrder = o"
+          title="Xem hoá đơn VAT đã xuất — mở/tải file gửi khách"
+          class="shrink-0 h-8 w-8 hidden sm:flex items-center justify-center rounded-lg border border-line-300 text-ink-secondary hover:border-royal-700 hover:text-royal-700 transition"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+        <!-- Sửa thông tin xuất VAT / huỷ yêu cầu (sale tự xử khi khách đổi ý) -->
+        <button
+          v-if="hasVatFlow(o)"
+          @click.stop="vatOrder = o"
+          title="Sửa thông tin xuất VAT / huỷ yêu cầu"
+          class="shrink-0 h-8 w-8 hidden sm:flex items-center justify-center rounded-lg border border-line-300 text-ink-secondary hover:border-royal-700 hover:text-royal-700 transition"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+            <path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z" />
+          </svg>
+        </button>
         <!-- Ô tick ĐÃ ĐỐI SOÁT chứng từ (Mai Hiền phụ trách). Chỉ người xem được
              full đơn mới thấy ô này — sale thường không tự tick đơn của mình. -->
         <button
@@ -516,5 +682,18 @@ const pageNumbers = computed(() => {
         >›</button>
       </div>
     </div>
+
+    <!-- Form trượt "Yêu cầu xuất VAT" (sale) -->
+    <VatRequestDrawer :order="vatOrder" @close="vatOrder = null" @saved="onVatSaved" />
+
+    <!-- Popup xem hoá đơn đã ký + tải về gửi khách -->
+    <VatViewDialog :order="vatViewOrder" @close="vatViewOrder = null" />
+
+    <!-- Popup "Xác nhận đã xuất VAT" (kế toán bấm thẳng từ dòng đơn) -->
+    <VatConfirmDialog
+      :order="vatConfirmOrder"
+      @close="vatConfirmOrder = null"
+      @saved="onVatSaved"
+    />
   </div>
 </template>

@@ -26,6 +26,9 @@ const routes = [
       { path: 'imports/new', name: 'import-new', component: () => import('../views/ImportForm.vue') },
       { path: 'imports/:id/edit', name: 'import-edit', component: () => import('../views/ImportForm.vue') },
       { path: 'imports/:id', name: 'import-detail', component: () => import('../views/ImportDetail.vue') },
+      // Màn "Xuất VAT" của kế toán — chỉ người xem được full đơn mới vào được
+      // (chặn ở beforeEach bên dưới, sale thường bị đá về Tổng quan).
+      { path: 'vat/:status?', name: 'vat', component: () => import('../views/VatIssue.vue'), meta: { vatDesk: true } },
       { path: 'promotions', name: 'promotions', component: () => import('../views/Promotions.vue') },
       { path: 'reports', name: 'reports', component: () => import('../views/Reports.vue') },
       { path: 'settings', name: 'settings', component: () => import('../views/Settings.vue') },
@@ -47,6 +50,12 @@ router.beforeEach((to) => {
   }
   if (to.name === 'login' && auth.isAuthenticated) {
     return { name: 'home' };
+  }
+  // Bàn làm việc của kế toán: owner/admin hoặc member được cấp cờ canViewAllOrders.
+  if (to.meta.vatDesk) {
+    const u = auth.user;
+    const allowed = ['owner', 'admin'].includes(u?.role) || u?.canIssueVat === true;
+    if (!allowed) return { name: 'home' };
   }
   return true;
 });
