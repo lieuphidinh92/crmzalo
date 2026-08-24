@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { api } from '../api/client';
+import { useScreenCache } from '../composables/use-screen-cache';
 import FollowUpRow from '../components/FollowUpRow.vue';
 
 const customers = ref([]);
@@ -8,8 +9,8 @@ const total = ref(0);
 const loading = ref(false);
 const errorMsg = ref('');
 
-async function load() {
-  loading.value = true;
+async function load(silent = false) {
+  if (!silent) loading.value = true;
   errorMsg.value = '';
   try {
     const { data } = await api.get('/sale-app/follow-up/customers');
@@ -24,7 +25,7 @@ async function load() {
   }
 }
 
-onMounted(load);
+useScreenCache(load, { ttl: 60_000 });
 </script>
 
 <template>

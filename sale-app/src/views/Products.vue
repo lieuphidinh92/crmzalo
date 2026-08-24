@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api/client';
+import { useScreenCache } from '../composables/use-screen-cache';
 import { usePOSStore } from '../stores/pos';
 import { useAuthStore } from '../stores/auth';
 import { tierLabel } from '../composables/useFormat';
@@ -113,8 +114,8 @@ async function loadBrands() {
   }
 }
 
-async function load() {
-  loading.value = true;
+async function load(silent = false) {
+  if (!silent) loading.value = true;
   errorMsg.value = '';
   try {
     const { data } = await api.get('/sale-app/products', {
@@ -148,10 +149,12 @@ watch([q, filter, sort, brandId], () => {
 watch(page, load);
 watch(tier, load);
 
-onMounted(async () => {
-  await loadBrands();
-  await load();
-});
+// Trước đây chờ loadBrands() xong mới gọi load() → 2 lượt mạng nối đuôi nhau.
+// Hai cái không phụ thuộc nhau nên gọi song song, tiết kiệm 1 lượt (~85ms).
+useScreenCache(
+  (silent) => Promise.all([loadBrands(), load(silent)]),
+  { ttl: 300_000 },
+);
 
 function addToCart(product) {
   pos.addProduct({

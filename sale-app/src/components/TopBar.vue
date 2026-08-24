@@ -1,4 +1,5 @@
 <script setup>
+import { bgTasks } from '../composables/use-screen-cache';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
@@ -116,6 +117,12 @@ onBeforeUnmount(() => {
     class="sticky top-0 z-30 bg-white border-b border-line-200"
     style="padding-top: env(safe-area-inset-top)"
   >
+    <!-- Vạch mảnh báo "đang làm mới ngầm". Có vì từ 25/8/2026 màn hình hiện
+         NGAY dữ liệu cũ khi quay lại rồi mới cập nhật — không có dấu hiệu này
+         thì người dùng không biết số đang được làm mới. -->
+    <div v-if="bgTasks > 0" class="absolute inset-x-0 top-0 h-0.5 overflow-hidden">
+      <div class="h-full w-1/3 bg-royal-700 animate-bg-sweep"></div>
+    </div>
     <!-- Mobile header -->
     <div class="lg:hidden h-14 px-4 flex items-center justify-between">
       <BrandLogo size="sm" theme="light" :show-tagline="true" />
@@ -247,3 +254,13 @@ onBeforeUnmount(() => {
     <NotificationDrawer :open="showNotifDrawer" @close="showNotifDrawer = false" />
   </header>
 </template>
+
+<style scoped>
+@keyframes bg-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.animate-bg-sweep {
+  animation: bg-sweep 1.1s ease-in-out infinite;
+}
+</style>

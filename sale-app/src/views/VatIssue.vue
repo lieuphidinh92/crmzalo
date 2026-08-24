@@ -9,12 +9,13 @@
  * `can_issue_vat` (chị Mai Hiền). Cố ý KHÔNG dùng `canViewAllOrders` — cờ đó
  * của người giao hàng/đối soát (anh Huy), họ không làm hoá đơn.
  */
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { useAuthStore } from '../stores/auth';
 import { formatVND, formatDateTimeVN, formatDateVN } from '../composables/useFormat';
 import VatConfirmDialog from '../components/VatConfirmDialog.vue';
+import { useScreenCache } from '../composables/use-screen-cache';
 
 const route = useRoute();
 const router = useRouter();
@@ -78,8 +79,8 @@ async function loadSummary() {
   }
 }
 
-async function load() {
-  loading.value = true;
+async function load(silent = false) {
+  if (!silent) loading.value = true;
   errorMsg.value = '';
   try {
     const params = { status: status.value, page: page.value, limit: limit.value, ...dateParams() };
@@ -106,11 +107,10 @@ async function loadStaff() {
   }
 }
 
-onMounted(() => {
-  loadStaff();
-  loadSummary();
-  load();
-});
+useScreenCache(
+  (silent) => Promise.all([loadStaff(), loadSummary(), load(silent)]),
+  { ttl: 45_000 },
+);
 
 let timer = null;
 watch([status, saleId, dateFilter, search], () => {
