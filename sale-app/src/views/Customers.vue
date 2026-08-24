@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { api } from '../api/client';
+import { useScreenCache } from '../composables/use-screen-cache';
 import CustomerListItem from '../components/CustomerListItem.vue';
 import CustomerDetailDrawer from '../components/CustomerDetailDrawer.vue';
 import NewCustomerDialog from '../components/NewCustomerDialog.vue';
@@ -62,8 +63,8 @@ const filterChips = [
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)));
 
-async function load() {
-  loading.value = true;
+async function load(silent = false) {
+  if (!silent) loading.value = true;
   errorMsg.value = '';
   try {
     const { data } = await api.get('/sale-app/customers', {
@@ -96,7 +97,7 @@ watch([q, tier, customerType, filter, sort, rank], () => {
 });
 watch(page, load);
 
-onMounted(load);
+useScreenCache(load, { ttl: 120_000 });
 
 function onCreated(customer) {
   showCreate.value = false;

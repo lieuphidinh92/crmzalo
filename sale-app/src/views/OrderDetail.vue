@@ -558,11 +558,6 @@ async function submitAdvance() {
   }
 }
 
-// ── Xuất VAT (Misa) — nút trước, nối API sau ──
-function exportVatMisa() {
-  flashShareMsg('Tính năng Xuất VAT sang Misa đang được phát triển — sẽ nối API sau.');
-}
-
 async function submitCancel() {
   if (!cancelReason.value.trim()) {
     cancelError.value = 'Vui lòng nhập lý do huỷ';
@@ -1311,14 +1306,6 @@ async function saveStageDocs() {
                 </label>
               </div>
             </div>
-            <!-- Xuất VAT sang Misa (nút trước, nối API sau) -->
-            <button
-              type="button"
-              @click="exportVatMisa"
-              class="w-full h-10 rounded-xl border border-royal-300 text-royal-700 font-semibold hover:bg-royal-50 flex items-center justify-center gap-2 text-sm"
-            >
-              🧾 Xuất VAT (Misa)
-            </button>
           </div>
         </template>
 

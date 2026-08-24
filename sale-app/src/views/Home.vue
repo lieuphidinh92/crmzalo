@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import { api } from '../api/client';
+import { useScreenCache } from '../composables/use-screen-cache';
 import { useAuthStore } from '../stores/auth';
 import { formatVND, formatDateTimeVN, statusLabel, statusColor } from '../composables/useFormat';
 import KpiCard from '../components/KpiCard.vue';
@@ -33,8 +34,9 @@ const processingOrders = computed(
   () => (stats.value?.recent_orders ?? []).filter((o) => o.status !== 'completed' && o.status !== 'cancelled'),
 );
 
-async function load() {
-  loading.value = true;
+// silent = làm mới ngầm khi quay lại màn: giữ số cũ trên màn, không chớp khung chờ.
+async function load(silent = false) {
+  if (!silent) loading.value = true;
   errorMsg.value = '';
   try {
     const [s, tp, ls, ds] = await Promise.all([
@@ -54,7 +56,8 @@ async function load() {
   }
 }
 
-onMounted(load);
+// Số liệu hôm nay đổi liên tục → làm mới nếu rời màn quá 30 giây.
+useScreenCache(load, { ttl: 30_000 });
 
 const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
@@ -14,6 +14,7 @@ import {
 import VatRequestDrawer from '../components/VatRequestDrawer.vue';
 import VatConfirmDialog from '../components/VatConfirmDialog.vue';
 import VatViewDialog from '../components/VatViewDialog.vue';
+import { useScreenCache } from '../composables/use-screen-cache';
 
 const router = useRouter();
 const pos = usePOSStore();
@@ -106,15 +107,20 @@ const reconciledOptions = [
 
 async function toggleReconcile(o) {
   if (reconcilingId.value) return;
-  reconcilingId.value = o.id;
   const next = !o.reconciledAt;
+  const before = o.reconciledAt;
+  // PHẢN HỒI TỨC THÌ: tick đổi màu ngay, không bắt chị Hiền chờ ~85ms mạng cho
+  // từng đơn (một buổi đối soát vài chục đơn thì chờ đó cộng lại rất khó chịu).
+  // Server báo lỗi thì trả lại đúng trạng thái cũ + hiện thông báo.
+  o.reconciledAt = next ? new Date().toISOString() : null;
+  reconcilingId.value = o.id;
   try {
     const { data } = await api.patch(`/orders/${o.id}/reconcile`, { reconciled: next });
-    // Cập nhật ngay tại chỗ, không tải lại cả danh sách (đỡ nhảy vị trí đang xem).
     o.reconciledAt = data.reconciledAt ?? null;
     // Nếu đang lọc theo tình trạng đối soát thì dòng này không còn thuộc bộ lọc → tải lại.
-    if (reconciledFilter.value !== '') load();
+    if (reconciledFilter.value !== '') load(true);
   } catch (err) {
+    o.reconciledAt = before; // trả lại như cũ
     errorMsg.value = err.response?.data?.error || 'Không cập nhật được đối soát';
   } finally {
     reconcilingId.value = null;
@@ -206,8 +212,8 @@ function onVatSaved(updated) {
     row.vatInvoiceId = updated.vatInvoiceId;
     row.vatIssuedAt = updated.vatIssuedAt;
   }
-  // Đang lọc theo VAT thì dòng này có thể không còn thuộc bộ lọc → tải lại.
-  if (vatFilter.value !== '') load();
+  // Đang lọc theo VAT thì dòng này có thể không còn thuộc bộ lọc → tải lại NGẦM.
+  if (vatFilter.value !== '') load(true);
   loadVatPending();
 }
 
@@ -259,10 +265,11 @@ function dateParams() {
   return { from: daysAgo(parseInt(range.value)) };
 }
 
-async function load() {
+async function load(silent = false) {
   const dates = dateParams();
   if (dates === null) { loading.value = false; return; } // khoảng ngày không hợp lệ
-  loading.value = true;
+  // silent = làm mới ngầm khi quay lại màn: giữ danh sách cũ, không chớp khung chờ.
+  if (!silent) loading.value = true;
   errorMsg.value = '';
   try {
     const apiStatus = statusTabs.find((c) => c.key === status.value)?.api ?? '';
@@ -312,11 +319,12 @@ watch([range, customFrom, customTo], loadCounts);
 
 watch(page, load);
 
-onMounted(() => {
-  load();
-  loadCounts();
-  loadVatPending();
-});
+// Quay lại màn: giữ nguyên danh sách + bộ lọc + vị trí cuộn, chỉ làm mới ngầm
+// nếu rời màn quá 45 giây (đơn mới vào liên tục trong giờ làm).
+useScreenCache(
+  (silent) => Promise.all([load(silent), loadCounts(), loadVatPending()]),
+  { ttl: 45_000 },
+);
 
 function totalOf(o) {
   return o.totalAmountValue ?? o.totalAmount ?? 0;
