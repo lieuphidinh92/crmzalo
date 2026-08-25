@@ -39,6 +39,27 @@ import {
   toNumber,
   reqUser,
 } from '../orders/order-service.js';
+import { normalizeTaxCode } from '../orders/tax-lookup-routes.js';
+
+/**
+ * Tách tỉnh/TP từ địa chỉ để form tạo KH khỏi cần ô Tỉnh/TP riêng.
+ * Địa chỉ Cục Thuế có dạng "Số 6/304 Lũng Đông, Phường Hải An, TP Hải Phòng, Việt Nam".
+ * Cột `contacts.province` đang lưu KHÔNG tiền tố ("Hà Nội", "Hải Phòng") — phải cắt
+ * "TP/Tỉnh/Thành phố", nếu không bộ lọc theo tỉnh sẽ tách "Hà Nội" và "TP Hà Nội"
+ * thành 2 nhóm khác nhau.
+ */
+export function provinceFromAddress(address?: string | null): string | null {
+  if (!address) return null;
+  const parts = address
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  while (parts.length && /^việt\s*nam$/i.test(parts[parts.length - 1])) parts.pop();
+  const last = parts[parts.length - 1];
+  if (!last) return null;
+  const cleaned = last.replace(/^(tp\.?|thành phố|tỉnh)\s+/i, '').trim();
+  return cleaned || null;
+}
 
 // ── Label maps cho file Excel xuất KH (sale-app) ──────────────────────────
 const SALE_APP_TIER_LABELS: Record<string, string> = {
@@ -696,8 +717,16 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const term = q.trim();
 
       const where: any = { orgId: user.orgId };
-      // Tìm khách khi LÊN ĐƠN: mọi sale tìm được MỌI khách của công ty (để bán
-      // cho khách cũ / khách import gán lệch). Mục "Khách hàng" vẫn theo phân công.
+      // Phạm vi tìm khách khi LÊN ĐƠN — anh Philip chốt 25/8/2026:
+      // "khách của ai người ấy lên đơn, không lên thay người khác được, trừ admin".
+      // ⚠️ ĐẢO NGƯỢC luật cũ (trước đây ô này cố ý org-wide). Member thấy:
+      //   - khách được phân cho mình, VÀ
+      //   - khách CHƯA ai phụ trách (`assignedUserId = null`) — lên đơn xong tự nhận
+      //     về mình ở POST /orders, để nhóm khách vô chủ hết dần thay vì tắc bán hàng.
+      const isManager = user.role === 'owner' || user.role === 'admin';
+      if (!isManager) {
+        where.OR = [{ assignedUserId: user.id }, { assignedUserId: null }];
+      }
       if (term) {
         // Tách từ + chuẩn hoá SĐT → gõ đảo thứ tự / số liền vẫn ra.
         const ids = await searchContactIdsByTerm(user.orgId, null, term);
@@ -745,7 +774,26 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         rank_score: c.rankScore == null ? null : toNumber(c.rankScore),
       }));
 
-      return { customers };
+      // Member gõ ra 0 kết quả mà khách ĐANG tồn tại (của sale khác) → nói rõ ai
+      // phụ trách. Không có câu này thì sale tưởng chưa có khách rồi tạo mới, và
+      // bị chặn trùng SĐT ở bước tạo → bế tắc, phải gọi hỏi nhau.
+      let hint: string | null = null;
+      if (!isManager && term && customers.length === 0) {
+        const owned = await prisma.contact.findMany({
+          where: { orgId: user.orgId, id: { in: where.id?.in ?? [] } },
+          select: { fullName: true, storeName: true, assignedUser: { select: { fullName: true } } },
+          take: 3,
+        });
+        if (owned.length) {
+          const names = [
+            ...new Set(owned.map((c: any) => c.assignedUser?.fullName).filter(Boolean)),
+          ];
+          const who = names.length ? names.join(', ') : 'nhân viên khác';
+          hint = `Khách này do ${who} phụ trách nên không hiện ở đây. Nhờ quản lý chuyển nếu khách đặt qua anh/chị.`;
+        }
+      }
+
+      return { customers, hint };
     } catch (err) {
       logger.error('[sale-app] customers/search error:', err);
       return reply.status(500).send({ error: 'Lỗi tìm khách hàng' });
@@ -779,8 +827,11 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         storeName?: string;
         province?: string;
         address?: string;
+        invoiceTaxCode?: string | null;
+        invoiceAddress?: string | null;
         policyTier?: string;
         creditLimit?: number | string | null;
+        assignedUserId?: string | null;
       };
 
       if (!body.fullName?.trim()) {
@@ -788,6 +839,16 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       }
       if (!body.phone?.trim()) {
         return reply.status(400).send({ error: 'Số điện thoại là bắt buộc' });
+      }
+
+      // MST khai luôn lúc tạo khách (25/8/2026) → lần sau xin hoá đơn tự điền sẵn.
+      const taxCode = body.invoiceTaxCode?.trim()
+        ? normalizeTaxCode(body.invoiceTaxCode)
+        : null;
+      if (body.invoiceTaxCode?.trim() && !taxCode) {
+        return reply
+          .status(400)
+          .send({ error: 'Mã số thuế phải là 10 số (hoặc 13 số dạng 1234567890-001).' });
       }
 
       // Trùng SĐT → báo rõ (thay vì lỗi 500 chung chung). Sale tìm là ra khách đó.
@@ -802,20 +863,70 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // Trùng MST = gần như chắc chắn tạo lại đơn vị đã có → chia đôi công nợ và
+      // doanh số của cùng 1 pháp nhân. Chặn, nhưng chỉ ra đúng khách cần chọn.
+      if (taxCode) {
+        const dupTax = await prisma.contact.findFirst({
+          where: { orgId: user.orgId, invoiceTaxCode: taxCode },
+          select: { fullName: true, storeName: true, phone: true },
+        });
+        if (dupTax) {
+          const who = dupTax.storeName || dupTax.fullName || 'khách đã có';
+          return reply.status(409).send({
+            error: `MST ${taxCode} đã có khách: ${who}${dupTax.phone ? ` (${dupTax.phone})` : ''}. Gõ tên hoặc SĐT đó vào ô tìm khách để chọn. Nếu đúng là đơn vị khác thì để trống MST rồi bổ sung sau.`,
+          });
+        }
+      }
+
+      // Sale phụ trách: chỉ owner/admin được gán cho người khác (member tự nhận),
+      // và người được gán phải cùng tổ chức — nếu không thì rơi về chính mình.
+      let assignedUserId = user.id;
+      if (body.assignedUserId && body.assignedUserId !== user.id) {
+        if (user.role !== 'owner' && user.role !== 'admin') {
+          return reply
+            .status(403)
+            .send({ error: 'Chỉ chủ/quản lý mới gán khách cho nhân viên khác.' });
+        }
+        const target = await prisma.user.findFirst({
+          where: { id: body.assignedUserId, orgId: user.orgId },
+          select: { id: true },
+        });
+        if (!target) {
+          return reply.status(400).send({ error: 'Nhân viên được gán không thuộc công ty.' });
+        }
+        assignedUserId = target.id;
+      }
+
       const contact = await prisma.contact.create({
         data: {
           orgId: user.orgId,
           fullName: body.fullName.trim(),
           phone: body.phone.trim(),
           storeName: body.storeName?.trim() || null,
-          province: body.province?.trim() || null,
+          // Bỏ ô Tỉnh/TP khỏi form (25/8/2026) → tự tách từ địa chỉ để lọc/báo cáo
+          // theo tỉnh vẫn chạy. Client cũ vẫn gửi `province` thì tôn trọng số đó.
+          province:
+            body.province?.trim() ||
+            provinceFromAddress(body.invoiceAddress || body.address) ||
+            null,
           address: body.address?.trim() || null,
+          invoiceTaxCode: taxCode,
+          // Tên đơn vị dùng cho cả tên cửa hàng lẫn tên trên hoá đơn.
+          invoiceBuyerName: body.storeName?.trim() || null,
+          invoiceAddress: body.invoiceAddress?.trim() || null,
+          // Hộ kinh doanh khai theo tên đơn vị; còn lại coi là công ty. Sale vẫn
+          // đổi được ở form xin hoá đơn, đây chỉ là giá trị điền sẵn.
+          invoiceBuyerType: taxCode
+            ? /hộ kinh doanh/i.test(body.storeName || '')
+              ? 'ho_kinh_doanh'
+              : 'cong_ty'
+            : null,
           policyTier: body.policyTier?.trim() || null,
           creditLimit:
             body.creditLimit == null || body.creditLimit === ''
               ? null
               : Math.max(0, Math.round(Number(body.creditLimit))),
-          assignedUserId: user.id,
+          assignedUserId,
           source: 'sale_app',
           stage: 'tiep_can',
           stageUpdatedAt: new Date(),
@@ -1446,6 +1557,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         notes?: string;
         internalNote?: string;
         creditLimit?: number | string | null;
+        assignedUserId?: string | null;
       };
 
       const where: any = { id, orgId: user.orgId };
@@ -1476,6 +1588,30 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             : Math.max(0, Math.round(Number(body.creditLimit)));
       }
 
+      // Đổi SALE PHỤ TRÁCH — chỉ chủ/quản lý (anh Philip chốt 25/8/2026).
+      // ⛔ Member tự đổi được là vô hiệu hoá luôn luật "khách của ai người ấy lên
+      // đơn": chỉ cần gán khách của người khác về mình là bán được.
+      if (body.assignedUserId !== undefined) {
+        if (user.role !== 'owner' && user.role !== 'admin') {
+          return reply
+            .status(403)
+            .send({ error: 'Chỉ chủ/quản lý mới đổi được sale phụ trách.' });
+        }
+        if (body.assignedUserId) {
+          const staff = await prisma.user.findFirst({
+            where: { id: body.assignedUserId, orgId: user.orgId, isActive: true },
+            select: { id: true },
+          });
+          if (!staff) {
+            return reply.status(400).send({ error: 'Nhân viên được gán không hợp lệ.' });
+          }
+          data.assignedUserId = staff.id;
+        } else {
+          // Gán rỗng = trả khách về nhóm "chưa ai phụ trách" (ai lên đơn thì nhận).
+          data.assignedUserId = null;
+        }
+      }
+
       const updated = await prisma.contact.update({
         where: { id },
         data,
@@ -1491,6 +1627,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           notes: true,
           internalNote: true,
           creditLimit: true,
+          // Trả về NV phụ trách mới để màn Khách hàng đổi nhãn ngay, khỏi tải lại.
+          assignedUserId: true,
+          assignedUser: { select: { id: true, fullName: true } },
         },
       });
 
@@ -1507,6 +1646,12 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           notes: updated.notes,
           internal_note: updated.internalNote,
           credit_limit: updated.creditLimit == null ? null : toNumber(updated.creditLimit),
+          // Cùng hình dạng với GET chi tiết (`assigned_user: {id, name}`) để màn
+          // Khách hàng đổi nhãn NV phụ trách ngay sau khi lưu.
+          assigned_user_id: updated.assignedUserId,
+          assigned_user: updated.assignedUser
+            ? { id: updated.assignedUser.id, name: updated.assignedUser.fullName }
+            : null,
         },
       };
     } catch (err) {
@@ -2330,14 +2475,39 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       // Verify contact + products belong to this org
       const contact = await prisma.contact.findFirst({
         where: { id: body.contactId, orgId: user.orgId },
-        select: { id: true, assignedUserId: true, address: true },
+        select: {
+          id: true,
+          assignedUserId: true,
+          address: true,
+          assignedUser: { select: { fullName: true } },
+        },
       });
       if (!contact) return reply.status(404).send({ error: 'Khách hàng không tồn tại' });
+
+      // ── Phạm vi lên đơn (anh Philip chốt 25/8/2026) ──────────────────────
+      // "Khách của ai người ấy lên đơn, không lên thay người khác được, trừ admin."
+      // ⛔ Phải chặn ở ĐÂY, không phải chỉ ẩn ở ô tìm khách: sale nào biết
+      // `contactId` (đơn cũ, link, F12) là vẫn POST được nếu backend không kiểm.
+      const isManager = user.role === 'owner' || user.role === 'admin';
+      if (!isManager && contact.assignedUserId && contact.assignedUserId !== user.id) {
+        return reply.status(403).send({
+          error: `Khách này do ${contact.assignedUser?.fullName || 'nhân viên khác'} phụ trách. Nhờ quản lý chuyển khách trước khi lên đơn.`,
+        });
+      }
+      // Khách CHƯA ai phụ trách → người lên đơn tự nhận (nhóm khách vô chủ hết dần).
+      const claimUnassignedContact = !contact.assignedUserId;
 
       // Nhân viên sale: ưu tiên lựa chọn từ form (nếu hợp lệ trong org) → NV phụ
       // trách cũ của KH (lịch sử) → NV đang đăng nhập (khách mới chưa có NV).
       let assignedSaleId = contact.assignedUserId ?? user.id;
       if (body.assignedSaleId) {
+        // Member KHÔNG được ghi doanh số sang tên người khác (cũng là cách lách
+        // luật phạm vi ở trên). Chỉ quản lý mới đổi được nhân viên bán.
+        if (!isManager && body.assignedSaleId !== user.id) {
+          return reply
+            .status(403)
+            .send({ error: 'Chỉ chủ/quản lý mới đổi được nhân viên bán của đơn.' });
+        }
         const staff = await prisma.user.findFirst({
           where: { id: body.assignedSaleId, orgId: user.orgId, isActive: true },
           select: { id: true },
@@ -2420,6 +2590,15 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             paidAmount,
           },
         });
+
+        // Khách chưa ai phụ trách → gán luôn cho nhân viên bán của đơn này, trong
+        // CÙNG transaction với đơn (đơn lỗi thì không để lại việc gán nửa vời).
+        if (claimUnassignedContact) {
+          await tx.contact.update({
+            where: { id: contact.id },
+            data: { assignedUserId: assignedSaleId },
+          });
+        }
 
         for (const it of body.items!) {
           const product = productMap.get(it.productId)!;

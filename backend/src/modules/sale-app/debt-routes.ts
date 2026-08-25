@@ -11,6 +11,7 @@
  *  POST /api/v1/sale-app/debt/payments/:id/reverse   → đảo bút toán      [owner/admin]
  *  GET  /api/v1/sale-app/debt/customers/:id/payments → lịch sử thu nợ
  *  GET  /api/v1/sale-app/debt/customers/:id/ledger   → sổ chi tiết công nợ (Nợ/Có + số dư luỹ kế)
+ *  GET  /api/v1/sale-app/debt/update-log             → lịch sử KẾ TOÁN nhập liệu [owner/admin]
  *  POST /api/v1/sale-app/uploads/proof               → upload ảnh chứng từ [owner/admin]
  *
  * Scope: member sees debt on orders they're assigned to / created
@@ -852,6 +853,189 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
         }
         logger.error('[sale-app] uploads/proof error:', err);
         return reply.status(500).send({ error: 'Lỗi upload ảnh chứng từ' });
+      }
+    },
+  );
+  // ── GET /api/v1/sale-app/debt/update-log ─ LỊCH SỬ KẾ TOÁN CẬP NHẬT ─────
+  // Anh Philip 25/8/2026: "nhiều khi kế toán quên update, anh còn check được xem
+  // bạn ấy cập nhật đến đâu rồi".
+  //
+  // ⚠️ KHÁC `debt/ledger`: sổ nhật ký xếp theo NGÀY GIAO DỊCH để đối chiếu số dư;
+  // bảng này xếp theo THỜI ĐIỂM NHẬP LIỆU (`created_at`) và trả về AI nhập +
+  // nhập TRỄ mấy ngày so với ngày thu thật — đó mới là thứ đo được "quên update".
+  // Chỉ owner/admin (giống mọi thứ ghi/xem công nợ toàn công ty).
+  app.get(
+    '/api/v1/sale-app/debt/update-log',
+    { preHandler: requireRole('owner', 'admin') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = reqUser(request);
+        const query = request.query as {
+          from?: string; to?: string; q?: string; userId?: string;
+          page?: string; pageSize?: string;
+        };
+
+        const isDate = (x?: string) => /^\d{4}-\d{2}-\d{2}$/.test(x || '');
+        const page = Math.max(1, parseInt(query.page || '1', 10) || 1);
+        const pageSize = Math.min(200, Math.max(10, parseInt(query.pageSize || '50', 10) || 50));
+
+        // Lọc theo NGÀY NHẬP, 2 đầu cùng hệ quy chiếu giờ VN. Để `new Date(from)`
+        // trơ là nửa đêm UTC = 07:00 VN → sót phiếu nhập lúc rạng sáng (bài học
+        // 4/8/2026 ở /api/v1/orders).
+        const createdFilter: any = {};
+        if (isDate(query.from)) createdFilter.gte = new Date(query.from + 'T00:00:00');
+        if (isDate(query.to)) createdFilter.lte = new Date(query.to + 'T23:59:59');
+
+        const where: any = { orgId: user.orgId };
+        if (Object.keys(createdFilter).length) where.createdAt = createdFilter;
+        if (query.userId) where.createdById = query.userId;
+        const q = (query.q || '').trim();
+        if (q) {
+          where.contact = {
+            OR: [
+              { fullName: { contains: q, mode: 'insensitive' } },
+              { storeName: { contains: q, mode: 'insensitive' } },
+              { phone: { contains: q } },
+            ],
+          };
+        }
+
+        const [total, pays] = await Promise.all([
+          prisma.customerPayment.count({ where }),
+          prisma.customerPayment.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+            select: {
+              id: true,
+              amount: true,
+              paymentDate: true,
+              paymentMethod: true,
+              reference: true,
+              note: true,
+              proofUrl: true,
+              allocations: true,
+              createdAt: true,
+              createdById: true,
+              reversedAt: true,
+              reversedById: true,
+              contact: { select: { id: true, fullName: true, storeName: true, phone: true } },
+            },
+          }),
+        ]);
+
+        // `created_by` / `reversed_by` là cột String, KHÔNG có relation sang User →
+        // phải tra tên bằng 1 query riêng (đừng thử `include`, Prisma sẽ vỡ).
+        const userIds = [
+          ...new Set(
+            pays.flatMap((p: any) => [p.createdById, p.reversedById]).filter(Boolean),
+          ),
+        ] as string[];
+        const users = userIds.length
+          ? await prisma.user.findMany({
+              where: { id: { in: userIds } },
+              select: { id: true, fullName: true },
+            })
+          : [];
+        const nameById = new Map(users.map((u: any) => [u.id, u.fullName]));
+
+        // Ngày theo lịch VN (cột @db.Date lưu midnight UTC nên +7h vẫn đúng ngày).
+        const vnDay = (d: Date | string) =>
+          new Date(new Date(d).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+        const dayDiff = (a: string, b: string) =>
+          Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 86400000);
+
+        const rows = pays.map((p: any) => {
+          const allocs = Array.isArray(p.allocations) ? (p.allocations as any[]) : [];
+          const entryDay = vnDay(p.createdAt);
+          const payDay = vnDay(p.paymentDate);
+          return {
+            id: p.id,
+            created_at: p.createdAt,
+            created_by: p.createdById ? nameById.get(p.createdById) || 'Không rõ' : 'Không rõ',
+            created_by_id: p.createdById,
+            contact_id: p.contact?.id ?? null,
+            contact_name: p.contact?.storeName || p.contact?.fullName || '—',
+            contact_phone: p.contact?.phone ?? null,
+            amount: Math.round(toNumber(p.amount)),
+            payment_date: payDay,
+            // Nhập sau ngày thu bao nhiêu ngày. 0 = nhập trong ngày. Số này mới
+            // là thứ anh Philip cần để biết kế toán có nhập kịp hay không.
+            lag_days: Math.max(0, dayDiff(entryDay, payDay)),
+            payment_method: p.paymentMethod ?? null,
+            reference: p.reference ?? null,
+            note: p.note ?? null,
+            has_proof: !!p.proofUrl,
+            orders: allocs.map((a: any) => ({
+              order_code: a?.orderCode ?? null,
+              applied: Math.round(toNumber(a?.applied)),
+            })),
+            reversed_at: p.reversedAt,
+            reversed_by: p.reversedById ? nameById.get(p.reversedById) || 'Không rõ' : null,
+          };
+        });
+
+        // Tổng hợp trên TOÀN khoảng lọc (không chỉ trang hiện tại) — nếu chỉ tính
+        // theo trang thì con số "cập nhật đến đâu" sai ngay khi sang trang 2.
+        const [agg, latest, lateCount] = await Promise.all([
+          prisma.customerPayment.aggregate({ where, _sum: { amount: true } }),
+          prisma.customerPayment.findFirst({
+            where: { orgId: user.orgId },
+            orderBy: { createdAt: 'desc' },
+            select: { createdAt: true, createdById: true },
+          }),
+          // Nhập trễ > 3 ngày so với ngày thu. Phải viết SQL vì Prisma không so
+          // được 2 cột với nhau. Cùng khoảng ngày với bộ lọc (COALESCE để khỏi
+          // phải ghép SQL động); ô tìm khách `q` KHÔNG áp vào số này — nó là
+          // "cả kỳ có bao nhiêu phiếu nhập trễ", không phụ thuộc đang tìm ai.
+          prisma.$queryRaw<Array<{ n: bigint }>>`
+            SELECT COUNT(*)::bigint AS n
+            FROM customer_payments
+            WHERE org_id = ${user.orgId}
+              AND reversed_at IS NULL
+              AND created_at >= COALESCE(${createdFilter.gte ?? null}::timestamp, '-infinity'::timestamp)
+              AND created_at <= COALESCE(${createdFilter.lte ?? null}::timestamp, 'infinity'::timestamp)
+              AND ((created_at + interval '7 hours')::date - payment_date::date) > 3
+          `,
+        ]);
+
+        let lastBy: string | null = null;
+        if (latest?.createdById) {
+          lastBy =
+            nameById.get(latest.createdById) ||
+            (
+              await prisma.user.findUnique({
+                where: { id: latest.createdById },
+                select: { fullName: true },
+              })
+            )?.fullName ||
+            'Không rõ';
+        }
+        const daysSince = latest?.createdAt
+          ? dayDiff(vnDay(new Date()), vnDay(latest.createdAt))
+          : null;
+
+        return {
+          range: { from: query.from || null, to: query.to || null },
+          summary: {
+            // Mốc nhập gần nhất tính trên TOÀN BỘ lịch sử, không theo bộ lọc —
+            // đây là câu trả lời cho "kế toán cập nhật đến đâu rồi".
+            last_entry_at: latest?.createdAt ?? null,
+            last_entry_by: lastBy,
+            days_since_last_entry: daysSince,
+            count: total,
+            total_amount: Math.round(toNumber(agg._sum.amount ?? 0)),
+            late_count: Number(lateCount?.[0]?.n ?? 0),
+          },
+          page,
+          page_size: pageSize,
+          total,
+          rows,
+        };
+      } catch (err) {
+        logger.error('[sale-app] debt/update-log error:', err);
+        return reply.status(500).send({ error: 'Lỗi tải lịch sử cập nhật công nợ' });
       }
     },
   );

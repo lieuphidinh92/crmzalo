@@ -144,3 +144,21 @@ bước) thì mở đúng mục trong
 - **Trước khi tối ưu phải ĐO.** Nghi Vercel là nút thắt (đo lần đầu +250ms), giữ
   kết nối đo lại thì gần bằng nhau — nút thắt thật nằm ở chỗ khác. Nếu tin số đo
   đầu tiên thì đã đi sửa nhầm chỗ.
+- **`errorResponseBuilder` của @fastify/rate-limit: hình dạng trả về quyết định cả
+  status lẫn body.** Plugin `throw` thẳng thứ hàm này trả ra và lỗi đó KHÔNG đi qua
+  `setErrorHandler` của app: object thuần `{ error }` → HTTP **500**; `new Error(msg)`
+  + `statusCode` → 429 nhưng body `{ error:'Too Many Requests', message: <câu Việt> }`
+  nên frontend (đọc `data.error`) vẫn hiện chữ Anh. Đúng là `{ statusCode: 429, error }`
+  (đo 25/8/2026 ở `/api/v1/tax-lookup`) — đổi thì phải bấm thử vượt hạn mức lại.
+- **API ngoài chỉ được ĐIỀN GIÚP, không được chặn.** Nút tra cứu MST (VietQR) hỏng,
+  quá tải hay mất mạng thì form vẫn phải gửi được như cũ; header `x-ratelimit-limit: 2`
+  của họ cũng không phản ánh thực tế (4 lượt song song vẫn qua) → cứ cache + lỗi mềm,
+  đừng thiết kế dựa vào hạn mức nhà cung cấp công bố.
+- **Endpoint map tay response thì `select` thêm cột là vô nghĩa.**
+  `PUT /sale-app/customers/:id` build lại object snake_case bằng tay → thêm
+  `assignedUser` vào `select` mà quên thêm vào khối `return` là FE không bao giờ
+  thấy (25/8/2026). Sửa response shape phải xem CẢ `select` lẫn chỗ map.
+- **Chặn phạm vi phải chặn ở endpoint GHI, không chỉ ở endpoint TÌM.** Ẩn khách khỏi
+  ô tìm kiếm là chưa đủ: ai biết `contactId` (đơn cũ, F12) vẫn POST được đơn. Luật
+  "khách của ai người ấy lên đơn" (25/8/2026) phải cắm ở 3 chỗ: search + POST /orders
+  + PUT /customers (đổi người phụ trách) — thiếu 1 chỗ là lách được cả 3.
