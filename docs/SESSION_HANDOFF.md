@@ -49,3 +49,23 @@ Tồn kho: **3,14 tỷ**, đối soát `total_stock` vs lô active = **0 mã l�
 
 Test suite · linter · `prisma/migrations/` (schema-first `db push`).
 "Xong" định nghĩa thủ công — xem RULE 4 trong [CLAUDE.md](../CLAUDE.md).
+
+## Deploy 25/08/2026 — 5 nhóm thay đổi (ĐÃ push cả 2 nhánh)
+
+`feature/sale-app-nhom1` → 63af24c (backend) + 67ead57 (sale-app) · `main` → c79de2c + b0b5957.
+
+1. **Tra cứu MST** — `GET /api/v1/tax-lookup` (VietQR → dữ liệu Cục Thuế), nút "Tra cứu"
+   ở form Yêu cầu xuất VAT, Tuỳ chọn nâng cao (POS) và form tạo KH mới.
+2. **Ô Tên đơn vị + Địa chỉ hoá đơn mặc định KHOÁ**, bấm "Sửa" mới gõ được. Tick
+   "Lưu thông tin cho lần sau" mặc định BẬT (⚠️ mỗi lần gửi là ghi đè hồ sơ VAT của khách).
+3. **Form tạo KH mới** khai luôn hồ sơ hoá đơn; bỏ ô Tỉnh/TP (backend tự tách tỉnh);
+   trùng MST → 409.
+4. **"Khách của ai người ấy lên đơn"** — chặn ở 3 chỗ (search + POST /orders + PUT
+   /customers). Khách chưa ai phụ trách thì ai lên đơn người đó nhận. Admin đổi được
+   sale phụ trách ở màn Khách hàng.
+5. **Tab "Lịch sử update công nợ"** (`/debt/update-log`) + đưa luôn tab "Chi tiết công nợ"
+   (sót từ 16/7, chưa từng lên `main`) lên production.
+
+⚠️ **Việc còn treo:** chưa ai click thử trên production. Cần anh Philip test 3 luồng:
+tra MST trên đơn thật · sale thường (member) thử lên đơn cho khách người khác (phải bị
+chặn) · tab Lịch sử update công nợ có ra đúng người nhập.
