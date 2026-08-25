@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
+import { useAuthStore } from '../stores/auth';
 import {
   formatVND,
   formatDateVN,
@@ -19,6 +20,21 @@ const emit = defineEmits(['close', 'updated']);
 
 const router = useRouter();
 const pos = usePOSStore();
+const auth = useAuthStore();
+
+// Đổi SALE PHỤ TRÁCH là việc của chủ/quản lý (anh Philip chốt 25/8/2026). Member
+// tự đổi được thì luật "khách của ai người ấy lên đơn" thành vô nghĩa.
+const isManager = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+const staffList = ref([]);
+async function ensureStaffLoaded() {
+  if (!isManager.value || staffList.value.length) return;
+  try {
+    const { data } = await api.get('/sale-app/staff');
+    staffList.value = data.staff || [];
+  } catch {
+    staffList.value = [];
+  }
+}
 
 const loading = ref(false);
 const errorMsg = ref('');
@@ -104,7 +120,9 @@ watch(() => props.customerId, load, { immediate: true });
 
 function startEdit() {
   const c = customer.value;
+  ensureStaffLoaded();
   form.value = {
+    assignedUserId: c.assigned_user?.id || null,
     fullName: c.full_name || '',
     phone: c.phone || '',
     storeName: c.store_name || '',
@@ -114,10 +132,20 @@ function startEdit() {
     policyTier: c.policy_tier || '',
     notes: c.notes || '',
     internalNote: c.internal_note || '',
-    creditLimit: c.credit_limit ?? '',
+    creditLimitText: c.credit_limit ? Number(c.credit_limit).toLocaleString('vi-VN') : '',
   };
   saveError.value = '';
   editing.value = true;
+}
+
+// Ô TIỀN dùng type="text": type="number" biến "50.000.000" thành 50 (bài học
+// phiếu nhập) → hạn mức công nợ sai cả nghìn lần.
+const creditLimitValue = computed(
+  () => Number(String(form.value.creditLimitText ?? '').replace(/[^\d]/g, '')) || 0,
+);
+function formatCreditLimit() {
+  const n = creditLimitValue.value;
+  form.value.creditLimitText = n ? n.toLocaleString('vi-VN') : '';
 }
 
 async function saveEdit() {
@@ -132,11 +160,17 @@ async function saveEdit() {
   saving.value = true;
   saveError.value = '';
   try {
-    const { data } = await api.put(`/sale-app/customers/${customer.value.id}`, form.value);
-    // Merge updated fields back into the detail object.
-    Object.assign(customer.value, data.customer);
+    const payload = { ...form.value, creditLimit: creditLimitValue.value || null };
+    delete payload.creditLimitText;
+    // Member KHÔNG gửi trường này (backend chặn 403) — tránh lỗi khi sale tự sửa
+    // thông tin khách của mình.
+    if (!isManager.value) delete payload.assignedUserId;
+    const { data } = await api.put(`/sale-app/customers/${customer.value.id}`, payload);
     editing.value = false;
     emit('updated', data.customer);
+    // Tải lại chi tiết: response PUT trả khoá camelCase còn màn này đọc snake_case
+    // (full_name, assigned_user...) nên merge thẳng là màn hình vẫn hiện số cũ.
+    await load();
   } catch (err) {
     saveError.value = err.response?.data?.error || 'Lỗi lưu thông tin';
   } finally {
@@ -153,6 +187,12 @@ function createOrder() {
     province: customer.value.province,
     policyTier: customer.value.policy_tier,
     address: customer.value.address,
+    // Hồ sơ xuất hoá đơn: thiếu mấy trường này là vào POS phải gõ lại MST/địa chỉ.
+    invoiceBuyerType: customer.value.invoice_buyer_type,
+    invoiceBuyerName: customer.value.invoice_buyer_name,
+    invoiceTaxCode: customer.value.invoice_tax_code,
+    invoiceAddress: customer.value.invoice_address,
+    invoiceEmail: customer.value.invoice_email,
   });
   emit('close');
   router.push('/pos');
@@ -301,7 +341,17 @@ function createOrder() {
                   </div>
                   <div>
                     <label class="block text-xs font-medium text-ink-primary mb-1">Hạn mức công nợ (đ)</label>
-                    <input v-model="form.creditLimit" type="number" min="0" step="1000000" inputmode="numeric" placeholder="Trống = không giới hạn" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                    <input v-model="form.creditLimitText" @blur="formatCreditLimit" type="text" inputmode="numeric" placeholder="Trống = không giới hạn" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                  </div>
+                  <div v-if="isManager" class="col-span-2">
+                    <label class="block text-xs font-medium text-ink-primary mb-1">Sale phụ trách</label>
+                    <select v-model="form.assignedUserId" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm bg-white">
+                      <option :value="null">— Chưa ai phụ trách (ai lên đơn thì nhận) —</option>
+                      <option v-for="s in staffList" :key="s.id" :value="s.id">{{ s.fullName }}</option>
+                    </select>
+                    <p class="text-[11px] text-ink-secondary mt-1">
+                      Đổi người phụ trách là chuyển luôn quyền lên đơn cho khách này.
+                    </p>
                   </div>
                   <div class="col-span-2">
                     <label class="block text-xs font-medium text-ink-primary mb-1">Ghi chú</label>

@@ -14,6 +14,7 @@ import { ref, computed, watch } from 'vue';
 import { api } from '../api/client';
 import { useAuthStore } from '../stores/auth';
 import { formatVND, formatDateTimeVN } from '../composables/useFormat';
+import { useTaxLookup, isLookupableTaxCode } from '../composables/useTaxLookup';
 
 const props = defineProps({
   // Đơn được chọn từ danh sách (cần tối thiểu id + orderCode). null = đóng.
@@ -60,11 +61,66 @@ function blankForm() {
     invoiceReceiverName: '',
     invoiceReceiverPhone: '',
     invoiceNote: '',
-    saveInvoiceToCustomer: false,
+    saveInvoiceToCustomer: true,
   };
 }
 
 const isPersonal = computed(() => form.value.invoiceBuyerType === 'ca_nhan');
+
+// ── Tra cứu MST → tự điền tên + địa chỉ ───────────────────────────────────
+// Chỉ ĐIỀN GIÚP: dữ liệu Cục Thuế trễ ~9 ngày nên luôn để sale sửa lại, và cổng
+// tra cứu lỗi cũng không được chặn gửi yêu cầu.
+const {
+  looking,
+  lookupError,
+  lookupResult,
+  undoSnapshot,
+  lookup: runTaxLookup,
+  undo: undoTaxLookup,
+  reset: resetTaxLookup,
+} = useTaxLookup();
+
+const canLookupTax = computed(() => isLookupableTaxCode(form.value.invoiceTaxCode));
+
+function setTaxFields({ name, address }, { skipEmpty = false } = {}) {
+  if (!skipEmpty || name) form.value.invoiceBuyerName = name;
+  if (!skipEmpty || address) form.value.invoiceAddress = address;
+}
+const taxSnapshot = () => ({
+  name: form.value.invoiceBuyerName,
+  address: form.value.invoiceAddress,
+});
+
+async function doTaxLookup() {
+  if (looking.value) return;
+  // API chỉ có tên + địa chỉ, KHÔNG có email nhận hoá đơn — ô email vẫn nhập tay.
+  const found = await runTaxLookup(
+    form.value.invoiceTaxCode,
+    (v) => setTaxFields(v, { skipEmpty: true }),
+    taxSnapshot,
+  );
+  // Vừa lấy đúng số từ Cục Thuế → khoá lại để không ai sửa trượt sau đó.
+  if (found) infoUnlocked.value = false;
+}
+function undoTaxFill() {
+  undoTaxLookup((v) => setTaxFields(v));
+}
+
+// ── Khoá ô Tên công ty + Địa chỉ (anh Philip chốt 25/8/2026) ──────────────
+// 2 ô này đi THẲNG lên hoá đơn: gõ trượt 1 chữ là hoá đơn sai tên/sai địa chỉ,
+// kế toán phải xuất lại. Nên mặc định khoá, muốn sửa phải bấm "Sửa" một lần nữa.
+// Cố ý KHÔNG khoá 2 trường hợp:
+//   - mua là CÁ NHÂN: không tra cứu MST được, buộc phải nhập tay;
+//   - cả 2 ô còn rỗng: chưa có gì để bảo vệ, khoá là sale bí không nhập nổi.
+const infoUnlocked = ref(false);
+const hasInvoiceIdentity = computed(
+  () => !!(form.value.invoiceBuyerName || form.value.invoiceAddress),
+);
+const canToggleInfoLock = computed(() => !isPersonal.value && hasInvoiceIdentity.value);
+const infoLocked = computed(() => canToggleInfoLock.value && !infoUnlocked.value);
+function toggleInfoLock() {
+  infoUnlocked.value = !infoUnlocked.value;
+}
 const alreadyRequested = computed(() => detail.value?.vatInvoiceStatus === 'requested');
 const alreadyIssued = computed(() => detail.value?.vatInvoiceStatus === 'issued');
 // Nguồn tự điền — hiện cho sale biết số đang nhìn lấy từ đâu, tránh gửi nhầm
@@ -79,6 +135,8 @@ watch(
     form.value = blankForm();
     detail.value = null;
     prefillSource.value = '';
+    resetTaxLookup();
+    infoUnlocked.value = false;
     loading.value = true;
     try {
       // Danh sách đơn KHÔNG trả hồ sơ VAT của khách (payload nhẹ), nên phải lấy
@@ -109,7 +167,7 @@ function prefill(o) {
     invoiceReceiverName: src.invoiceReceiverName || '',
     invoiceReceiverPhone: src.invoiceReceiverPhone || c.phone || '',
     invoiceNote: o?.invoiceNote || '',
-    saveInvoiceToCustomer: false,
+    saveInvoiceToCustomer: true,
   };
   issueForm.value = {
     invoiceNumber: o?.vatInvoiceId || '',
@@ -354,19 +412,96 @@ const totalOf = (o) => o?.totalAmountValue ?? o?.totalAmount ?? 0;
 
                 <div v-if="!isPersonal">
                   <div :class="labelCls">Mã số thuế <span class="text-red-600">*</span></div>
-                  <input v-model="form.invoiceTaxCode" type="text" inputmode="numeric" placeholder="0109988776" :class="inputCls" />
-                </div>
-
-                <div>
-                  <div :class="labelCls">
-                    {{ isPersonal ? 'Họ tên người mua' : 'Tên công ty' }} <span class="text-red-600">*</span>
+                  <div class="flex gap-2">
+                    <div class="flex-1 min-w-0">
+                      <input
+                        v-model="form.invoiceTaxCode"
+                        type="text"
+                        inputmode="numeric"
+                        placeholder="0109988776"
+                        :class="inputCls"
+                        @keydown.enter.prevent="doTaxLookup"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      @click="doTaxLookup"
+                      :disabled="looking || !canLookupTax"
+                      class="h-10 px-3 shrink-0 rounded-lg border border-royal-700 text-royal-700 text-[13px] font-semibold hover:bg-royal-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                      title="Tra cứu tên + địa chỉ theo mã số thuế (dữ liệu Cục Thuế)"
+                    >
+                      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+                      </svg>
+                      <span>{{ looking ? 'Đang tra...' : 'Tra cứu' }}</span>
+                    </button>
                   </div>
-                  <input v-model="form.invoiceBuyerName" type="text" placeholder="Tên trên hóa đơn..." :class="inputCls" />
+
+                  <p v-if="lookupError" class="mt-1.5 text-[11px] text-red-600">{{ lookupError }}</p>
+                  <template v-else-if="lookupResult">
+                    <p class="mt-1.5 text-[11px] text-ink-secondary">
+                      Đã điền tên + địa chỉ từ dữ liệu Cục Thuế{{ lookupResult.stale ? ' (bản lưu cũ)' : '' }}.
+                      Kiểm lại rồi gửi.
+                      <button
+                        v-if="undoSnapshot"
+                        type="button"
+                        class="text-royal-700 font-semibold underline ml-0.5"
+                        @click="undoTaxFill"
+                      >
+                        Hoàn tác
+                      </button>
+                    </p>
+                    <p
+                      v-if="lookupResult.active === false"
+                      class="mt-1 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-800"
+                    >
+                      ⚠️ Trạng thái MST: {{ lookupResult.status }} — hỏi lại khách trước khi xuất hoá đơn.
+                    </p>
+                  </template>
                 </div>
 
                 <div>
-                  <div :class="labelCls">Địa chỉ <span class="text-red-600">*</span></div>
-                  <input v-model="form.invoiceAddress" type="text" placeholder="Địa chỉ trên hóa đơn..." :class="inputCls" />
+                  <div class="flex items-baseline justify-between gap-2">
+                    <div :class="labelCls">
+                      {{ isPersonal ? 'Họ tên người mua' : 'Tên công ty' }} <span class="text-red-600">*</span>
+                    </div>
+                    <button
+                      v-if="canToggleInfoLock"
+                      type="button"
+                      @click="toggleInfoLock"
+                      class="mb-1.5 text-[11px] font-semibold text-royal-700 hover:underline shrink-0"
+                    >
+                      {{ infoLocked ? '✏️ Sửa' : '🔒 Khoá lại' }}
+                    </button>
+                  </div>
+                  <input
+                    v-model="form.invoiceBuyerName"
+                    type="text"
+                    placeholder="Tên trên hóa đơn..."
+                    :readonly="infoLocked"
+                    :class="[inputCls, infoLocked ? 'bg-surface-soft text-ink-secondary cursor-default' : '']"
+                  />
+                </div>
+
+                <div>
+                  <div class="flex items-baseline justify-between gap-2">
+                    <div :class="labelCls">Địa chỉ <span class="text-red-600">*</span></div>
+                    <button
+                      v-if="canToggleInfoLock"
+                      type="button"
+                      @click="toggleInfoLock"
+                      class="mb-1.5 text-[11px] font-semibold text-royal-700 hover:underline shrink-0"
+                    >
+                      {{ infoLocked ? '✏️ Sửa' : '🔒 Khoá lại' }}
+                    </button>
+                  </div>
+                  <input
+                    v-model="form.invoiceAddress"
+                    type="text"
+                    placeholder="Địa chỉ trên hóa đơn..."
+                    :readonly="infoLocked"
+                    :class="[inputCls, infoLocked ? 'bg-surface-soft text-ink-secondary cursor-default' : '']"
+                  />
                 </div>
 
                 <div>

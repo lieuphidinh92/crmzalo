@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { usePOSStore } from '../stores/pos';
+import { useAuthStore } from '../stores/auth';
 import { formatVND } from '../composables/useFormat';
 import CustomerPanel from '../components/CustomerPanel.vue';
 import CartTable from '../components/CartTable.vue';
@@ -12,6 +13,16 @@ import OrderSummaryDialog from '../components/OrderSummaryDialog.vue';
 
 const router = useRouter();
 const pos = usePOSStore();
+const auth = useAuthStore();
+
+// "Khách của ai người ấy lên đơn" (anh Philip chốt 25/8/2026): member không đổi
+// được nhân viên bán — đổi được là ghi doanh số sang tên người khác, và cũng là
+// đường lách luật phạm vi. Backend chặn 403; đây chỉ là khoá cho khỏi bấm nhầm.
+const isManager = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+const myStaffName = computed(() => {
+  const me = pos.staffList.find((s) => s.id === pos.assignedSaleId);
+  return me?.fullName || auth.user?.fullName || auth.user?.full_name || 'tôi';
+});
 
 const showNewCustomer = ref(false);
 const submitErr = ref('');
@@ -133,11 +144,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
             Nhân viên sale
           </span>
           <select
+            v-if="isManager"
             v-model="pos.assignedSaleId"
             class="flex-1 min-w-0 h-9 px-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm font-medium bg-white"
           >
             <option v-for="s in pos.staffList" :key="s.id" :value="s.id">{{ s.fullName }}</option>
           </select>
+          <div
+            v-else
+            class="flex-1 min-w-0 h-9 px-2 rounded-lg border border-line-300 bg-surface-soft flex items-center text-sm font-medium text-ink-secondary truncate"
+            title="Chỉ chủ/quản lý mới đổi được nhân viên bán"
+          >
+            {{ myStaffName }}
+          </div>
         </div>
 
         <!-- vùng cuộn: bảng giỏ + vận chuyển/thanh toán + nâng cao -->

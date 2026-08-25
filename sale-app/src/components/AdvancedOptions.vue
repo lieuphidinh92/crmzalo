@@ -1,6 +1,7 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { usePOSStore } from '../stores/pos';
+import { useTaxLookup, isLookupableTaxCode } from '../composables/useTaxLookup';
 
 const pos = usePOSStore();
 
@@ -10,6 +11,35 @@ const open = ref(false);
 const inputCls =
   'w-full h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm';
 const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1.5';
+
+// ── Tra cứu MST → tự điền tên đơn vị + địa chỉ xuất hoá đơn ───────────────
+// Cùng backend `/tax-lookup` với ô "Yêu cầu xuất VAT" ở màn Đơn hàng. Lấy đúng
+// tên/địa chỉ ngay lúc lên đơn thì lúc xin hoá đơn khỏi phải sửa lại.
+const isPersonalBuyer = computed(() => pos.invoiceBuyerType === 'ca_nhan');
+const {
+  looking,
+  lookupError,
+  lookupResult,
+  undoSnapshot,
+  lookup: runTaxLookup,
+  undo: undoTaxLookup,
+} = useTaxLookup();
+
+const canLookupTax = computed(() => isLookupableTaxCode(pos.invoiceTaxCode));
+
+function setTaxFields({ name, address }, { skipEmpty = false } = {}) {
+  if (!skipEmpty || name) pos.invoiceBuyerName = name;
+  if (!skipEmpty || address) pos.invoiceAddress = address;
+}
+const taxSnapshot = () => ({ name: pos.invoiceBuyerName, address: pos.invoiceAddress });
+
+function doTaxLookup() {
+  if (looking.value) return;
+  runTaxLookup(pos.invoiceTaxCode, (v) => setTaxFields(v, { skipEmpty: true }), taxSnapshot);
+}
+function undoTaxFill() {
+  undoTaxLookup((v) => setTaxFields(v));
+}
 </script>
 
 <template>
@@ -150,18 +180,67 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1.5'
                 <div :class="labelCls">
                   {{ pos.invoiceBuyerType === 'ca_nhan' ? 'Số CCCD' : 'Mã số thuế' }}
                 </div>
-                <input
-                  v-model="pos.invoiceTaxCode"
-                  type="text"
-                  inputmode="numeric"
-                  :placeholder="pos.invoiceBuyerType === 'ca_nhan' ? 'Số căn cước' : 'MST'"
-                  :class="inputCls"
-                />
+                <div class="flex gap-1.5">
+                  <div class="flex-1 min-w-0">
+                    <input
+                      v-model="pos.invoiceTaxCode"
+                      type="text"
+                      inputmode="numeric"
+                      :placeholder="pos.invoiceBuyerType === 'ca_nhan' ? 'Số căn cước' : 'MST'"
+                      :class="inputCls"
+                      @keydown.enter.prevent="!isPersonalBuyer && doTaxLookup()"
+                    />
+                  </div>
+                  <button
+                    v-if="!isPersonalBuyer"
+                    type="button"
+                    @click="doTaxLookup"
+                    :disabled="looking || !canLookupTax"
+                    class="w-10 h-10 shrink-0 rounded-lg border border-royal-700 text-royal-700 hover:bg-royal-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                    title="Tra cứu tên + địa chỉ theo mã số thuế (dữ liệu Cục Thuế)"
+                  >
+                    <svg
+                      v-if="!looking"
+                      class="w-4 h-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+                    </svg>
+                    <span v-else class="text-[10px] font-semibold">...</span>
+                  </button>
+                </div>
               </div>
               <div>
                 <div :class="labelCls">Email nhận HĐ</div>
                 <input v-model="pos.invoiceEmail" type="email" inputmode="email" placeholder="email@..." :class="inputCls" />
               </div>
+            </div>
+
+            <div v-if="!isPersonalBuyer && (lookupError || lookupResult)">
+              <p v-if="lookupError" class="text-[11px] text-red-600">{{ lookupError }}</p>
+              <template v-else>
+                <p class="text-[11px] text-ink-secondary">
+                  Đã điền tên + địa chỉ từ dữ liệu Cục Thuế{{ lookupResult.stale ? ' (bản lưu cũ)' : '' }}.
+                  Kiểm lại giúp em.
+                  <button
+                    v-if="undoSnapshot"
+                    type="button"
+                    class="text-royal-700 font-semibold underline ml-0.5"
+                    @click="undoTaxFill"
+                  >
+                    Hoàn tác
+                  </button>
+                </p>
+                <p
+                  v-if="lookupResult.active === false"
+                  class="mt-1 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-800"
+                >
+                  ⚠️ Trạng thái MST: {{ lookupResult.status }} — hỏi lại khách trước khi xuất hoá đơn.
+                </p>
+              </template>
             </div>
 
             <div>

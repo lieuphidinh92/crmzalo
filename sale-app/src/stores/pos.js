@@ -35,7 +35,9 @@ export const usePOSStore = defineStore('pos', () => {
   const invoiceTaxCode = ref('');
   const invoiceAddress = ref('');
   const invoiceEmail = ref('');
-  const saveInvoiceToCustomer = ref(false);
+  // Mặc định CÓ tick lưu hồ sơ VAT về khách (anh Philip chốt 25/8/2026): lần sau
+  // khách đó xin hoá đơn là tự điền sẵn. Sale muốn xuất hộ đơn vị khác thì tự bỏ tick.
+  const saveInvoiceToCustomer = ref(true);
   // Phase 5 — nhân viên sale phụ trách + người giới thiệu
   const staffList = ref([]);
   const assignedSaleId = ref(null);
@@ -91,7 +93,7 @@ export const usePOSStore = defineStore('pos', () => {
     invoiceTaxCode.value = c?.invoiceTaxCode || '';
     invoiceAddress.value = c?.invoiceAddress || c?.address || '';
     invoiceEmail.value = c?.invoiceEmail || '';
-    saveInvoiceToCustomer.value = false;
+    saveInvoiceToCustomer.value = true;
     // Phase 5 — NV sale: khách cũ → NV phụ trách theo lịch sử; khách mới → NV đăng nhập.
     assignedSaleId.value = c?.assignedUserId || c?.assigned_user?.id || currentUserId();
     // Tải chi tiết KH (công nợ hiện tại, điểm, hạn mức, đơn gần nhất) — không chặn UI.
@@ -301,7 +303,7 @@ export const usePOSStore = defineStore('pos', () => {
     invoiceTaxCode.value = '';
     invoiceAddress.value = '';
     invoiceEmail.value = '';
-    saveInvoiceToCustomer.value = false;
+    saveInvoiceToCustomer.value = true;
     // Reset NV sale về NV đang đăng nhập (mặc định khách mới); giữ staffList đã tải.
     assignedSaleId.value = currentUserId();
     referrerName.value = '';

@@ -168,9 +168,81 @@ const cLedgerPages = computed(() => {
   return Math.max(1, Math.ceil(t / ps));
 });
 
+// ── Tab lớn thứ 4: LỊCH SỬ KẾ TOÁN CẬP NHẬT CÔNG NỢ (chỉ owner/admin) ──
+// Anh Philip 25/8/2026: "kế toán quên update thì anh còn check được bạn ấy cập
+// nhật đến đâu". Khác tab "Chi tiết công nợ": bảng này xếp theo THỜI ĐIỂM NHẬP
+// LIỆU và cho biết AI nhập + nhập TRỄ mấy ngày so với ngày thu thật.
+const upd = ref(null);
+const updLoading = ref(false);
+const updError = ref('');
+const updLoaded = ref(false);
+const updFilter = ref({ from: '', to: '', q: '', userId: '', page: 1 });
+const updStaff = ref([]);
+
+async function loadUpdateLog() {
+  updLoading.value = true;
+  updError.value = '';
+  try {
+    const { data } = await api.get('/sale-app/debt/update-log', {
+      params: {
+        from: updFilter.value.from || undefined,
+        to: updFilter.value.to || undefined,
+        q: updFilter.value.q.trim() || undefined,
+        userId: updFilter.value.userId || undefined,
+        page: updFilter.value.page,
+        pageSize: 50,
+      },
+    });
+    upd.value = data;
+    updLoaded.value = true;
+  } catch (err) {
+    updError.value = err.response?.data?.error || 'Không tải được lịch sử cập nhật công nợ';
+    upd.value = null;
+  } finally {
+    updLoading.value = false;
+  }
+}
+async function loadUpdStaff() {
+  if (updStaff.value.length) return;
+  try {
+    const { data } = await api.get('/sale-app/staff');
+    updStaff.value = data.staff || [];
+  } catch {
+    updStaff.value = [];
+  }
+}
+function applyUpdFilter() {
+  updFilter.value.page = 1;
+  loadUpdateLog();
+}
+const updPages = computed(() => {
+  const t = upd.value?.total || 0;
+  const ps = upd.value?.page_size || 50;
+  return Math.max(1, Math.ceil(t / ps));
+});
+function updGoPage(p) {
+  if (p < 1 || p > updPages.value) return;
+  updFilter.value.page = p;
+  loadUpdateLog();
+}
+
+// Nhãn "cập nhật đến đâu": 0 ngày = hôm nay, >2 ngày thì tô đỏ nhắc anh.
+const updStale = computed(() => (upd.value?.summary?.days_since_last_entry ?? 0) > 2);
+
+const PAY_METHOD_LABELS = {
+  bank_transfer: 'Chuyển khoản',
+  cash: 'Tiền mặt',
+  cod: 'COD',
+  other: 'Khác',
+};
+
 // Chuyển tab lớn; lần đầu vào tab công ty thì lazy-load.
 function openMainTab(t) {
   mainTab.value = t;
+  if (t === 'updates' && !updLoaded.value && !updLoading.value) {
+    loadUpdStaff();
+    loadUpdateLog();
+  }
   if (t === 'company' && !cLedgerLoaded.value && !cLedgerLoading.value) {
     loadCompanyLedger();
   }
@@ -547,6 +619,14 @@ onMounted(loadList);
         :class="mainTab === 'company' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
       >
         Chi tiết công nợ
+      </button>
+      <button
+        v-if="canSeeCompany"
+        @click="openMainTab('updates')"
+        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap"
+        :class="mainTab === 'updates' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
+      >
+        Lịch sử update công nợ
       </button>
     </div>
 
@@ -1306,6 +1386,155 @@ onMounted(loadList);
             class="px-3 py-1 rounded-btn border border-line-300 disabled:opacity-40"
           >Sau ›</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ══════════ TAB: LỊCH SỬ UPDATE CÔNG NỢ ══════════ -->
+    <div v-show="mainTab === 'updates'">
+      <p class="text-xs text-ink-secondary mb-3 -mt-1">
+        Kế toán đã ghi nhận thu tiền tới đâu · xếp theo THỜI ĐIỂM NHẬP LIỆU, không phải ngày thu
+      </p>
+
+      <!-- Thẻ "cập nhật đến đâu rồi" -->
+      <div
+        v-if="upd?.summary"
+        class="rounded-card border p-3.5 mb-3"
+        :class="updStale ? 'bg-red-50 border-red-200' : 'bg-white border-line-200'"
+      >
+        <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1.5">
+          <div>
+            <p class="text-[11px] uppercase tracking-wide text-ink-secondary">Lần nhập gần nhất</p>
+            <p class="text-sm font-bold" :class="updStale ? 'text-red-700' : 'text-ink-primary'">
+              {{ upd.summary.last_entry_at ? formatDateTimeVN(upd.summary.last_entry_at) : 'Chưa có phiếu thu nào' }}
+              <span v-if="upd.summary.last_entry_by" class="font-medium text-ink-secondary">
+                · {{ upd.summary.last_entry_by }}
+              </span>
+            </p>
+          </div>
+          <div v-if="upd.summary.days_since_last_entry !== null">
+            <p class="text-[11px] uppercase tracking-wide text-ink-secondary">Cách đây</p>
+            <p class="text-sm font-bold" :class="updStale ? 'text-red-700' : 'text-ink-primary'">
+              {{ upd.summary.days_since_last_entry === 0 ? 'Hôm nay' : upd.summary.days_since_last_entry + ' ngày' }}
+            </p>
+          </div>
+          <div>
+            <p class="text-[11px] uppercase tracking-wide text-ink-secondary">Kỳ đang xem</p>
+            <p class="text-sm font-bold text-ink-primary">
+              {{ (upd.summary.count || 0).toLocaleString('vi-VN') }} phiếu ·
+              {{ formatVND(upd.summary.total_amount || 0) }}
+            </p>
+          </div>
+          <div v-if="upd.summary.late_count">
+            <p class="text-[11px] uppercase tracking-wide text-ink-secondary">Nhập trễ &gt; 3 ngày</p>
+            <p class="text-sm font-bold text-amber-700">{{ upd.summary.late_count }} phiếu</p>
+          </div>
+        </div>
+        <p v-if="updStale" class="text-[12px] text-red-700 mt-2">
+          ⚠️ Hơn 2 ngày chưa có phiếu thu nào được nhập — nhắc kế toán cập nhật.
+        </p>
+      </div>
+
+      <!-- Bộ lọc -->
+      <div class="flex flex-wrap items-end gap-2 mb-3">
+        <label class="flex flex-col text-[11px] text-ink-secondary">
+          Nhập từ ngày
+          <input type="date" v-model="updFilter.from" class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
+        </label>
+        <label class="flex flex-col text-[11px] text-ink-secondary">
+          Đến ngày
+          <input type="date" v-model="updFilter.to" class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
+        </label>
+        <label class="flex flex-col text-[11px] text-ink-secondary">
+          Người nhập
+          <select v-model="updFilter.userId" class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary bg-white">
+            <option value="">Tất cả</option>
+            <option v-for="st in updStaff" :key="st.id" :value="st.id">{{ st.fullName }}</option>
+          </select>
+        </label>
+        <label class="flex flex-col text-[11px] text-ink-secondary flex-1 min-w-[180px]">
+          Tìm khách
+          <input v-model="updFilter.q" type="search" placeholder="Tên / SĐT / cửa hàng…" class="mt-0.5 w-full border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
+        </label>
+        <button @click="applyUpdFilter" class="h-[34px] px-4 rounded-btn bg-royal-700 text-white text-sm font-semibold">Xem</button>
+      </div>
+
+      <div v-if="updLoading" class="space-y-2">
+        <div v-for="i in 5" :key="i" class="h-11 bg-surface-soft animate-pulse rounded-card"></div>
+      </div>
+      <p v-else-if="updError" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-card px-3 py-2">
+        {{ updError }}
+      </p>
+      <p v-else-if="!upd?.rows?.length" class="text-sm text-ink-secondary text-center py-8">
+        Không có phiếu thu nào trong khoảng này.
+      </p>
+
+      <!-- Bảng lịch sử nhập liệu -->
+      <div v-else class="overflow-x-auto bg-white border border-line-200 rounded-card">
+        <table class="w-full text-[13px]">
+          <thead class="bg-surface-soft text-ink-secondary">
+            <tr>
+              <th class="text-left px-3 py-2 font-semibold whitespace-nowrap">Nhập lúc</th>
+              <th class="text-left px-3 py-2 font-semibold whitespace-nowrap">Người nhập</th>
+              <th class="text-left px-3 py-2 font-semibold">Khách hàng</th>
+              <th class="text-right px-3 py-2 font-semibold whitespace-nowrap">Số tiền</th>
+              <th class="text-left px-3 py-2 font-semibold whitespace-nowrap">Ngày thu</th>
+              <th class="text-center px-3 py-2 font-semibold whitespace-nowrap">Nhập trễ</th>
+              <th class="text-left px-3 py-2 font-semibold whitespace-nowrap">Hình thức</th>
+              <th class="text-left px-3 py-2 font-semibold">Gạt vào đơn</th>
+              <th class="text-center px-3 py-2 font-semibold whitespace-nowrap">Chứng từ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="r in upd.rows"
+              :key="r.id"
+              class="border-t border-line-200"
+              :class="r.reversed_at ? 'bg-red-50/50 text-ink-secondary' : ''"
+            >
+              <td class="px-3 py-2 whitespace-nowrap">{{ formatDateTimeVN(r.created_at) }}</td>
+              <td class="px-3 py-2 whitespace-nowrap font-medium">{{ r.created_by }}</td>
+              <td class="px-3 py-2">
+                <span :class="r.reversed_at ? 'line-through' : ''">{{ r.contact_name }}</span>
+                <span v-if="r.reversed_at" class="ml-1 text-[11px] text-red-700 font-semibold">
+                  đã đảo{{ r.reversed_by ? ' · ' + r.reversed_by : '' }}
+                </span>
+                <div v-if="r.contact_phone" class="text-[11px] text-ink-secondary">{{ r.contact_phone }}</div>
+              </td>
+              <td class="px-3 py-2 text-right font-semibold whitespace-nowrap" :class="r.reversed_at ? 'line-through' : 'text-emerald-700'">
+                {{ formatVND(r.amount) }}
+              </td>
+              <td class="px-3 py-2 whitespace-nowrap">{{ formatDateVN(r.payment_date) }}</td>
+              <td class="px-3 py-2 text-center whitespace-nowrap">
+                <span v-if="r.lag_days > 3" class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">
+                  {{ r.lag_days }} ngày
+                </span>
+                <span v-else-if="r.lag_days > 0" class="text-ink-secondary">{{ r.lag_days }} ngày</span>
+                <span v-else class="text-ink-secondary">trong ngày</span>
+              </td>
+              <td class="px-3 py-2 whitespace-nowrap">
+                {{ PAY_METHOD_LABELS[r.payment_method] || r.payment_method || '—' }}
+                <div v-if="r.reference" class="text-[11px] text-ink-secondary">{{ r.reference }}</div>
+              </td>
+              <td class="px-3 py-2">
+                <span v-if="!r.orders.length" class="text-ink-secondary">—</span>
+                <span v-for="(o, i) in r.orders" :key="i" class="inline-block mr-1.5 whitespace-nowrap">
+                  <span class="font-mono text-[11px]">{{ o.order_code || '—' }}</span>
+                  <span class="text-[11px] text-ink-secondary"> ({{ formatVND(o.applied) }})</span>
+                </span>
+              </td>
+              <td class="px-3 py-2 text-center">
+                <span v-if="r.has_proof" title="Có ảnh chứng từ">📎</span>
+                <span v-else class="text-amber-700 font-semibold" title="Chưa đính kèm chứng từ">thiếu</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="upd?.rows?.length" class="flex items-center justify-between gap-2 mt-3 text-sm">
+        <button @click="updGoPage(upd.page - 1)" :disabled="upd.page <= 1" class="px-3 py-1 rounded-btn border border-line-300 disabled:opacity-40">‹ Trước</button>
+        <span class="text-ink-secondary">Trang {{ upd.page }} / {{ updPages }} · {{ (upd.total || 0).toLocaleString('vi-VN') }} phiếu</span>
+        <button @click="updGoPage(upd.page + 1)" :disabled="upd.page >= updPages" class="px-3 py-1 rounded-btn border border-line-300 disabled:opacity-40">Sau ›</button>
       </div>
     </div>
 

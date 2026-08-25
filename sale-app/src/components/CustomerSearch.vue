@@ -6,6 +6,10 @@ const emit = defineEmits(['select', 'create-new']);
 
 const query = ref('');
 const results = ref([]);
+// Backend trả `hint` khi sale gõ ra khách CỦA NGƯỜI KHÁC: không cho chọn, nhưng
+// nói rõ ai phụ trách — không có câu này thì sale tưởng chưa có khách, tạo mới
+// lại bị chặn trùng SĐT → bế tắc, phải gọi hỏi nhau.
+const hint = ref('');
 const loading = ref(false);
 const open = ref(false);
 let debounceTimer = null;
@@ -15,8 +19,10 @@ async function doSearch(term) {
   try {
     const { data } = await api.get('/sale-app/customers/search', { params: { q: term } });
     results.value = data.customers || [];
+    hint.value = data.hint || '';
   } catch {
     results.value = [];
+    hint.value = '';
   } finally {
     loading.value = false;
   }
@@ -74,8 +80,14 @@ function newCustomer() {
       class="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-line-200 rounded-xl shadow-lg max-h-80 overflow-y-auto"
     >
       <div v-if="loading" class="p-3 text-sm text-ink-secondary text-center">Đang tìm...</div>
-      <div v-else-if="results.length === 0" class="p-3 text-sm text-ink-secondary text-center">
-        Không có khách hàng phù hợp
+      <div v-else-if="results.length === 0" class="p-3 text-center">
+        <p
+          v-if="hint"
+          class="text-[13px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-left"
+        >
+          ⚠️ {{ hint }}
+        </p>
+        <p v-else class="text-sm text-ink-secondary">Không có khách hàng phù hợp</p>
       </div>
       <button
         v-for="c in results"
