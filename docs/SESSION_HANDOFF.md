@@ -69,3 +69,24 @@ Test suite · linter · `prisma/migrations/` (schema-first `db push`).
 ⚠️ **Việc còn treo:** chưa ai click thử trên production. Cần anh Philip test 3 luồng:
 tra MST trên đơn thật · sale thường (member) thử lên đơn cho khách người khác (phải bị
 chặn) · tab Lịch sử update công nợ có ra đúng người nhập.
+
+## Deploy 26/08/2026 — dựng lại màn Danh sách đơn hàng
+
+`feature/sale-app-nhom1` → 8ff8a90 · `main` → 84119b6 (chỉ sale-app, backend không đổi).
+
+- Máy tính: **bảng 7 cột** (Mã đơn · Khách hàng · Trạng thái · Ngày tạo · Tổng tiền ·
+  Xuất VAT · Thao tác). Điện thoại **giữ kiểu thẻ** — đừng bỏ khối thẻ khi dọn code.
+- Chân trang có chọn số dòng/trang; nút **"Bộ lọc"** mở khoảng ngày tự chọn + lọc
+  theo nhân viên sale (`?saleId=`).
+- Sửa lỗi bố cục: `justify-between` có 3 con làm nút "Quản lý Xuất VAT" nhảy ra giữa.
+- TopBar: khối tài khoản 2 dòng. ⚠️ Mockup có dấu ⌄ nhưng CHƯA làm menu — nếu làm
+  thì phải là menu thật, đừng để mũi tên mà bấm vào là đăng xuất.
+
+## DB local đang trỏ vào bản sao PRODUCTION (26/08/2026)
+
+`backend/.env` → `zalocrm_prod` (bản sao data thật kéo về 26/8, 47 bảng khớp mã băm).
+DB dev cũ `zalocrm` vẫn còn nguyên; đổi lại bằng cách bỏ ghi chú dòng `DATABASE_URL` cũ.
+⚠️ Mọi thao tác trên localhost giờ chạy trên dữ liệu thật (bản sao) — đừng nhầm với
+production. Kéo lại: pg_dump KHÔNG dùng được (local v16, Supabase v17) → copy từng
+bảng bằng `psql \copy` **có liệt kê cột tường minh** (thứ tự cột 2 bên KHÁC nhau,
+copy thẳng là lệch cột mà không báo lỗi).
