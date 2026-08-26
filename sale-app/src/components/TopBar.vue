@@ -241,11 +241,16 @@ onBeforeUnmount(() => {
           </span>
         </button>
         <div class="w-px h-6 bg-line-200 mx-1"></div>
+        <!-- Khối người dùng 2 dòng như mockup 26/8: tên ở trên, "Đăng xuất" ở
+             dưới. Trước đây gộp 1 dòng "Admin · Đăng xuất" nên hay bị cắt khi
+             cửa sổ hẹp. -->
         <button
           @click="handleLogout"
-          class="text-sm text-ink-secondary hover:text-red-600 px-3 transition"
+          class="h-11 px-3 rounded-btn hover:bg-surface-soft flex flex-col items-end justify-center leading-tight transition group"
+          title="Đăng xuất khỏi tài khoản"
         >
-          {{ userName }} · Đăng xuất
+          <span class="text-sm font-semibold text-ink-primary max-w-[160px] truncate">{{ userName }}</span>
+          <span class="text-[11px] text-ink-secondary group-hover:text-red-600">Đăng xuất</span>
         </button>
       </div>
     </div>
