@@ -181,3 +181,20 @@ bước) thì mở đúng mục trong
   (`order-routes.ts` ×2, `notification-routes.ts`, `sale-app-routes.ts`, `order-cron.ts`) — chưa sửa.
 - **Cảnh báo phải lọc theo hàng ĐANG BÁN, không thì thành rác.** `warning_stock` mặc định 30 cho cả 977 mã
   → cảnh báo tồn thấp ra 931 mã. Lọc `hasSales && sellable && status='active'` còn ~30 mã dùng được.
+
+## 📱 Điện thoại (sale-app)
+
+- **iOS huỷ cú bấm ở thanh nav sát mép dưới.** 27/8 anh báo không ấn được tab Sản phẩm / Đơn hàng.
+  3 thứ cộng lại: `<button>` + `@click` bị iOS huỷ khi ngón trượt nhẹ; không có `touch-action: manipulation`
+  nên iOS chờ xem có phải double-tap-zoom; nút nằm sát mép dưới nơi Chrome iOS giành cú bấm.
+  Cách viết đúng cho nav/thẻ trên mobile: **`<RouterLink>` (thẻ `<a>`) + `touch-action: manipulation`
+  + đệm đáy ≥ 8px**. Và `style.css` tắt `-webkit-tap-highlight-color` cho MỌI nút → nút mobile **bắt buộc**
+  có `active:` riêng, không thì bấm xong không thấy gì, người dùng tưởng nút chết.
+- **Đừng bê layout bảng desktop xuống điện thoại.** Màn Đơn hàng cũ nhồi 7 cột + 5 nút vào 1 hàng ngang
+  (`flex items-center`) → chữ xuống dòng từng từ, và 2 nút VAT bị `hidden sm:flex` = **mất chức năng trên
+  điện thoại**. Tách `MobileOrderCard.vue` (thẻ dọc, ô bấm 44px) và để hàm hiển thị dùng chung ở
+  `composables/useOrderRow.js` để bảng desktop + thẻ mobile không lệch nhãn.
+- **Kiểm layout mobile bằng Chrome headless được, không cần điện thoại:** puppeteer-core + Chrome của máy,
+  chặn `/api/*` trả dữ liệu giả, đo `scrollWidth > clientWidth` (tràn ngang) và `getBoundingClientRect`
+  của mọi `<button>` (< 44px). Nhớ **profile riêng mỗi lần** — service worker PWA cache `/api` làm lần sau
+  nhận dữ liệu cũ.

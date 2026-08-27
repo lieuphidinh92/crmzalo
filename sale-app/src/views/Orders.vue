@@ -12,6 +12,15 @@ import {
   formatDateTimeVN,
   formatRelativeTime,
 } from '../composables/useFormat';
+import {
+  totalOf,
+  timeVN,
+  canRequestVat,
+  vatBadge,
+  hasVatFlow,
+  hasVatFile,
+} from '../composables/useOrderRow';
+import MobileOrderCard from '../components/MobileOrderCard.vue';
 import VatRequestDrawer from '../components/VatRequestDrawer.vue';
 import VatConfirmDialog from '../components/VatConfirmDialog.vue';
 import VatViewDialog from '../components/VatViewDialog.vue';
@@ -86,14 +95,6 @@ const advancedCount = computed(
 );
 
 const limitOptions = [10, 20, 50, 100];
-
-// Cột "Ngày tạo" của bảng tách 2 dòng: ngày ở trên, giờ ở dưới.
-function timeVN(d) {
-  if (!d) return '';
-  const t = new Date(d);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${pad(t.getHours())}:${pad(t.getMinutes())}`;
-}
 
 const rangeOptions = [
   { value: '7', label: '7 ngày qua' },
@@ -193,24 +194,10 @@ const vatOptions = [
   { value: 'issued', label: 'Đã xuất VAT' },
 ];
 
-// Chỉ đơn hoàn tất mới xuất hoá đơn — đơn huỷ/hoàn không phát sinh doanh thu.
-function canRequestVat(o) {
-  return (o.statusNormalized || o.status) === 'completed';
-}
-function vatBadge(o) {
-  const st = o.vatInvoiceStatus;
-  if (st === 'issued') return { label: 'Đã xuất VAT', cls: 'border-emerald-500 bg-emerald-50 text-emerald-700' };
-  if (st === 'partial') return { label: 'Xuất 1 phần', cls: 'border-royal-500 bg-royal-50 text-royal-700' };
-  if (st === 'skipped') return { label: 'Không xuất VAT', cls: 'border-line-300 bg-surface-soft text-ink-secondary' };
-  if (st === 'requested') return { label: 'Đã yêu cầu VAT', cls: 'border-amber-500 bg-amber-50 text-amber-700' };
-  return { label: 'Yêu cầu xuất VAT', cls: 'border-royal-700 text-royal-700 hover:bg-royal-50' };
-}
+// Nhãn/điều kiện nút VAT + tổng tiền + giờ: dùng chung với thẻ mobile
+// (../composables/useOrderRow.js) để 2 nơi không lệch nhau.
 // Đơn đang mở popup xem hoá đơn đã ký (null = đóng).
 const vatViewOrder = ref(null);
-// Đơn đã bắt đầu quy trình VAT → hiện thêm nút xem / sửa cạnh nhãn.
-const hasVatFlow = (o) => ['requested', 'partial', 'issued'].includes(o.vatInvoiceStatus);
-const hasVatFile = (o) => ['partial', 'issued'].includes(o.vatInvoiceStatus);
-
 // Đơn kế toán đang xác nhận đã xuất (null = đóng popup).
 const vatConfirmOrder = ref(null);
 
@@ -367,10 +354,6 @@ useScreenCache(
   { ttl: 45_000 },
 );
 
-function totalOf(o) {
-  return o.totalAmountValue ?? o.totalAmount ?? 0;
-}
-
 function openOrder(o) {
   router.push(`/orders/${o.id}`);
 }
@@ -420,9 +403,14 @@ const pageNumbers = computed(() => {
 <template>
   <div class="px-4 lg:px-6 py-4 lg:py-6 max-w-[1280px] mx-auto">
     <!-- Header -->
-    <div class="flex items-center justify-between gap-4 mb-4">
+    <div class="flex items-center justify-between gap-3 mb-4">
       <div class="min-w-0">
-        <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Danh sách Đơn hàng</h1>
+        <!-- Điện thoại dùng tiêu đề ngắn "Đơn hàng" — "Danh sách Đơn hàng" bị
+             xuống 2 dòng và đẩy 2 nút bên phải (báo lỗi 27/8/2026). -->
+        <h1 class="text-xl lg:text-2xl font-bold text-ink-primary truncate">
+          <span class="lg:hidden">Đơn hàng</span>
+          <span class="hidden lg:inline">Danh sách Đơn hàng</span>
+        </h1>
         <p class="text-xs text-ink-secondary mt-0.5">{{ total.toLocaleString('vi-VN') }} đơn hàng</p>
       </div>
       <!-- 2 nút phải nằm CÙNG 1 nhóm: để rời ra thì justify-between có 3 con và
@@ -433,21 +421,24 @@ const pageNumbers = computed(() => {
         <button
           v-if="isVatDesk"
           @click="router.push('/vat/requested')"
-          class="h-10 px-4 rounded-btn border border-royal-700 text-royal-700 hover:bg-royal-50 text-sm font-semibold flex items-center gap-2 transition"
+          aria-label="Quản lý Xuất VAT"
+          title="Quản lý Xuất VAT"
+          class="relative h-11 w-11 lg:h-10 lg:w-auto lg:px-4 rounded-btn border border-royal-700 text-royal-700 hover:bg-royal-50 text-sm font-semibold flex items-center justify-center gap-2 transition"
         >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="w-[18px] h-[18px] lg:w-4 lg:h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M4 4h16v16l-2.5-1.5L15 20l-2.5-1.5L10 20l-2.5-1.5L5 20 4 19z" />
             <line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="13" y2="13" />
           </svg>
-          Quản lý Xuất VAT
+          <!-- Điện thoại chỉ đủ chỗ cho icon; chữ hiện lại từ 1024px -->
+          <span class="hidden lg:inline">Quản lý Xuất VAT</span>
           <span
             v-if="vatPending"
-            class="text-[11px] font-bold bg-amber-500 text-navy-900 px-1.5 py-0.5 rounded-full"
+            class="absolute -top-1.5 -right-1.5 lg:static text-[11px] font-bold bg-amber-500 text-navy-900 px-1.5 py-0.5 rounded-full"
           >{{ vatPending }}</span>
         </button>
         <button
           @click="router.push('/pos')"
-          class="h-10 px-4 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-2"
+          class="h-11 lg:h-10 px-3.5 lg:px-4 rounded-btn bg-royal-700 hover:bg-royal-800 active:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-1.5 lg:gap-2 whitespace-nowrap"
         >
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -458,13 +449,13 @@ const pageNumbers = computed(() => {
     </div>
 
     <!-- Tab bar theo trạng thái (cuộn ngang trên mobile) -->
-    <div class="border-b border-line-200 mb-4 overflow-x-auto">
+    <div class="border-b border-line-200 mb-4 overflow-x-auto no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0">
       <div class="flex gap-1 min-w-max">
         <button
           v-for="tab in statusTabs"
           :key="tab.key"
           @click="status = tab.key"
-          class="relative h-10 px-3 text-sm font-semibold whitespace-nowrap transition border-b-2 -mb-px flex items-center gap-1.5"
+          class="tap relative h-11 lg:h-10 px-3 text-sm font-semibold whitespace-nowrap transition border-b-2 -mb-px flex items-center gap-1.5"
           :class="
             status === tab.key
               ? 'text-royal-700 border-royal-700'
@@ -483,14 +474,16 @@ const pageNumbers = computed(() => {
     </div>
 
     <!-- Search + range -->
-    <div class="bg-white border border-line-200 rounded-card p-4 shadow-card mb-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="relative flex-1 min-w-[220px]">
+    <div class="bg-white border border-line-200 rounded-card p-3.5 lg:p-4 shadow-card mb-4">
+      <!-- Điện thoại: ô tìm full chiều ngang, 4 bộ lọc xếp lưới 2 cột (2 hàng).
+           Từ 640px trở lên quay về xếp ngang như cũ. -->
+      <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+        <div class="relative col-span-2 sm:flex-1 sm:min-w-[220px]">
           <input
             v-model="q"
             type="search"
             placeholder="Tìm mã đơn / tên KH / SĐT..."
-            class="w-full h-10 pl-10 pr-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm"
+            class="w-full h-11 sm:h-10 pl-10 pr-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm"
           />
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -498,7 +491,7 @@ const pageNumbers = computed(() => {
         </div>
         <select
           v-model="range"
-          class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm shrink-0"
+          class="h-11 sm:h-10 px-2.5 sm:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 sm:shrink-0"
         >
           <option v-for="opt in rangeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
@@ -506,14 +499,14 @@ const pageNumbers = computed(() => {
         <select
           v-if="canReconcile"
           v-model="reconciledFilter"
-          class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm shrink-0"
+          class="h-11 sm:h-10 px-2.5 sm:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 sm:shrink-0"
         >
           <option v-for="opt in reconciledOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
         <!-- Lọc hàng chờ xuất hoá đơn VAT — kế toán mở "Chờ xuất VAT" là ra việc cần làm -->
         <select
           v-model="vatFilter"
-          class="h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm shrink-0"
+          class="h-11 sm:h-10 px-2.5 sm:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 sm:shrink-0"
         >
           <option v-for="opt in vatOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
@@ -521,7 +514,7 @@ const pageNumbers = computed(() => {
         <button
           type="button"
           @click="toggleFilters"
-          class="h-10 px-3.5 rounded-input border text-sm font-semibold flex items-center gap-2 shrink-0 transition"
+          class="h-11 sm:h-10 px-3 sm:px-3.5 rounded-input border text-sm font-semibold flex items-center justify-center gap-2 min-w-0 sm:shrink-0 transition"
           :class="showFilters || advancedCount
             ? 'border-royal-700 text-royal-700 bg-royal-50'
             : 'border-line-300 text-ink-secondary hover:border-royal-700 hover:text-royal-700'"
@@ -544,7 +537,7 @@ const pageNumbers = computed(() => {
             <span class="block text-xs font-semibold text-ink-secondary mb-1">Nhân viên sale</span>
             <select
               v-model="saleFilter"
-              class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+              class="w-full h-11 sm:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
             >
               <option value="">Tất cả nhân viên</option>
               <option v-for="st in staffList" :key="st.id" :value="st.id">{{ st.fullName }}</option>
@@ -556,7 +549,7 @@ const pageNumbers = computed(() => {
               v-model="customFrom"
               type="date"
               :max="customTo || undefined"
-              class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+              class="w-full h-11 sm:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
             />
           </label>
           <label class="flex-1 min-w-[150px]">
@@ -565,15 +558,15 @@ const pageNumbers = computed(() => {
               v-model="customTo"
               type="date"
               :min="customFrom || undefined"
-              class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+              class="w-full h-11 sm:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
             />
           </label>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
             <button
               v-for="p in quickPresets"
               :key="p.label"
               type="button"
-              class="h-10 px-3 rounded-input border border-line-300 text-sm font-semibold text-ink-secondary hover:border-royal-700 hover:text-royal-700 whitespace-nowrap"
+              class="h-11 sm:h-10 px-3 rounded-input border border-line-300 text-sm font-semibold text-ink-secondary hover:border-royal-700 hover:text-royal-700 whitespace-nowrap"
               @click="applyPreset(p)"
             >
               {{ p.label }}
@@ -586,7 +579,7 @@ const pageNumbers = computed(() => {
 
     <!-- Loading -->
     <div v-if="loading" class="space-y-2">
-      <div v-for="i in 6" :key="i" class="h-[68px] bg-white rounded-card border border-line-200 animate-pulse"></div>
+      <div v-for="i in 6" :key="i" class="h-[176px] lg:h-[68px] bg-white rounded-card border border-line-200 animate-pulse"></div>
     </div>
 
     <!-- Error -->
@@ -757,134 +750,26 @@ const pageNumbers = computed(() => {
         </table>
       </div>
 
-      <!-- THẺ — điện thoại -->
-      <div class="lg:hidden space-y-2">
-        <div
+      <!-- THẺ — điện thoại / tablet nhỏ (< 1024px). Bảng 7 cột ở trên nhét vào
+           màn 6 inch làm chữ xuống dòng từng từ; thẻ xếp lại theo thứ tự cần
+           đọc: mã+tiền → khách → trạng thái → thao tác (anh chốt 27/8/2026).
+           Trình bày nằm trong MobileOrderCard.vue, logic vẫn ở màn này. -->
+      <div class="lg:hidden space-y-2.5">
+        <MobileOrderCard
           v-for="o in orders"
           :key="o.id"
-          @click="openOrder(o)"
-          role="button"
-          tabindex="0"
-          @keydown.enter="openOrder(o)"
-          class="w-full cursor-pointer bg-white border border-line-200 rounded-card p-3.5 shadow-card hover:border-royal-700 transition text-left flex items-center gap-3"
-        >
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <span class="text-[11px] font-mono text-ink-secondary">{{ o.orderCode }}</span>
-              <span
-                class="text-[10px] uppercase font-semibold px-2 py-0.5 rounded"
-                :class="statusColor(o.statusNormalized || o.status)"
-              >
-                {{ statusLabel(o.statusNormalized || o.status) }}
-              </span>
-            </div>
-            <div class="text-sm font-semibold text-ink-primary truncate mt-0.5">
-              {{ o.contact?.fullName || '—' }}
-            </div>
-            <div class="text-[11px] text-ink-secondary truncate">
-              <span v-if="o.contact?.storeName">{{ o.contact.storeName }} · </span>
-              <span :title="formatDateTimeVN(o.orderDate || o.createdAt)">
-                {{ formatRelativeTime(o.orderDate || o.createdAt) }}
-              </span>
-            </div>
-          </div>
-          <div class="text-right shrink-0">
-            <div class="text-sm font-bold text-royal-700">{{ formatVND(totalOf(o)) }}</div>
-            <div
-              v-if="(o.debtAmountValue ?? 0) > 0"
-              class="text-[10px] text-red-600 font-medium mt-0.5"
-            >
-              Nợ {{ formatVND(o.debtAmountValue) }}
-            </div>
-          </div>
-          <!-- Yêu cầu xuất hoá đơn VAT — chỉ đơn đã hoàn tất. Đơn đã gửi thì nút đổi
-               thành nhãn trạng thái, bấm lại để xem/sửa cho tới khi kế toán xuất. -->
-          <button
-            v-if="canRequestVat(o)"
-            @click.stop="onVatClick(o)"
-            :title="o.vatInvoiceStatus === 'issued' || o.vatInvoiceStatus === 'partial'
-              ? `Đã xuất hoá đơn${o.vatInvoiceId ? ' số ' + o.vatInvoiceId : ''} ${formatDateTimeVN(o.vatIssuedAt)}`
-              : o.vatInvoiceStatus === 'skipped'
-                ? `Không xuất hoá đơn — ${o.vatSkipReason || 'không rõ lý do'}`
-                : o.vatInvoiceStatus === 'requested'
-                ? (isVatDesk
-                    ? `Yêu cầu lúc ${formatDateTimeVN(o.vatRequestedAt)} — bấm để xác nhận đã xuất`
-                    : `Đã yêu cầu xuất VAT ${formatDateTimeVN(o.vatRequestedAt)} — bấm để xem/sửa`)
-                : 'Yêu cầu kế toán xuất hoá đơn VAT cho đơn này'"
-            class="shrink-0 h-8 flex items-center justify-center rounded-lg border text-[12px] font-semibold transition w-8 sm:w-auto sm:px-2.5"
-            :class="vatBadge(o).cls"
-          >
-            <!-- Điện thoại chỉ đủ chỗ cho icon; máy tính hiện đủ chữ. -->
-            <svg class="w-4 h-4 sm:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 4h16v16l-2.5-1.5L15 20l-2.5-1.5L10 20l-2.5-1.5L5 20 4 19z" />
-              <line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="13" y2="13" />
-            </svg>
-            <span class="hidden sm:inline">{{ vatBadge(o).label }}</span>
-          </button>
-          <!-- Xem hoá đơn đã ký (chỉ đơn đã có hoá đơn) -->
-          <button
-            v-if="hasVatFile(o)"
-            @click.stop="vatViewOrder = o"
-            title="Xem hoá đơn VAT đã xuất — mở/tải file gửi khách"
-            class="shrink-0 h-8 w-8 hidden sm:flex items-center justify-center rounded-lg border border-line-300 text-ink-secondary hover:border-royal-700 hover:text-royal-700 transition"
-          >
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" />
-            </svg>
-          </button>
-          <!-- Sửa thông tin xuất VAT / huỷ yêu cầu (sale tự xử khi khách đổi ý) -->
-          <button
-            v-if="hasVatFlow(o)"
-            @click.stop="vatOrder = o"
-            title="Sửa thông tin xuất VAT / huỷ yêu cầu"
-            class="shrink-0 h-8 w-8 hidden sm:flex items-center justify-center rounded-lg border border-line-300 text-ink-secondary hover:border-royal-700 hover:text-royal-700 transition"
-          >
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-              <path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z" />
-            </svg>
-          </button>
-          <!-- Ô tick ĐÃ ĐỐI SOÁT chứng từ (Mai Hiền phụ trách). Chỉ người xem được
-               full đơn mới thấy ô này — sale thường không tự tick đơn của mình. -->
-          <button
-            v-if="canReconcile"
-            @click.stop="toggleReconcile(o)"
-            :disabled="reconcilingId === o.id"
-            :title="o.reconciledAt ? `Đã đối soát ${formatDateTimeVN(o.reconciledAt)} — bấm để bỏ tick` : 'Bấm để đánh dấu đã đối soát chứng từ'"
-            class="shrink-0 h-8 w-8 flex items-center justify-center rounded-lg border transition disabled:opacity-50"
-            :class="o.reconciledAt
-              ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-              : 'border-line-300 text-ink-secondary hover:border-emerald-500 hover:text-emerald-700'"
-          >
-            <svg v-if="reconcilingId === o.id" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="9" stroke-opacity="0.3" /><path d="M21 12a9 9 0 0 0-9-9" />
-            </svg>
-            <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </button>
-          <button
-            @click.stop="reorder(o)"
-            :disabled="reorderingId === o.id"
-            title="Đặt lại đơn này"
-            class="shrink-0 h-8 w-8 flex items-center justify-center rounded-lg border border-line-300 text-royal-700 hover:border-royal-700 hover:bg-royal-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg
-              class="w-4 h-4"
-              :class="reorderingId === o.id ? 'animate-spin' : ''"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-            </svg>
-          </button>
-          <svg class="w-4 h-4 text-ink-disabled shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </div>
+          :order="o"
+          :can-reconcile="canReconcile"
+          :is-vat-desk="isVatDesk"
+          :reconciling="reconcilingId === o.id"
+          :reordering="reorderingId === o.id"
+          @open="openOrder(o)"
+          @vat="onVatClick(o)"
+          @vat-view="vatViewOrder = o"
+          @vat-edit="vatOrder = o"
+          @reconcile="toggleReconcile(o)"
+          @reorder="reorder(o)"
+        />
       </div>
 
       <!-- Chân trang: số dòng/trang · số trang · tổng -->
@@ -946,3 +831,18 @@ const pageNumbers = computed(() => {
     />
   </div>
 </template>
+
+<style scoped>
+/* Thanh cuộn ngang của tabs: ẩn cho gọn trên điện thoại (vẫn kéo được). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* iOS huỷ cú bấm nếu ngón trượt nhẹ / nghi ngờ double-tap-zoom (27/8/2026). */
+.tap {
+  touch-action: manipulation;
+}
+</style>

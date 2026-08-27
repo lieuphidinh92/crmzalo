@@ -27,10 +27,6 @@ const moreItems = computed(() => [
 
 const showMore = ref(false);
 
-function go(to) {
-  router.push(to);
-}
-
 function goMore(item) {
   showMore.value = false;
   router.push(item.to);
@@ -50,15 +46,15 @@ const moreActive = computed(() =>
 <template>
   <nav
     class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-line-200"
-    style="padding-bottom: env(safe-area-inset-bottom)"
+    style="padding-bottom: max(env(safe-area-inset-bottom), 8px)"
   >
     <div class="grid grid-cols-5 h-16 relative">
       <!-- Tab 1 + 2 -->
-      <button
+      <RouterLink
         v-for="tab in sideTabs.slice(0, 2)"
         :key="tab.name"
-        @click="go(tab.to)"
-        class="flex flex-col items-center justify-center gap-0.5 transition"
+        :to="tab.to"
+        class="tab flex flex-col items-center justify-center gap-0.5 transition active:bg-surface-soft"
         :class="isActive(tab.to) ? 'text-royal-700' : 'text-ink-secondary'"
       >
         <svg v-if="tab.icon === 'home'" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
@@ -68,40 +64,40 @@ const moreActive = computed(() =>
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12l8.73-5.04M12 22V12"/>
         </svg>
         <span class="text-[11px] font-medium leading-none mt-0.5">{{ tab.label }}</span>
-      </button>
+      </RouterLink>
 
       <!-- Center FAB Tạo đơn (lifted) -->
-      <div class="flex items-start justify-center">
-        <button
-          @click="go('/pos')"
-          class="-mt-6 w-14 h-14 rounded-full bg-royal-700 hover:bg-royal-800 active:bg-royal-800 text-white flex items-center justify-center shadow-fab transition relative"
+      <div class="flex items-start justify-center pointer-events-none">
+        <RouterLink
+          to="/pos"
+          class="tab pointer-events-auto -mt-6 w-14 h-14 rounded-full bg-royal-700 hover:bg-royal-800 active:bg-royal-800 text-white flex items-center justify-center shadow-fab transition relative"
           :class="isActive('/pos') ? 'ring-4 ring-royal-100' : ''"
           aria-label="Tạo đơn"
         >
           <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
           </svg>
-        </button>
+        </RouterLink>
       </div>
 
       <!-- Tab 4: Đơn hàng -->
-      <button
+      <RouterLink
         v-for="tab in sideTabs.slice(2)"
         :key="tab.name"
-        @click="go(tab.to)"
-        class="flex flex-col items-center justify-center gap-0.5 transition"
+        :to="tab.to"
+        class="tab flex flex-col items-center justify-center gap-0.5 transition active:bg-surface-soft"
         :class="isActive(tab.to) ? 'text-royal-700' : 'text-ink-secondary'"
       >
         <svg v-if="tab.icon === 'receipt'" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9h8m-8 4h6"/>
         </svg>
         <span class="text-[11px] font-medium leading-none mt-0.5">{{ tab.label }}</span>
-      </button>
+      </RouterLink>
 
       <!-- Tab 5: Xem thêm (mở bảng chức năng) -->
       <button
         @click="showMore = true"
-        class="flex flex-col items-center justify-center gap-0.5 transition"
+        class="tab flex flex-col items-center justify-center gap-0.5 transition active:bg-surface-soft"
         :class="moreActive || showMore ? 'text-royal-700' : 'text-ink-secondary'"
         aria-label="Xem thêm chức năng"
       >
@@ -187,6 +183,17 @@ const moreActive = computed(() =>
 </template>
 
 <style scoped>
+/*
+ * touch-action: manipulation — iOS chờ xem cú bấm có phải double-tap-to-zoom
+ * nên hay huỷ luôn click ở thanh nav sát mép dưới (báo lỗi 27/8/2026: không
+ * ấn được Sản phẩm / Đơn hàng trên iPhone). Tab cũng đã đổi sang <RouterLink>
+ * (thẻ <a>) vì iOS nhận cú bấm trên link kể cả khi ngón trượt nhẹ.
+ */
+.tab {
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;
