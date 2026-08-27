@@ -39,9 +39,12 @@ const displayCode = computed(() => props.customer.customer_code || props.custome
 </script>
 
 <template>
+  <!-- Điện thoại (< 1024px): tên khách được 2 dòng rồi mới "..." — trước
+       27/8/2026 dùng truncate nên "Chị Hạnh - HKD TRẦN ..." / "CÔNG TY TNHH
+       THƯƠ..." bị cắt mất phần phân biệt khách. Máy tính giữ nguyên 1 dòng. -->
   <button
     @click="emit('open', customer)"
-    class="w-full text-left bg-white border border-line-200 rounded-card p-3.5 shadow-card hover:border-royal-700 hover:shadow-pop transition flex gap-3"
+    class="tap w-full text-left bg-white border border-line-200 rounded-card p-3.5 shadow-card hover:border-royal-700 hover:shadow-pop transition flex gap-3"
   >
     <!-- Avatar -->
     <div class="w-11 h-11 rounded-full bg-royal-50 text-royal-700 flex items-center justify-center font-bold shrink-0">
@@ -50,8 +53,8 @@ const displayCode = computed(() => props.customer.customer_code || props.custome
 
     <div class="min-w-0 flex-1">
       <!-- Name + tier + rank -->
-      <div class="flex items-center gap-2">
-        <span class="font-semibold text-ink-primary truncate">{{ customer.full_name || '—' }}</span>
+      <div class="flex items-center gap-2 flex-wrap lg:flex-nowrap">
+        <span class="font-semibold text-ink-primary line-clamp-2 lg:truncate lg:line-clamp-none">{{ customer.full_name || '—' }}</span>
         <span
           v-if="customer.customer_rank"
           class="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded"
@@ -82,7 +85,9 @@ const displayCode = computed(() => props.customer.customer_code || props.custome
       </div>
 
       <!-- Stats row -->
-      <div class="flex items-center gap-3 mt-2 text-[11px]">
+      <!-- Điện thoại: hàng số liệu được xuống dòng (gap-y-1) — để nowrap thì
+           4 mảnh chữ chen nhau trong 390px, số nợ bị bóp xuống từng từ. -->
+      <div class="flex items-center gap-3 gap-y-1 mt-2 text-[11px] flex-wrap lg:flex-nowrap lg:gap-y-0">
         <span v-if="typeLabel" class="text-ink-secondary">{{ typeLabel }}</span>
         <span class="text-ink-secondary">
           {{ customer.order_count || 0 }} đơn · {{ formatVNDShort(customer.total_revenue || 0) }}
@@ -92,7 +97,7 @@ const displayCode = computed(() => props.customer.customer_code || props.custome
         </span>
         <span
           v-if="hasDebt"
-          class="ml-auto font-semibold text-red-600 tabular-nums"
+          class="ml-auto font-semibold text-red-600 tabular-nums text-[13px] lg:text-[11px]"
         >
           Nợ {{ formatVND(customer.debt) }}
         </span>
@@ -103,3 +108,10 @@ const displayCode = computed(() => props.customer.customer_code || props.custome
     </div>
   </button>
 </template>
+
+<style scoped>
+/* iOS hay huỷ cú bấm khi ngón trượt nhẹ trên thẻ — xem MobileOrderCard.vue 27/8/2026 */
+.tap {
+  touch-action: manipulation;
+}
+</style>

@@ -194,6 +194,18 @@ bước) thì mở đúng mục trong
   (`flex items-center`) → chữ xuống dòng từng từ, và 2 nút VAT bị `hidden sm:flex` = **mất chức năng trên
   điện thoại**. Tách `MobileOrderCard.vue` (thẻ dọc, ô bấm 44px) và để hàm hiển thị dùng chung ở
   `composables/useOrderRow.js` để bảng desktop + thẻ mobile không lệch nhãn.
+- **Ô nhập tiền/số lượng: dùng `components/MoneyInput.vue`, KHÔNG `type="number"`.** `parseInt("94.250")` = 94 →
+  đơn giá/giá vốn thành 94đ (đo thật 27/8: gõ "94.250" vào giá vốn, SL 2 → thành tiền 188đ thay vì 188.500đ).
+  MoneyInput = `type="text" inputmode="numeric"`, lấy mọi chữ số làm giá trị, format lại khi rời ô. Đã đổi 9 ô
+  (POS: đơn giá/chiết khấu/trả trước/phí ship/SL · phiếu nhập: giá vốn/SL/chiết khấu/phí VC/đặt cọc). Ô "số
+  NGÀY nợ" vẫn `type="number"` — ngày không bao giờ có dấu phân cách.
+- **Thanh nút cố định `bottom-0` trên mobile bị BottomNav (z-40, 64px + safe-area) CHE.** Nút "Lưu nháp" của
+  phiếu nhập (z-30) đã bị vô hiệu: hit-test tâm nút trả về tab của thanh điều hướng. Kê thanh lên
+  `bottom: calc(4rem + max(env(safe-area-inset-bottom), 8px))`, `lg:` về 0. Kiểm bằng `elementFromPoint`.
+- **Lỗi phụ (xuất Excel…) phải có biến RIÊNG, đừng ghi chung vào `errorMsg` của danh sách** — `errorMsg` là
+  nhánh `v-else-if` nên xuất lỗi 1 cái là cả danh sách biến mất (gặp ở Customers.vue, Products.vue làm đúng).
+- **Ô tìm của thanh trên là desktop-only (`hidden lg:flex`) nhưng vẫn nằm trong DOM** — script test phải lọc
+  `getBoundingClientRect().width > 0`, không thì gõ vào ô vô hình rồi kết luận sai là "không có kết quả".
 - **Hàng tab / hàng nút trên mobile phải `overflow-x-auto` + `whitespace-nowrap` + `shrink-0`.** Để `flex`
   thường là cả TRANG tràn ngang, không chỉ hàng đó: Công nợ tràn 104px ở 390px (4 tab lớn), Sản phẩm tràn
   41px (4 nút admin trên header). Nhãn dài thì cho bản ngắn ở mobile (`<span class="lg:hidden">`), và gom

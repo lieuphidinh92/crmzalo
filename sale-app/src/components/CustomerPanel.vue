@@ -91,8 +91,9 @@ defineExpose({ focusSearch });
           <button
             @click="pos.clearCustomer()"
             type="button"
-            class="text-ink-disabled hover:text-red-600 text-sm shrink-0 leading-none p-1"
+            class="tap shrink-0 w-11 h-11 lg:w-auto lg:h-auto -mr-2 -mt-2 lg:m-0 flex items-center justify-center text-ink-disabled hover:text-red-600 text-base lg:text-sm leading-none lg:p-1"
             title="Bỏ chọn KH"
+            aria-label="Bỏ chọn khách hàng"
           >
             ✕
           </button>
@@ -155,7 +156,7 @@ defineExpose({ focusSearch });
               :key="t.value"
               @click="pos.changeTier(t.value)"
               type="button"
-              class="text-xs font-medium px-2 py-1.5 rounded-lg border transition"
+              class="tap h-11 lg:h-auto flex items-center justify-center text-xs font-medium px-2 py-1.5 rounded-lg border transition"
               :class="
                 pos.selectedTier === t.value
                   ? 'bg-royal-700 text-white border-royal-700'
@@ -174,7 +175,7 @@ defineExpose({ focusSearch });
           <h3 class="text-sm font-semibold text-ink-primary">Đơn hàng gần nhất</h3>
           <button
             type="button"
-            class="text-xs text-royal-700 hover:text-royal-800 font-medium"
+            class="tap shrink-0 h-11 lg:h-auto flex items-center px-2 lg:px-0 -mr-2 lg:mr-0 -my-2 lg:my-0 text-xs text-royal-700 hover:text-royal-800 font-medium"
           >
             Xem tất cả
           </button>
@@ -221,3 +222,10 @@ defineExpose({ focusSearch });
     </template>
   </div>
 </template>
+
+<style scoped>
+/* iOS huỷ cú bấm nếu ngón trượt nhẹ / nghi ngờ double-tap-zoom (27/8/2026). */
+.tap {
+  touch-action: manipulation;
+}
+</style>

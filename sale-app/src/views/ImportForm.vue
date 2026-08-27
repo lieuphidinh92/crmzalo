@@ -1,4 +1,5 @@
 <script setup>
+import MoneyInput from '../components/MoneyInput.vue';
 /**
  * ImportForm.vue — Tạo / sửa phiếu nhập kho (nháp).
  *
@@ -428,9 +429,13 @@ const DATE_MIN = '2000-01-01';
 const DATE_MAX = '2100-12-31';
 
 // Ô input dùng chung.
+// 27/08/2026 — thủ kho gõ phiếu nhập trên ĐIỆN THOẠI: mobile nâng ô lên 44px
+// (h-11) cho vừa đầu ngón tay và chữ 16px để iOS không tự zoom khi focus.
+// Desktop (lg) giữ NGUYÊN như cũ: cao 40px + text-sm.
 const inputCls =
-  'w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-ink-primary';
-const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
+  'w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-base lg:text-sm text-ink-primary';
+// Nhãn: mobile 12px cho dễ đọc dưới ánh sáng kho, desktop giữ 11px.
+const labelCls = 'text-[12px] lg:text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
 </script>
 
 <template>
@@ -438,7 +443,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
     <!-- Back -->
     <button
       @click="goBack"
-      class="inline-flex items-center gap-1.5 text-sm text-ink-secondary hover:text-ink-primary mb-3"
+      class="tap inline-flex items-center gap-1.5 h-11 lg:h-auto -ml-1 lg:ml-0 px-1 lg:px-0 text-sm text-ink-secondary hover:text-ink-primary mb-1 lg:mb-3"
     >
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="15 18 9 12 15 6" />
@@ -511,7 +516,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                     v-model="supplierQuery"
                     type="text"
                     placeholder="Tìm hoặc chọn NCC..."
-                    :class="inputCls"
+                    :class="inputCls + ' pr-11 lg:pr-3'"
                     @focus="supplierDropdownOpen = true"
                     @input="onSupplierInput"
                   />
@@ -519,7 +524,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                     v-if="form.supplierId"
                     type="button"
                     @click="clearSupplier"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 text-ink-disabled hover:text-ink-primary text-lg leading-none"
+                    class="tap absolute right-0 lg:right-2 top-1/2 -translate-y-1/2 w-11 h-11 lg:w-auto lg:h-auto inline-flex items-center justify-center text-ink-disabled hover:text-ink-primary text-lg leading-none"
                   >×</button>
 
                   <!-- Overlay bấm ra ngoài để đóng dropdown -->
@@ -539,7 +544,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                       :key="s.id"
                       type="button"
                       @click="selectSupplier(s)"
-                      class="w-full text-left px-3 py-2 text-sm hover:bg-surface-soft border-b border-line-100 last:border-0"
+                      class="tap w-full text-left px-3 py-2.5 lg:py-2 min-h-[44px] lg:min-h-0 text-sm hover:bg-surface-soft border-b border-line-100 last:border-0"
                       :class="s.id === form.supplierId ? 'bg-royal-50 text-royal-700 font-medium' : 'text-ink-primary'"
                     >
                       <div>{{ s.name }}</div>
@@ -561,7 +566,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                   type="button"
                   @click="openAddSupplier"
                   title="Thêm NCC mới"
-                  class="shrink-0 w-10 h-10 rounded-input border border-line-300 text-royal-700 hover:bg-royal-50 flex items-center justify-center text-xl font-semibold leading-none"
+                  class="tap shrink-0 w-11 h-11 lg:w-10 lg:h-10 rounded-input border border-line-300 text-royal-700 hover:bg-royal-50 flex items-center justify-center text-xl font-semibold leading-none"
                 >＋</button>
               </div>
 
@@ -603,7 +608,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
               v-model="form.notes"
               rows="2"
               placeholder="Ghi chú cho phiếu nhập..."
-              class="w-full px-3 py-2 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm resize-none text-ink-primary"
+              class="w-full px-3 py-2.5 lg:py-2 rounded-input border border-line-300 focus:border-royal-700 outline-none text-base lg:text-sm resize-none text-ink-primary"
             />
           </div>
         </div>
@@ -620,7 +625,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
               v-model="query"
               type="search"
               placeholder="Tìm SKU / tên sản phẩm để thêm..."
-              class="w-full h-11 pl-10 pr-3 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm text-ink-primary"
+              class="w-full h-11 pl-10 pr-3 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-base lg:text-sm text-ink-primary"
             />
             <svg
               class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-disabled"
@@ -650,7 +655,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                 :key="p.id"
                 type="button"
                 @click="addProduct(p)"
-                class="w-full text-left px-3 py-2 hover:bg-surface-50 border-b border-line-100 last:border-0 flex items-center justify-between gap-2"
+                class="tap w-full text-left px-3 py-2.5 lg:py-2 min-h-[44px] lg:min-h-0 hover:bg-surface-50 border-b border-line-100 last:border-0 flex items-center justify-between gap-2"
               >
                 <span class="min-w-0">
                   <span class="font-mono text-[10px] text-ink-secondary">{{ p.sku }}</span>
@@ -694,7 +699,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                 <button
                   type="button"
                   @click="removeItem(idx)"
-                  class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-rose-500 hover:bg-rose-50"
+                  class="tap shrink-0 w-11 h-11 lg:w-7 lg:h-7 -mr-1 -mt-1 lg:mr-0 lg:mt-0 rounded-full flex items-center justify-center text-rose-500 hover:bg-rose-50"
                   title="Xoá dòng"
                 >
                   <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -705,24 +710,22 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
 
               <!-- Dòng 2: SL + Giá vốn + Thành tiền -->
               <div class="grid grid-cols-2 gap-2">
-                <div>
+                <div class="min-w-0">
                   <div :class="labelCls">Số lượng</div>
-                  <input
-                    v-model.number="it.quantity"
-                    type="number"
-                    min="1"
-                    inputmode="numeric"
+                  <!-- SỐ LƯỢNG: MoneyInput (gõ "1.000" ra 1000; type=number cũ
+                       cho parseInt("1.000") = 1) — xem MoneyInput.vue 27/8/2026 -->
+                  <MoneyInput
+                    v-model="it.quantity"
+                    :min="1"
                     :class="inputCls + ' tabular-nums'"
                   />
                 </div>
-                <div>
+                <div class="min-w-0">
                   <div :class="labelCls">Giá vốn (đ)</div>
-                  <input
-                    v-model.number="it.unitCost"
-                    type="number"
-                    min="0"
-                    step="1000"
-                    inputmode="numeric"
+                  <!-- GIÁ VỐN: ô tiền quan trọng nhất của phiếu nhập — gõ
+                       "94.250" phải ra 94.250đ, không phải 94đ. -->
+                  <MoneyInput
+                    v-model="it.unitCost"
                     :class="inputCls + ' tabular-nums'"
                   />
                 </div>
@@ -733,7 +736,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
               </div>
 
               <!-- Dòng 3: Mã lô + HSD (luôn hiện) -->
-              <div class="grid grid-cols-2 gap-2 mt-2">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                 <div>
                   <div :class="labelCls">Mã lô</div>
                   <input v-model="it.batchCode" type="text" placeholder="VD: L20260715" :class="inputCls + ' font-mono'" />
@@ -749,7 +752,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                     :min="DATE_MIN"
                     :max="DATE_MAX"
                     :class="[
-                      'w-full h-10 px-3 rounded-input border outline-none bg-white text-sm text-ink-primary',
+                      'w-full h-11 lg:h-10 px-3 rounded-input border outline-none bg-white text-base lg:text-sm text-ink-primary',
                       it.expiryDate ? 'border-line-300 focus:border-royal-700' : 'border-amber-400 focus:border-amber-500',
                     ]"
                   />
@@ -760,7 +763,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
               <button
                 type="button"
                 @click="it._open = !it._open"
-                class="mt-2 text-[11px] text-royal-700 font-medium inline-flex items-center gap-1"
+                class="tap mt-2 h-11 lg:h-auto -ml-1 lg:ml-0 px-1 lg:px-0 text-xs lg:text-[11px] text-royal-700 font-medium inline-flex items-center gap-1"
               >
                 <svg
                   class="w-3.5 h-3.5 transition-transform"
@@ -789,21 +792,18 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
         <div class="bg-white border border-line-200 rounded-card p-4 lg:p-5 shadow-card mb-3">
           <div class="text-xs font-semibold text-ink-secondary uppercase mb-3">Phí & chiết khấu</div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <!-- Chiết khấu -->
             <div>
               <div :class="labelCls">Chiết khấu</div>
               <div class="flex gap-1.5">
-                <input
-                  v-model.number="form.discountValue"
-                  type="number"
-                  min="0"
-                  inputmode="numeric"
+                <MoneyInput
+                  v-model="form.discountValue"
                   :class="inputCls + ' tabular-nums'"
                 />
                 <select
                   v-model="form.discountType"
-                  class="h-10 px-2 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm shrink-0"
+                  class="h-11 lg:h-10 px-2.5 lg:px-2 min-w-[56px] lg:min-w-0 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-base lg:text-sm shrink-0"
                 >
                   <option value="amount">đ</option>
                   <option value="percent">%</option>
@@ -822,12 +822,8 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
             <!-- Phí vận chuyển -->
             <div>
               <div :class="labelCls">Phí vận chuyển (đ)</div>
-              <input
-                v-model.number="form.shippingFee"
-                type="number"
-                min="0"
-                step="1000"
-                inputmode="numeric"
+              <MoneyInput
+                v-model="form.shippingFee"
                 :class="inputCls + ' tabular-nums'"
               />
             </div>
@@ -838,14 +834,10 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
                 Đặt cọc (đ)
                 <span v-if="(Number(form.depositAmount) || 0) > 0 && !form.supplierId" class="text-rose-500 normal-case">· cần NCC</span>
               </div>
-              <input
-                v-model.number="form.depositAmount"
-                type="number"
-                min="0"
-                step="1000"
-                inputmode="numeric"
+              <MoneyInput
+                v-model="form.depositAmount"
                 :class="[
-                  'w-full h-10 px-3 rounded-input border outline-none bg-white text-sm tabular-nums text-ink-primary',
+                  'w-full h-11 lg:h-10 px-3 rounded-input border outline-none bg-white text-base lg:text-sm tabular-nums text-ink-primary',
                   (Number(form.depositAmount) || 0) > 0 && !form.supplierId
                     ? 'border-rose-400 focus:border-rose-500'
                     : 'border-line-300 focus:border-royal-700',
@@ -897,14 +889,14 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
   <!-- ══════════ THANH ĐÁY: Lưu nháp ══════════ -->
   <div
     v-if="isAdmin && !loadingDetail && !loadError"
-    class="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-line-200 px-4 py-3"
+    class="save-bar fixed inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-line-200 px-4 py-3"
   >
     <div class="max-w-[900px] mx-auto flex items-center gap-2">
       <button
         type="button"
         @click="goBack"
         :disabled="saving"
-        class="h-12 px-5 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50 disabled:opacity-50"
+        class="tap h-12 px-5 rounded-xl border border-line-300 text-ink-primary font-medium hover:bg-surface-50 active:bg-surface-50 disabled:opacity-50"
       >
         Huỷ
       </button>
@@ -912,7 +904,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
         type="button"
         @click="onSave"
         :disabled="saving"
-        class="flex-1 h-12 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold shadow-pop disabled:opacity-50 flex items-center justify-center gap-2"
+        class="tap flex-1 h-12 rounded-xl bg-royal-700 hover:bg-royal-800 active:bg-royal-800 text-white font-bold shadow-pop disabled:opacity-50 flex items-center justify-center gap-2"
       >
         <svg v-if="!saving" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
@@ -935,7 +927,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
           <button
             type="button"
             @click="showAddSupplier = false"
-            class="text-ink-disabled hover:text-ink-primary text-2xl leading-none"
+            class="tap w-11 h-11 lg:w-auto lg:h-auto -mr-2 lg:mr-0 inline-flex items-center justify-center text-ink-disabled hover:text-ink-primary text-2xl leading-none"
           >×</button>
         </div>
 
@@ -994,7 +986,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
           <button
             type="button"
             @click="showAddSupplier = false"
-            class="flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-semibold"
+            class="tap flex-1 h-11 rounded-xl border border-line-300 text-ink-primary font-semibold active:bg-surface-50"
           >
             Huỷ
           </button>
@@ -1002,7 +994,7 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
             type="button"
             @click="submitNewSupplier"
             :disabled="savingSupplier"
-            class="flex-1 h-11 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold disabled:opacity-50"
+            class="tap flex-1 h-11 rounded-xl bg-royal-700 hover:bg-royal-800 active:bg-royal-800 text-white font-bold disabled:opacity-50"
           >
             {{ savingSupplier ? 'Đang lưu...' : 'Lưu NCC' }}
           </button>
@@ -1012,3 +1004,21 @@ const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1';
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+/* iOS huỷ cú bấm nếu ngón trượt nhẹ / nghi ngờ double-tap-zoom (xem BottomNav.vue 27/8/2026). */
+.tap {
+  touch-action: manipulation;
+}
+/* Thanh "Lưu nháp" phải nằm TRÊN BottomNav của mobile (cao 64px + safe-area, z-40):
+   để bottom-0 thì trên điện thoại nút Lưu bị thanh điều hướng che mất (27/8/2026).
+   Từ lg trở lên không có BottomNav → về đúng bottom:0 như cũ. */
+.save-bar {
+  bottom: calc(4rem + max(env(safe-area-inset-bottom), 8px));
+}
+@media (min-width: 1024px) {
+  .save-bar {
+    bottom: 0;
+  }
+}
+</style>

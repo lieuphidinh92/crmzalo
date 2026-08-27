@@ -150,7 +150,7 @@ defineExpose({ focusSearch });
           v-model="query"
           type="search"
           placeholder="Tìm tên SP, SKU, Barcode..."
-          class="w-full h-11 pl-10 pr-3 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm text-ink-primary"
+          class="tap w-full h-11 pl-10 pr-3 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm text-ink-primary"
         />
         <svg
           class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-disabled"
@@ -177,7 +177,7 @@ defineExpose({ focusSearch });
           type="button"
           disabled
           title="Lọc theo danh mục — chờ backend bổ sung field category"
-          class="w-full h-10 px-3 rounded-lg border border-line-200 bg-surface-50 text-sm text-left flex items-center justify-between gap-2 text-ink-disabled cursor-not-allowed"
+          class="w-full h-11 lg:h-10 px-3 rounded-lg border border-line-200 bg-surface-50 text-sm text-left flex items-center justify-between gap-2 text-ink-disabled cursor-not-allowed"
         >
           <span class="truncate">Tất cả danh mục</span>
           <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -187,26 +187,31 @@ defineExpose({ focusSearch });
       </div>
 
       <!-- Tabs lọc theo tồn kho -->
-      <div class="flex items-center gap-1 p-0.5 bg-surface-50 border border-line-200 rounded-lg">
-        <button
-          v-for="t in tabs"
-          :key="t.key"
-          type="button"
-          @click="stockTab = t.key"
-          class="flex-1 h-8 rounded-md text-sm font-medium transition"
-          :class="
-            stockTab === t.key
-              ? 'bg-royal-700 text-white shadow-sm'
-              : 'text-ink-secondary hover:text-ink-primary'
-          "
-        >
-          {{ t.label }}
-        </button>
+      <!-- Mobile (27/8/2026): chip đo được 98×32 — dưới ngưỡng 44px và bó chật.
+           Nâng chip lên h-11 và bọc overflow-x-auto: chip không bao giờ bị nén
+           dưới bề rộng chữ (min-w-max), thừa thì kéo ngang. Desktop giữ y cũ. -->
+      <div class="overflow-x-auto no-scrollbar -mx-3 px-3 lg:mx-0 lg:px-0">
+        <div class="flex items-center gap-1 p-0.5 bg-surface-50 border border-line-200 rounded-lg min-w-full lg:min-w-0">
+          <button
+            v-for="t in tabs"
+            :key="t.key"
+            type="button"
+            @click="stockTab = t.key"
+            class="tap flex-1 min-w-max lg:min-w-0 px-3 lg:px-0 h-11 lg:h-8 whitespace-nowrap rounded-md text-sm font-medium transition"
+            :class="
+              stockTab === t.key
+                ? 'bg-royal-700 text-white shadow-sm'
+                : 'text-ink-secondary hover:text-ink-primary'
+            "
+          >
+            {{ t.label }}
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- Danh sách card (cuộn riêng) -->
-    <div class="flex-1 overflow-y-auto p-3 space-y-2">
+    <div class="flex-1 overflow-y-auto p-3 space-y-3 lg:space-y-2">
       <!-- Loading skeleton -->
       <template v-if="loading && products.length === 0">
         <div
@@ -230,7 +235,7 @@ defineExpose({ focusSearch });
           v-for="p in filteredProducts"
           :key="p.id"
           @click="add(p)"
-          class="relative bg-white border border-line-200 rounded-xl p-3 transition hover:border-royal-700 hover:shadow-md cursor-pointer"
+          class="tap relative bg-white border border-line-200 rounded-xl p-3 transition hover:border-royal-700 hover:shadow-md cursor-pointer"
         >
           <div class="flex items-start gap-3">
             <!-- Ảnh -->
@@ -274,18 +279,23 @@ defineExpose({ focusSearch });
               </div>
             </div>
 
-            <!-- Nút thêm -->
-            <button
-              type="button"
-              @click.stop="add(p)"
-              class="shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition bg-royal-700 text-white hover:bg-royal-800"
-              :title="(Number(p.stock) || 0) === 0 ? 'Hết hàng — bán trước' : 'Thêm vào đơn'"
-            >
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
+            <!-- Nút thêm — ô bấm nhiều nhất khi lên đơn.
+                 Đo 27/8/2026: 36×36, nhỏ nhất toàn app → mobile nâng 44×44 và
+                 chèn pl-2 để tách khỏi phần thân thẻ. Desktop giữ nguyên 36. -->
+            <div class="shrink-0 pl-2 lg:pl-0">
+              <button
+                type="button"
+                @click.stop="add(p)"
+                class="tap w-11 h-11 lg:w-9 lg:h-9 rounded-full flex items-center justify-center transition bg-royal-700 text-white hover:bg-royal-800 active:bg-royal-800"
+                :title="(Number(p.stock) || 0) === 0 ? 'Hết hàng — bán trước' : 'Thêm vào đơn'"
+                :aria-label="`Thêm ${p.name} vào đơn`"
+              >
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Hàng giá theo 4 mức thùng (làm nổi mức đang chọn của KH) -->
@@ -321,6 +331,18 @@ defineExpose({ focusSearch });
 </template>
 
 <style scoped>
+/* Thanh cuộn ngang của hàng chip lọc: ẩn cho gọn trên điện thoại (vẫn kéo được). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* iOS huỷ cú bấm nếu ngón trượt nhẹ / nghi ngờ double-tap-zoom (27/8/2026). */
+.tap {
+  touch-action: manipulation;
+}
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
