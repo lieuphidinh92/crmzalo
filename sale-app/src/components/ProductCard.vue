@@ -1,6 +1,14 @@
 <script setup>
 import { computed } from 'vue';
-import { formatVND, formatDateVN } from '../composables/useFormat';
+import { formatVND } from '../composables/useFormat';
+// Nhãn tồn / cảnh báo HSD / điều kiện chưa có giá: dùng chung với thẻ dòng
+// trên điện thoại (MobileProductCard.vue) để 2 nơi không lệch.
+import {
+  productStockBadge,
+  productExpiryWarn,
+  productNoPrice,
+  rankColor as rankColorOf,
+} from '../composables/useProductRow';
 
 const props = defineProps({
   product: { type: Object, required: true },
@@ -8,32 +16,10 @@ const props = defineProps({
 });
 const emit = defineEmits(['open', 'add']);
 
-const stockBadge = computed(() => {
-  const s = props.product.stock ?? 0;
-  const w = props.product.warning_stock ?? 0;
-  if (s <= 0) return { label: 'Hết hàng', cls: 'bg-red-50 text-red-700' };
-  if (w > 0 && s <= w * 0.3) return { label: 'Sắp hết', cls: 'bg-red-50 text-red-700' };
-  if (w > 0 && s <= w) return { label: 'Thấp', cls: 'bg-amber-50 text-amber-700' };
-  return null;
-});
-
-const expiryWarn = computed(() => {
-  const d = props.product.nearest_expiry;
-  if (!d) return null;
-  const days = Math.floor((new Date(d).getTime() - Date.now()) / 86400000);
-  if (days < 0) return { label: 'Đã hết HSD', cls: 'text-red-700' };
-  if (days < 90) return { label: `HSD ${formatDateVN(d)}`, cls: 'text-amber-700' };
-  return null;
-});
-
-const rankColor = computed(() => {
-  if (props.rank === 1) return 'bg-amber-500';
-  if (props.rank === 2) return 'bg-slate-400';
-  if (props.rank === 3) return 'bg-orange-700';
-  return 'bg-royal-700';
-});
-
-const noPrice = computed(() => !props.product.wholesale_price || props.product.wholesale_price <= 0);
+const stockBadge = computed(() => productStockBadge(props.product));
+const expiryWarn = computed(() => productExpiryWarn(props.product));
+const rankColor = computed(() => rankColorOf(props.rank));
+const noPrice = computed(() => productNoPrice(props.product));
 </script>
 
 <template>

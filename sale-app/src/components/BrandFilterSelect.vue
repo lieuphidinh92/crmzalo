@@ -55,7 +55,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
     <button
       type="button"
       @click="toggle"
-      class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-left flex items-center justify-between gap-2"
+      class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm text-left flex items-center justify-between gap-2"
       :class="modelValue ? 'text-ink-primary' : 'text-ink-secondary'"
     >
       <span class="truncate">{{ selectedName }}</span>

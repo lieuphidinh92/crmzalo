@@ -483,7 +483,7 @@ const pageNumbers = computed(() => {
             v-model="q"
             type="search"
             placeholder="Tìm mã đơn / tên KH / SĐT..."
-            class="w-full h-11 sm:h-10 pl-10 pr-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm"
+            class="w-full h-11 lg:h-10 pl-10 pr-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm"
           />
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -491,7 +491,7 @@ const pageNumbers = computed(() => {
         </div>
         <select
           v-model="range"
-          class="h-11 sm:h-10 px-2.5 sm:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 sm:shrink-0"
+          class="h-11 lg:h-10 px-2.5 lg:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 lg:shrink-0"
         >
           <option v-for="opt in rangeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
@@ -499,14 +499,14 @@ const pageNumbers = computed(() => {
         <select
           v-if="canReconcile"
           v-model="reconciledFilter"
-          class="h-11 sm:h-10 px-2.5 sm:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 sm:shrink-0"
+          class="h-11 lg:h-10 px-2.5 lg:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 lg:shrink-0"
         >
           <option v-for="opt in reconciledOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
         <!-- Lọc hàng chờ xuất hoá đơn VAT — kế toán mở "Chờ xuất VAT" là ra việc cần làm -->
         <select
           v-model="vatFilter"
-          class="h-11 sm:h-10 px-2.5 sm:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 sm:shrink-0"
+          class="h-11 lg:h-10 px-2.5 lg:px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm min-w-0 lg:shrink-0"
         >
           <option v-for="opt in vatOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
@@ -514,7 +514,7 @@ const pageNumbers = computed(() => {
         <button
           type="button"
           @click="toggleFilters"
-          class="h-11 sm:h-10 px-3 sm:px-3.5 rounded-input border text-sm font-semibold flex items-center justify-center gap-2 min-w-0 sm:shrink-0 transition"
+          class="h-11 lg:h-10 px-3 lg:px-3.5 rounded-input border text-sm font-semibold flex items-center justify-center gap-2 min-w-0 lg:shrink-0 transition"
           :class="showFilters || advancedCount
             ? 'border-royal-700 text-royal-700 bg-royal-50'
             : 'border-line-300 text-ink-secondary hover:border-royal-700 hover:text-royal-700'"
@@ -537,7 +537,7 @@ const pageNumbers = computed(() => {
             <span class="block text-xs font-semibold text-ink-secondary mb-1">Nhân viên sale</span>
             <select
               v-model="saleFilter"
-              class="w-full h-11 sm:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+              class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
             >
               <option value="">Tất cả nhân viên</option>
               <option v-for="st in staffList" :key="st.id" :value="st.id">{{ st.fullName }}</option>
@@ -549,7 +549,7 @@ const pageNumbers = computed(() => {
               v-model="customFrom"
               type="date"
               :max="customTo || undefined"
-              class="w-full h-11 sm:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+              class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
             />
           </label>
           <label class="flex-1 min-w-[150px]">
@@ -558,7 +558,7 @@ const pageNumbers = computed(() => {
               v-model="customTo"
               type="date"
               :min="customFrom || undefined"
-              class="w-full h-11 sm:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+              class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
             />
           </label>
           <div class="flex flex-wrap gap-2">
@@ -566,7 +566,7 @@ const pageNumbers = computed(() => {
               v-for="p in quickPresets"
               :key="p.label"
               type="button"
-              class="h-11 sm:h-10 px-3 rounded-input border border-line-300 text-sm font-semibold text-ink-secondary hover:border-royal-700 hover:text-royal-700 whitespace-nowrap"
+              class="h-11 lg:h-10 px-3 rounded-input border border-line-300 text-sm font-semibold text-ink-secondary hover:border-royal-700 hover:text-royal-700 whitespace-nowrap"
               @click="applyPreset(p)"
             >
               {{ p.label }}

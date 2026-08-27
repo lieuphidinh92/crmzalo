@@ -49,10 +49,14 @@ function openZalo() {
 </script>
 
 <template>
+  <!-- Điện thoại (< 1024px): xếp dọc — tiền nợ + nút "Nhắc thu" 44px xuống
+       hàng riêng để tên khách được 2 dòng thay vì bị cắt sớm (27/8/2026).
+       Từ 1024px trở lên giữ nguyên 1 hàng ngang như cũ. -->
   <div
-    class="bg-white border rounded-card p-3.5 shadow-card flex gap-3"
+    class="card bg-white border rounded-card p-3.5 shadow-card"
     :class="isOverdue ? 'border-rose-200' : 'border-line-200'"
   >
+    <div class="flex gap-3">
     <!-- Avatar -->
     <button
       @click="emit('open', customer)"
@@ -64,7 +68,7 @@ function openZalo() {
     <button @click="emit('open', customer)" class="min-w-0 flex-1 text-left">
       <!-- Name + tier + due badge -->
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="font-semibold text-ink-primary truncate">{{ customer.full_name || '—' }}</span>
+        <span class="font-semibold text-ink-primary line-clamp-2 lg:truncate lg:line-clamp-none">{{ customer.full_name || '—' }}</span>
         <span
           v-if="customer.policy_tier"
           class="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-royal-50 text-royal-700"
@@ -90,19 +94,45 @@ function openZalo() {
           {{ customer.order_count || 0 }} đơn nợ
           <template v-if="customer.overdue_orders">· {{ customer.overdue_orders }} quá hạn</template>
         </span>
-        <span class="font-bold tabular-nums" :class="isOverdue ? 'text-rose-600' : 'text-ink-primary'">
+        <span class="hidden lg:inline font-bold tabular-nums" :class="isOverdue ? 'text-rose-600' : 'text-ink-primary'">
           Nợ {{ formatVND(customer.debt || 0) }}
         </span>
       </div>
     </button>
 
-    <!-- Action -->
-    <div class="shrink-0 flex items-center">
+      <!-- Máy tính: nút nằm cùng hàng như cũ -->
+      <div class="hidden lg:flex shrink-0 items-center">
+        <button
+          @click="openZalo"
+          :disabled="!canZalo"
+          class="h-9 px-3 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-xs font-semibold shadow-pop flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+          :title="canZalo ? 'Mở Zalo và soạn tin nhắc thu nợ' : 'KH chưa có Zalo / SĐT'"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+          </svg>
+          Nhắc thu
+        </button>
+      </div>
+    </div>
+
+    <!-- ĐIỆN THOẠI: hàng dưới — tiền nợ đọc được ngay + nút nhắc thu 44px -->
+    <div class="lg:hidden mt-2.5 pt-2.5 border-t border-line-200 flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <div class="text-[10px] uppercase tracking-wide text-ink-secondary leading-none">Đang nợ</div>
+        <div
+          class="text-[16px] font-bold tabular-nums leading-tight mt-0.5"
+          :class="isOverdue ? 'text-rose-600' : 'text-ink-primary'"
+        >
+          {{ formatVND(customer.debt || 0) }}
+        </div>
+      </div>
       <button
         @click="openZalo"
         :disabled="!canZalo"
-        class="h-9 px-3 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-xs font-semibold shadow-pop flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+        class="h-11 px-3.5 shrink-0 rounded-btn bg-royal-700 active:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
         :title="canZalo ? 'Mở Zalo và soạn tin nhắc thu nợ' : 'KH chưa có Zalo / SĐT'"
+        :aria-label="canZalo ? 'Nhắc thu nợ qua Zalo' : 'Khách chưa có Zalo / SĐT'"
       >
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
@@ -112,3 +142,10 @@ function openZalo() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.card,
+.card button {
+  touch-action: manipulation;
+}
+</style>

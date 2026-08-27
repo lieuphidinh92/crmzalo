@@ -7,6 +7,7 @@ import { usePOSStore } from '../stores/pos';
 import { useAuthStore } from '../stores/auth';
 import { tierLabel } from '../composables/useFormat';
 import ProductCard from '../components/ProductCard.vue';
+import MobileProductCard from '../components/MobileProductCard.vue';
 import ProductTable from '../components/ProductTable.vue';
 import ProductDetailDrawer from '../components/ProductDetailDrawer.vue';
 import BrandFilterSelect from '../components/BrandFilterSelect.vue';
@@ -48,6 +49,13 @@ const exporting = ref(false);
 const exportError = ref('');
 const showImport = ref(false);
 const showCreate = ref(false);
+// Điện thoại: 4 việc quản trị (xuất/nhập Excel, thêm SP, NCC) gom vào 1 bảng
+// trồi lên — để cả 4 nút trên header thì tràn khỏi màn 390px (đo 27/8/2026).
+const showAdminSheet = ref(false);
+function adminAction(fn) {
+  showAdminSheet.value = false;
+  fn();
+}
 
 // When a product is created or discontinued, reload the list.
 function onProductCreated() {
@@ -196,14 +204,26 @@ const pageNumbers = computed(() => {
 <template>
   <div class="px-4 lg:px-6 py-4 lg:py-6 max-w-[1400px] mx-auto">
     <!-- Header row -->
-    <div class="flex items-center justify-between mb-4">
-      <div>
-        <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Sản phẩm</h1>
-        <p class="text-xs text-ink-secondary mt-0.5">
+    <div class="flex items-center justify-between gap-3 mb-4">
+      <div class="min-w-0">
+        <h1 class="text-xl lg:text-2xl font-bold text-ink-primary truncate">Sản phẩm</h1>
+        <p class="text-xs text-ink-secondary mt-0.5 truncate">
           {{ total.toLocaleString('vi-VN') }} SP · bảng giá {{ tierLabel(tier) }}
         </p>
       </div>
-      <div class="flex items-center gap-2">
+      <!-- Điện thoại: 1 nút mở bảng việc quản trị (4 nút kia tràn màn) -->
+      <button
+        v-if="isAdmin"
+        @click="showAdminSheet = true"
+        class="lg:hidden h-11 w-11 shrink-0 rounded-btn border border-line-300 text-ink-secondary flex items-center justify-center active:bg-surface-soft transition"
+        aria-label="Việc quản trị sản phẩm"
+        title="Xuất/Nhập Excel · Thêm SP · NCC"
+      >
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5" cy="12" r="1.9" /><circle cx="12" cy="12" r="1.9" /><circle cx="19" cy="12" r="1.9" />
+        </svg>
+      </button>
+      <div class="hidden lg:flex items-center gap-2">
         <button
           v-if="isAdmin"
           @click="exportExcel"
@@ -258,18 +278,19 @@ const pageNumbers = computed(() => {
           <span class="hidden sm:inline">NCC / Thương hiệu</span>
           <span class="sm:hidden">NCC</span>
         </button>
-        <button
-          v-if="pos.items.length"
-          @click="goToCart"
-          class="relative h-10 px-4 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-2"
-        >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
-            <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
-          </svg>
-          Giỏ ({{ pos.itemCount }})
-        </button>
       </div>
+      <!-- Giỏ hàng: hiện ở CẢ điện thoại (đang có hàng thì phải bấm được ngay) -->
+      <button
+        v-if="pos.items.length"
+        @click="goToCart"
+        class="relative h-11 lg:h-10 px-3 lg:px-4 shrink-0 rounded-btn bg-royal-700 hover:bg-royal-800 active:bg-royal-800 text-white text-sm font-semibold shadow-pop flex items-center gap-1.5 lg:gap-2 whitespace-nowrap"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+          <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
+        </svg>
+        Giỏ ({{ pos.itemCount }})
+      </button>
     </div>
 
     <!-- Export error (light) -->
@@ -285,7 +306,7 @@ const pageNumbers = computed(() => {
             v-model="q"
             type="search"
             placeholder="Tìm SKU / tên sản phẩm..."
-            class="w-full h-10 pl-10 pr-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm"
+            class="w-full h-11 lg:h-10 pl-10 pr-3 rounded-input border border-line-300 focus:border-royal-700 focus:ring-2 focus:ring-royal-100 outline-none bg-white text-sm"
           />
           <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"/>
@@ -296,14 +317,15 @@ const pageNumbers = computed(() => {
         <div class="flex gap-2">
           <select
             v-model="sort"
-            class="flex-1 h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
+            class="flex-1 h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none bg-white text-sm"
           >
             <option v-for="opt in sortOptions" :key="opt.value" :value="opt.value">
               Sắp xếp: {{ opt.label }}
             </option>
           </select>
           <!-- View mode toggle -->
-          <div class="flex h-10 rounded-input border border-line-300 overflow-hidden shrink-0">
+          <!-- Đổi lưới/bảng: chỉ máy tính. Điện thoại luôn dùng thẻ dòng. -->
+          <div class="hidden lg:flex h-10 rounded-input border border-line-300 overflow-hidden shrink-0">
             <button
               type="button"
               @click="viewMode = 'grid'"
@@ -346,7 +368,7 @@ const pageNumbers = computed(() => {
           v-for="chip in filterChips"
           :key="chip.key"
           @click="filter = chip.key"
-          class="h-8 px-3 rounded-full text-xs font-semibold border transition"
+          class="h-11 lg:h-8 px-3.5 lg:px-3 rounded-full text-xs font-semibold border transition"
           :class="
             filter === chip.key
               ? 'bg-royal-700 text-white border-royal-700'
@@ -359,12 +381,17 @@ const pageNumbers = computed(() => {
     </div>
 
     <!-- Loading skeleton -->
-    <div v-if="loading && viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-      <div v-for="i in 10" :key="i" class="bg-white border border-line-200 rounded-card aspect-[3/5] animate-pulse"></div>
-    </div>
-    <div v-else-if="loading" class="bg-white border border-line-200 rounded-card shadow-card p-3 space-y-2.5">
-      <div v-for="i in 10" :key="i" class="h-10 bg-surface-soft animate-pulse rounded"></div>
-    </div>
+    <template v-if="loading">
+      <div class="lg:hidden space-y-2.5">
+        <div v-for="i in 8" :key="i" class="h-[104px] bg-white rounded-card border border-line-200 animate-pulse"></div>
+      </div>
+      <div v-if="viewMode === 'grid'" class="hidden lg:grid lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div v-for="i in 10" :key="i" class="bg-white border border-line-200 rounded-card aspect-[3/5] animate-pulse"></div>
+      </div>
+      <div v-else class="hidden lg:block bg-white border border-line-200 rounded-card shadow-card p-3 space-y-2.5">
+        <div v-for="i in 10" :key="i" class="h-10 bg-surface-soft animate-pulse rounded"></div>
+      </div>
+    </template>
 
     <div v-else-if="errorMsg" class="bg-red-50 border border-red-200 text-red-700 rounded-card p-4 text-sm">
       {{ errorMsg }}
@@ -382,8 +409,10 @@ const pageNumbers = computed(() => {
     </div>
 
     <div v-else>
-      <div v-if="viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-        <ProductCard
+      <!-- ĐIỆN THOẠI: thẻ dòng — lưới 2 cột dành 60% chiều cao cho ảnh (phần
+           lớn SKU chưa có ảnh) nên 1 màn chỉ xem được 2 SP (đo 27/8/2026). -->
+      <div class="lg:hidden space-y-2.5">
+        <MobileProductCard
           v-for="(p, idx) in products"
           :key="p.id"
           :product="p"
@@ -393,28 +422,42 @@ const pageNumbers = computed(() => {
         />
       </div>
 
-      <ProductTable
-        v-else
-        :products="products"
-        :page="page"
-        :limit="limit"
-        @open="detailId = $event.id"
-        @add="addToCart"
-      />
+      <!-- MÁY TÍNH: giữ nguyên lưới ảnh / bảng theo lựa chọn của người dùng -->
+      <div class="hidden lg:block">
+        <div v-if="viewMode === 'grid'" class="grid lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          <ProductCard
+            v-for="(p, idx) in products"
+            :key="p.id"
+            :product="p"
+            :rank="filter === 'bestseller' ? (page - 1) * limit + idx + 1 : 0"
+            @open="detailId = $event.id"
+            @add="addToCart"
+          />
+        </div>
+
+        <ProductTable
+          v-else
+          :products="products"
+          :page="page"
+          :limit="limit"
+          @open="detailId = $event.id"
+          @add="addToCart"
+        />
+      </div>
 
       <!-- Pagination -->
       <div v-if="totalPages > 1" class="mt-6 flex items-center justify-center gap-1.5">
         <button
           @click="page = Math.max(1, page - 1)"
           :disabled="page <= 1"
-          class="h-9 w-9 rounded-btn border border-line-300 hover:border-royal-700 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+          class="h-11 w-11 lg:h-9 lg:w-9 rounded-btn border border-line-300 hover:border-royal-700 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >‹</button>
         <button
           v-for="(n, idx) in pageNumbers"
           :key="idx"
           @click="typeof n === 'number' && (page = n)"
           :disabled="typeof n !== 'number'"
-          class="h-9 min-w-[36px] px-2 rounded-btn text-sm font-medium transition"
+          class="h-11 lg:h-9 min-w-[44px] lg:min-w-[36px] px-2 rounded-btn text-sm font-medium transition"
           :class="
             n === page
               ? 'bg-royal-700 text-white'
@@ -426,10 +469,95 @@ const pageNumbers = computed(() => {
         <button
           @click="page = Math.min(totalPages, page + 1)"
           :disabled="page >= totalPages"
-          class="h-9 w-9 rounded-btn border border-line-300 hover:border-royal-700 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+          class="h-11 w-11 lg:h-9 lg:w-9 rounded-btn border border-line-300 hover:border-royal-700 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >›</button>
       </div>
     </div>
+
+
+    <!-- Bảng việc quản trị (chỉ điện thoại) — mở từ nút "..." trên header -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showAdminSheet"
+          class="lg:hidden fixed inset-0 z-50 bg-black/40"
+          @click="showAdminSheet = false"
+        />
+      </Transition>
+      <Transition name="sheet">
+        <div
+          v-if="showAdminSheet"
+          class="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl shadow-2xl"
+          style="padding-bottom: calc(env(safe-area-inset-bottom) + 12px)"
+        >
+          <div class="pt-3 pb-1 flex flex-col items-center">
+            <div class="w-10 h-1 rounded-full bg-line-200"></div>
+          </div>
+          <div class="px-5 pt-1 pb-2 flex items-center justify-between">
+            <h3 class="text-base font-bold text-ink-primary">Quản lý sản phẩm</h3>
+            <button
+              @click="showAdminSheet = false"
+              class="w-9 h-9 rounded-full flex items-center justify-center text-ink-secondary active:bg-surface-soft"
+              aria-label="Đóng"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="px-3 pb-2">
+            <button
+              @click="adminAction(exportExcel)"
+              :disabled="exporting"
+              class="w-full h-12 px-3 rounded-xl flex items-center gap-3 text-sm font-semibold text-ink-primary active:bg-surface-soft disabled:opacity-50"
+            >
+              <span class="w-9 h-9 rounded-full bg-surface-soft text-royal-700 flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </span>
+              {{ exporting ? 'Đang xuất Excel...' : 'Xuất danh sách ra Excel' }}
+            </button>
+            <button
+              @click="adminAction(() => (showImport = true))"
+              class="w-full h-12 px-3 rounded-xl flex items-center gap-3 text-sm font-semibold text-ink-primary active:bg-surface-soft"
+            >
+              <span class="w-9 h-9 rounded-full bg-surface-soft text-royal-700 flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+              </span>
+              Nhập sản phẩm từ Excel
+            </button>
+            <button
+              @click="adminAction(() => (showCreate = true))"
+              class="w-full h-12 px-3 rounded-xl flex items-center gap-3 text-sm font-semibold text-ink-primary active:bg-surface-soft"
+            >
+              <span class="w-9 h-9 rounded-full bg-royal-700 text-white flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </span>
+              Thêm 1 sản phẩm mới
+            </button>
+            <button
+              @click="adminAction(() => router.push('/products/brands'))"
+              class="w-full h-12 px-3 rounded-xl flex items-center gap-3 text-sm font-semibold text-ink-primary active:bg-surface-soft"
+            >
+              <span class="w-9 h-9 rounded-full bg-surface-soft text-royal-700 flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                  <line x1="7" y1="7" x2="7.01" y2="7" />
+                </svg>
+              </span>
+              NCC / Thương hiệu
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Detail drawer -->
     <ProductDetailDrawer
@@ -456,3 +584,22 @@ const pageNumbers = computed(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.sheet-enter-active,
+.sheet-leave-active {
+  transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.sheet-enter-from,
+.sheet-leave-to {
+  transform: translateY(100%);
+}
+</style>
