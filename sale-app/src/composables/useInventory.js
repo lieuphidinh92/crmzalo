@@ -34,10 +34,15 @@ export function useInventory() {
   // "Tất cả" tab. We cache it the first time the "all" tab loads.
   const activeProductTotal = ref(null);
 
-  async function loadAlerts() {
+  /**
+   * @param {number|null} days Mốc "sắp hết HSD". Mặc định 90 (chip trên màn).
+   *   Tin nhắc hằng ngày mở link kèm `?days=180` ("cận date" = dưới 6 tháng)
+   *   → số trên màn hình khớp số trong tin nhắn.
+   */
+  async function loadAlerts(days = null) {
     alertsLoading.value = true;
     try {
-      const { data } = await api.get('/inventory/alerts');
+      const { data } = await api.get('/inventory/alerts', { params: days ? { days } : {} });
       alerts.value = {
         summary: data.summary ?? { lowStockCount: 0, expiringCount: 0, expiredCount: 0, totalCount: 0 },
         lowStock: data.lowStock ?? [],
@@ -60,7 +65,7 @@ export function useInventory() {
     }
   }
 
-  async function loadProducts({ q = '', brand = '', filter = '', page = 1, limit = 20 } = {}) {
+  async function loadProducts({ q = '', brand = '', filter = '', days = null, page = 1, limit = 20 } = {}) {
     listLoading.value = true;
     errorMsg.value = '';
     try {
@@ -68,6 +73,8 @@ export function useInventory() {
       if (q) params.q = q;
       if (brand) params.brand = brand;
       if (filter) params.filter = filter;
+      // Mốc HSD tuỳ chọn — chỉ dùng khi vào từ link của tin nhắc (xem loadAlerts).
+      if (days) params.days = days;
       const { data } = await api.get('/sale-app/products', { params });
       products.value = data.products || [];
       total.value = data.total ?? products.value.length;
