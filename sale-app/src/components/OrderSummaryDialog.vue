@@ -3,9 +3,24 @@
  * OrderSummaryDialog.vue — hiện sau khi Lưu tạm / Xác nhận đơn.
  * Tóm tắt sơ bộ KH + đơn, kèm 2 nút mở phiếu: Hoá đơn bán hàng / Biên bản bàn giao.
  */
-import { ref } from 'vue';
+import { ref, defineAsyncComponent, h } from 'vue';
 import { formatVND } from '../composables/useFormat';
-import SalesDocument from './SalesDocument.vue';
+// Nạp lười — xem ghi chú ở OrderDetail.vue.
+const SalesDocument = defineAsyncComponent({
+  loader: () => import('./SalesDocument.vue'),
+  // Lần đầu bấm xem phiếu phải tải chunk ~200ms; không có dòng chờ này thì màn
+  // hình đứng im, sale tưởng lỗi và bấm lại. Từ lần 2 đã nằm trong máy nên
+  // delay 150ms khiến dòng chờ hầu như không bao giờ hiện.
+  delay: 150,
+  loadingComponent: {
+    render: () =>
+      h(
+        'div',
+        { class: 'fixed inset-0 z-[60] bg-black/40 flex items-center justify-center' },
+        h('div', { class: 'bg-white rounded-card px-5 py-4 text-sm font-semibold text-ink-primary shadow-pop' }, 'Đang mở phiếu…'),
+      ),
+  },
+});
 
 const props = defineProps({
   order: { type: Object, required: true },

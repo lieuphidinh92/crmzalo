@@ -1,11 +1,27 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, defineAsyncComponent, h } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import html2canvas from 'html2canvas';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
 import { useAuthStore } from '../stores/auth';
-import SalesDocument from '../components/SalesDocument.vue';
+// Chứng từ A4 nặng ~214 KB (kèm html2canvas) mà chỉ hiện khi bấm xem/in phiếu
+// → nạp lười, đừng để nó đi kèm mỗi lần mở chi tiết đơn (đo 26/8/2026).
+const SalesDocument = defineAsyncComponent({
+  loader: () => import('../components/SalesDocument.vue'),
+  // Lần đầu bấm xem phiếu phải tải chunk ~200ms; không có dòng chờ này thì màn
+  // hình đứng im, sale tưởng lỗi và bấm lại. Từ lần 2 đã nằm trong máy nên
+  // delay 150ms khiến dòng chờ hầu như không bao giờ hiện.
+  delay: 150,
+  loadingComponent: {
+    render: () =>
+      h(
+        'div',
+        { class: 'fixed inset-0 z-[60] bg-black/40 flex items-center justify-center' },
+        h('div', { class: 'bg-white rounded-card px-5 py-4 text-sm font-semibold text-ink-primary shadow-pop' }, 'Đang mở phiếu…'),
+      ),
+  },
+});
 import {
   formatVND,
   statusLabel,
