@@ -103,7 +103,11 @@ Nền thông báo dùng chung + việc đầu tiên: nhắc kế toán xuất VA
   `config/index.ts` · `render.yaml` (5 env).
 - Đã test local: tổng hợp số · nội dung · chặn trùng · gửi thử · retry 5'/20'/60' rồi bỏ cuộc ·
   lỗi Lark thật (code 19001) · 403 với member · 401 không token. Dữ liệu test đã trả nguyên trạng.
-- ⏳ **Còn treo:** (1) anh Philip dán webhook nhóm Lark "Xuất Nhập Kho" vào env `LARK_WEBHOOK_ACCOUNTING`
-  trên Render — chưa có thì cron chạy nhưng chỉ ghi log, không ai nhận; (2) chưa commit/push;
-  (3) email là Phase 2 (tranhien1897@gmail.com) — cần sender domain `halo.com.vn` đã xác thực SPF/DKIM
-  kẻo vào spam.
+- ✅ **ĐÃ LIVE 27/08** (`bf8737c`): webhook nhóm Lark "Xuất Nhập Kho" đã dán trên Render, bảng
+  `notification_logs` đã có trên Supabase, endpoint production trả 200.
+- **Phase 2 (email qua Brevo) + chẩn đoán kênh:** code xong, CHƯA push. Cần anh Philip tạo tài khoản
+  Brevo → lấy `BREVO_API_KEY` + xác thực địa chỉ gửi (`EMAIL_FROM`). Người nhận đã chốt:
+  `tranhien1897@gmail.com`. Chưa có key thì kênh email tự bỏ qua kèm lý do, Lark vẫn chạy bình thường.
+- ⏳ **Chưa chứng minh được:** chưa có yêu cầu VAT thật nào (1070 đơn đều `not_issued`) nên đường
+  cron → Lark với dữ liệu thật chưa chạy lần nào. Kiểm cấu hình bằng
+  `GET /api/v1/notifications/vat-preview` (xem `channels`).

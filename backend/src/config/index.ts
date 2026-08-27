@@ -31,8 +31,16 @@ export const config = {
   larkWebhookAccounting: process.env.LARK_WEBHOOK_ACCOUNTING || '',
   // Chỉ cần khi bật "Chữ ký" (Signature verification) trong cài đặt bot Lark.
   larkSecretAccounting: process.env.LARK_WEBHOOK_SECRET_ACCOUNTING || '',
-  // Phase 2 — danh sách email kế toán, ngăn cách bằng dấu phẩy.
+  // Danh sách email kế toán, ngăn cách bằng dấu phẩy. Trống = bỏ qua kênh email.
   notifyAccountingEmails: process.env.NOTIFY_ACCOUNTING_EMAILS || '',
+  // Gửi email qua Brevo (HTTP API — không phải SMTP, nên không cần thư viện nào).
+  // Anh Philip chốt 27/8/2026: chọn Brevo vì chỉ cần bấm link xác thực 1 địa chỉ
+  // gửi, KHÔNG phải đụng DNS của halo.com.vn như Resend.
+  brevoApiKey: process.env.BREVO_API_KEY || '',
+  // PHẢI là địa chỉ đã xác thực trong Brevo (Senders & IP → Senders), nếu không
+  // Brevo trả lỗi 400 'sender not valid'.
+  emailFrom: process.env.EMAIL_FROM || '',
+  emailFromName: process.env.EMAIL_FROM_NAME || 'HaloVN CRM',
   // Gốc link trong thông báo. Màn "Xuất VAT" của kế toán nằm ở SALE-APP
   // (sale.halo.com.vn/vat/requested), KHÔNG phải CRM.
   saleAppUrl: (process.env.SALE_APP_URL || 'https://sale.halo.com.vn').replace(/\/+$/, ''),

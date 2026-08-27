@@ -13,6 +13,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { runVatPendingDigest } from '../orders/vat-notify-cron.js';
 import { getVatPendingDigest } from '../orders/vat-digest.js';
 import { runRetrySweep } from './notification-retry-cron.js';
+import { describeChannels } from './notification-config.js';
 
 const adminOnly = { preHandler: requireRole('owner', 'admin') };
 
@@ -42,10 +43,18 @@ export async function notificationAdminRoutes(app: FastifyInstance) {
     return { logs };
   });
 
-  // ── GET /api/v1/notifications/vat-preview — xem trước nội dung, KHÔNG gửi ──
+  // ── GET /api/v1/notifications/vat-preview — xem trước, KHÔNG gửi gì ───────
+  // Trả kèm `channels`: kênh nào SẴN SÀNG, kênh nào bị bỏ qua vì lý do gì.
+  // Đây là cách kiểm biến môi trường trên Render ngay sau khi dán, khỏi phải
+  // chờ tới 10:00 mới biết gõ sai (im vì lỗi cấu hình trông y hệt im vì không
+  // có đơn nào chờ).
   app.get('/api/v1/notifications/vat-preview', adminOnly, async (request: FastifyRequest) => {
     const user = request.user!;
-    return { digest: await getVatPendingDigest(user.orgId) };
+    const [digest, channels] = await Promise.all([
+      getVatPendingDigest(user.orgId),
+      describeChannels(user.orgId, 'ACCOUNTING'),
+    ]);
+    return { digest, channels };
   });
 
   // ── POST /api/v1/notifications/test — gửi thử ngay ─────────────────────

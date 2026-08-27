@@ -50,8 +50,14 @@ services:
         sync: false                         # trống = tự bỏ qua kênh Lark, KHÔNG crash
       - key: LARK_WEBHOOK_SECRET_ACCOUNTING # chỉ cần khi bật "Signature verification" trong bot
         sync: false
-      - key: NOTIFY_ACCOUNTING_EMAILS       # Phase 2 — email kế toán, cách nhau dấu phẩy
+      - key: NOTIFY_ACCOUNTING_EMAILS       # email kế toán, cách nhau dấu phẩy
         sync: false
+      - key: BREVO_API_KEY                  # gửi email qua Brevo (HTTP API, không phải SMTP)
+        sync: false
+      - key: EMAIL_FROM                     # địa chỉ gửi ĐÃ xác thực trong Brevo (Senders)
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: HaloVN CRM
       - key: SALE_APP_URL                   # gốc link trong thông báo (màn Xuất VAT ở sale-app)
         value: https://sale.halo.com.vn
       - key: NOTIFY_ENABLED                 # đặt 'false' để tắt mọi thông báo ra ngoài

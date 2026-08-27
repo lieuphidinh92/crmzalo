@@ -15,15 +15,16 @@ import { config } from '../../config/index.js';
 import { logger } from '../../shared/utils/logger.js';
 import { LarkProvider } from './providers/lark-provider.js';
 import { LogProvider } from './providers/log-provider.js';
+import { EmailProvider } from './providers/email-provider.js';
 import type { Audience, Channel, NotificationProvider } from './notification-types.js';
 
 /**
  * Kênh nào bật sẵn cho nhóm nào (khi `app_settings` chưa có gì).
- * V1 (27/8/2026): kế toán nhận qua Lark. Email để Phase 2 — email công ty đang
- * là gmail cá nhân, gửi từ tên miền chưa xác thực sẽ rơi vào spam.
+ * Kế toán nhận qua Lark + email (Phase 2 xong 27/8/2026). Kênh nào thiếu cấu
+ * hình thì tự bỏ qua kèm lý do, KHÔNG kéo sập kênh còn lại.
  */
 const CHANNEL_DEFAULTS: Record<Audience, Record<Channel, boolean>> = {
-  ACCOUNTING: { lark: true, email: false, log: false },
+  ACCOUNTING: { lark: true, email: true, log: false },
 };
 
 /**
@@ -78,9 +79,20 @@ export async function planChannels(orgId: string, audience: Audience): Promise<C
     );
   }
 
-  // Phase 2: email. Khai sẵn ở đây để bật là chạy, không phải sửa service.
   if (flags.email) {
-    plans.push({ channel: 'email', skipReason: 'Kênh email chưa làm (Phase 2)' });
+    const recipients = recipientsFor(audience);
+    if (!config.brevoApiKey) {
+      plans.push({ channel: 'email', skipReason: 'Chưa cấu hình BREVO_API_KEY' });
+    } else if (!config.emailFrom) {
+      plans.push({ channel: 'email', skipReason: 'Chưa cấu hình EMAIL_FROM (địa chỉ gửi đã xác thực trong Brevo)' });
+    } else if (recipients.length === 0) {
+      plans.push({ channel: 'email', skipReason: 'Chưa có người nhận trong NOTIFY_ACCOUNTING_EMAILS' });
+    } else {
+      plans.push({
+        channel: 'email',
+        provider: new EmailProvider(config.brevoApiKey, config.emailFrom, config.emailFromName, recipients),
+      });
+    }
   }
 
   // Không có kênh thật nào → rơi về ghi console. Nhờ vậy chạy local không cần
@@ -91,6 +103,34 @@ export async function planChannels(orgId: string, audience: Audience): Promise<C
   }
 
   return plans;
+}
+
+/**
+ * Người nhận email của 1 nhóm. Cố ý lấy từ BIẾN MÔI TRƯỜNG chứ không suy từ
+ * quyền trong DB: hiện chưa ai được bật cờ `can_issue_vat`, mà tài khoản owner
+ * lại mang email nội bộ không có thật — suy tự động sẽ gửi vào hư không.
+ * Thêm/bớt người = sửa env trên Render, không phải deploy lại.
+ */
+function recipientsFor(audience: Audience): string[] {
+  const raw = audience === 'ACCOUNTING' ? config.notifyAccountingEmails : '';
+  return raw
+    .split(',')
+    .map(e => e.trim())
+    .filter(e => e.includes('@'));
+}
+
+/**
+ * Chẩn đoán: kênh nào SẴN SÀNG, kênh nào bị bỏ qua vì lý do gì — KHÔNG gửi gì cả.
+ * Có hàm này để sau khi dán biến môi trường trên Render là kiểm được ngay, thay
+ * vì phải chờ tới 10:00 mới biết mình gõ thiếu ký tự (im lặng vì lỗi cấu hình
+ * nhìn y hệt im lặng vì không có đơn nào chờ).
+ */
+export async function describeChannels(
+  orgId: string,
+  audience: Audience,
+): Promise<Array<{ channel: string; sanSang: boolean; lyDo: string | null }>> {
+  const plans = await planChannels(orgId, audience);
+  return plans.map(p => ({ channel: p.channel, sanSang: !!p.provider, lyDo: p.skipReason ?? null }));
 }
 
 function webhookFor(audience: Audience): string {
