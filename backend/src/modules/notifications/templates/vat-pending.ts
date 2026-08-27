@@ -30,14 +30,24 @@ export interface VatPendingData {
   /** Tối đa 5 đơn chờ lâu nhất — đủ để nhận diện, không phải bảng kê. */
   topOrders: Array<{ orderCode: string; buyer: string; amount: number; waitedHours: number }>;
   actionUrl: string;
+  /**
+   * true = tin do người bấm "gửi thử", số liệu là GIẢ. Phải hiện rõ trong tin,
+   * nếu không kế toán mở ra tưởng có việc thật rồi đi tìm đơn không tồn tại.
+   */
+  isTest?: boolean;
 }
 
 export function renderVatPending(data: VatPendingData): RenderedMessage {
   const d = data;
-  const lines: string[] = [
+  const lines: string[] = [];
+  if (d.isTest) {
+    lines.push('**Đây là tin THỬ để kiểm tra hệ thống — số liệu bên dưới là giả, KHÔNG cần xử lý.**');
+    lines.push('');
+  }
+  lines.push(
     `**${d.totalCount} yêu cầu xuất VAT đang chờ** — tổng **${formatVnd(d.totalAmount)}**`,
     `• Chờ xuất: ${d.requestedCount} đơn · ${formatVnd(d.requestedAmount)}`,
-  ];
+  );
 
   if (d.partialCount > 0) {
     lines.push(`• Xuất 1 phần (còn thiếu): ${d.partialCount} đơn · ${formatVnd(d.partialRemaining)}`);
@@ -59,7 +69,7 @@ export function renderVatPending(data: VatPendingData): RenderedMessage {
   }
 
   return {
-    title: `🧾 Xuất VAT: ${d.totalCount} yêu cầu đang chờ`,
+    title: `🧾 ${d.isTest ? '[THỬ NGHIỆM] ' : ''}Xuất VAT: ${d.totalCount} yêu cầu đang chờ`,
     lines,
     alert:
       d.over24hCount > 0

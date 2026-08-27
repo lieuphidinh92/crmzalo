@@ -13,7 +13,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { notify } from '../notifications/notification-service.js';
 import { vnDateKey, vnHour } from '../notifications/format-vn.js';
-import { getVatPendingDigest } from './vat-digest.js';
+import { getVatPendingDigest, sampleVatDigest } from './vat-digest.js';
 
 const TZ = 'Asia/Ho_Chi_Minh';
 
@@ -39,12 +39,20 @@ export async function runVatPendingDigest(
     const orgs = await prisma.organization.findMany({ select: { id: true } });
 
     for (const org of orgs) {
-      const digest = await getVatPendingDigest(org.id);
+      let digest = await getVatPendingDigest(org.id);
 
       if (digest.totalCount === 0) {
-        logger.info(`[vat-notify] Org ${org.id}: không có yêu cầu chờ — không gửi.`);
-        results.push({ orgId: org.id, totalCount: 0, outcomes: [] });
-        continue;
+        // Cron: im lặng đúng luật — không spam nhóm bằng tin "0 đơn".
+        if (source === 'cron') {
+          logger.info(`[vat-notify] Org ${org.id}: không có yêu cầu chờ — không gửi.`);
+          results.push({ orgId: org.id, totalCount: 0, outcomes: [] });
+          continue;
+        }
+        // Bấm "gửi thử" lúc hàng chờ trống thì gửi TIN MẪU (tự ghi rõ là số
+        // giả) — nếu không, người bấm không phân biệt được "im vì không có
+        // việc" với "im vì hỏng cấu hình".
+        logger.info(`[vat-notify] Org ${org.id}: hàng chờ trống — gửi tin MẪU để kiểm tra.`);
+        digest = sampleVatDigest();
       }
 
       // Khoá chống trùng: theo NGÀY + KHUNG GIỜ tính bằng giờ VN.

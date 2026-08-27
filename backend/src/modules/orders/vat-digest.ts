@@ -125,3 +125,31 @@ export async function getVatPendingDigest(orgId: string): Promise<VatPendingData
     actionUrl: `${config.saleAppUrl}/vat/requested`,
   };
 }
+
+/**
+ * Bộ số MẪU cho nút "gửi thử" khi không có yêu cầu nào đang chờ.
+ *
+ * Vì sao cần: luật là "0 đơn chờ thì không gửi", nên lúc hàng chờ trống mà bấm
+ * gửi thử sẽ không có gì xảy ra — không phân biệt được "hệ thống im vì không có
+ * việc" với "hệ thống hỏng". Tin mẫu luôn mang cờ `isTest` nên nội dung tự ghi
+ * rõ là số giả.
+ */
+export function sampleVatDigest(): VatPendingData {
+  const now = Date.now();
+  return {
+    requestedCount: 2,
+    requestedAmount: 49_040_000,
+    partialCount: 1,
+    partialRemaining: 40_340_000,
+    totalCount: 3,
+    totalAmount: 89_380_000,
+    over24hCount: 1,
+    oldestRequestedAt: new Date(now - 30 * 3_600_000).toISOString(),
+    oldestWaitedHours: 30,
+    topOrders: [
+      { orderCode: 'DH-TEST-0001', buyer: 'Khách hàng mẫu (dữ liệu giả)', amount: 7_700_000, waitedHours: 30 },
+    ],
+    actionUrl: `${config.saleAppUrl}/vat/requested`,
+    isTest: true,
+  };
+}
