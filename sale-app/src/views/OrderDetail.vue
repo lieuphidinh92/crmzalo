@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, defineAsyncComponent, h } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import html2canvas from 'html2canvas';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
 import { useAuthStore } from '../stores/auth';
@@ -368,6 +367,10 @@ async function downloadReceipt() {
     await new Promise((r) => requestAnimationFrame(() => r()));
     const el = receiptEl.value;
     if (!el) throw new Error('no-el');
+    // html2canvas nặng 202 KB mà chỉ cần khi bấm "Tải ảnh" → nạp lúc bấm.
+    // Trước 27/8/2026 import cố định ở đầu file nên MỞ đơn nào cũng tải 202 KB
+    // dù không in gì (nút đã có trạng thái "đang tạo ảnh" nên chờ không bị đứng).
+    const { default: html2canvas } = await import('html2canvas');
     const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
     if (!blob) throw new Error('no-blob');
