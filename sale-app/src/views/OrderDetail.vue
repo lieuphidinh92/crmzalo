@@ -73,10 +73,12 @@ const docOrder = computed(() => {
 // ── Thông tin chuyển khoản (load từ backend, không chặn render) ──
 const paymentInfo = ref({ bankName: '', accountNumber: '', accountHolder: '', note: '' });
 
-// ── Gửi Zalo / Tải ảnh phiếu ──
+// ── Gửi Zalo / mở phiếu ──
+// 28/8/2026: bỏ hàm downloadReceipt + khối DOM ẩn 81 dòng đi kèm. Không ai gọi
+// hàm đó (nút "Tải ảnh phiếu" thực ra mở popup phiếu A4 — nhãn nay sửa thành
+// "Xem / In phiếu"), mà khối ẩn vẫn render mỗi lần mở đơn. Muốn tải ảnh thì
+// bấm ⤓ trong popup — SalesDocument.vue đã có sẵn cả In/Lưu PDF và Tải ảnh PNG.
 const COMPANY_NAME = 'Ngheduocsi.vn';
-const receiptEl = ref(null);
-const generatingImage = ref(false);
 const shareMsg = ref('');
 let shareMsgTimer = null;
 
@@ -359,35 +361,6 @@ async function sendViaZalo() {
   window.open(url, '_blank', 'noopener');
 }
 
-async function downloadReceipt() {
-  if (!order.value || generatingImage.value) return;
-  generatingImage.value = true;
-  try {
-    // Chờ DOM cập nhật khối phiếu (v-if vừa bật khi loading)
-    await new Promise((r) => requestAnimationFrame(() => r()));
-    const el = receiptEl.value;
-    if (!el) throw new Error('no-el');
-    // html2canvas nặng 202 KB mà chỉ cần khi bấm "Tải ảnh" → nạp lúc bấm.
-    // Trước 27/8/2026 import cố định ở đầu file nên MỞ đơn nào cũng tải 202 KB
-    // dù không in gì (nút đã có trạng thái "đang tạo ảnh" nên chờ không bị đứng).
-    const { default: html2canvas } = await import('html2canvas');
-    const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-    if (!blob) throw new Error('no-blob');
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `phieu-don-${orderCode.value || 'don-hang'}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    flashShareMsg('Đã tải ảnh phiếu đơn');
-  } catch {
-    flashShareMsg('Không tạo được ảnh phiếu, vui lòng thử lại');
-  } finally {
-    generatingImage.value = false;
-  }
-}
 
 async function load() {
   loading.value = true;
@@ -1103,7 +1076,7 @@ async function saveStageDocs() {
       {{ reordering ? 'Đang nạp giỏ...' : 'Đặt lại đơn này' }}
     </button>
 
-    <!-- Gửi Zalo / Tải ảnh phiếu -->
+    <!-- Gửi Zalo / mở phiếu xuất kho -->
     <div v-if="order" class="flex flex-col sm:flex-row gap-2 mt-2">
       <button
         @click="sendViaZalo"
@@ -1124,7 +1097,7 @@ async function saveStageDocs() {
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
         </svg>
-        Tải ảnh phiếu
+        Xem / In phiếu
       </button>
     </div>
 
@@ -1447,88 +1420,6 @@ async function saveStageDocs() {
         </template>
         <div v-else class="text-sm text-ink-secondary py-3">
           Giai đoạn này chưa có mục tài liệu riêng. Tài liệu giao hàng nằm ở bước <span class="font-semibold">Giao cho vận chuyển</span> và <span class="font-semibold">Hoàn tất</span>.
-        </div>
-      </div>
-    </div>
-
-    <!-- KHỐI PHIẾU ĐƠN (ẩn ngoài màn hình, dùng cho html2canvas) -->
-    <div
-      v-if="order"
-      aria-hidden="true"
-      style="position: absolute; left: -9999px; top: 0; pointer-events: none;"
-    >
-      <div
-        ref="receiptEl"
-        style="width: 420px; background: #ffffff; color: #1a1a1a; font-family: Arial, 'Helvetica Neue', sans-serif; padding: 24px; box-sizing: border-box;"
-      >
-        <!-- Header -->
-        <div style="text-align: center; border-bottom: 2px solid #1d4ed8; padding-bottom: 12px; margin-bottom: 12px;">
-          <div style="font-size: 18px; font-weight: 700; letter-spacing: 0.5px; color: #1a1a1a;">PHIẾU ĐƠN HÀNG</div>
-          <div style="font-size: 13px; font-weight: 600; color: #1d4ed8; margin-top: 2px;">{{ COMPANY_NAME }}</div>
-        </div>
-
-        <!-- Mã đơn + ngày -->
-        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
-          <span style="color: #555;">Mã đơn:</span>
-          <span style="font-weight: 600; color: #1a1a1a;">{{ orderCode }}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 10px;">
-          <span style="color: #555;">Ngày đặt:</span>
-          <span style="color: #1a1a1a;">{{ orderDateVN }}</span>
-        </div>
-
-        <!-- Khách hàng -->
-        <div style="background: #f5f7fa; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
-          <div style="font-size: 13px; font-weight: 600; color: #1a1a1a;">{{ order.contact?.fullName || '—' }}</div>
-          <div v-if="order.contact?.storeName" style="font-size: 11px; color: #555; margin-top: 2px;">{{ order.contact.storeName }}</div>
-          <div v-if="order.contact?.phone" style="font-size: 11px; color: #555; margin-top: 2px;">SĐT: {{ order.contact.phone }}</div>
-        </div>
-
-        <!-- Bảng sản phẩm -->
-        <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 12px;">
-          <thead>
-            <tr style="background: #1d4ed8; color: #ffffff;">
-              <th style="text-align: left; padding: 6px 8px; font-weight: 600;">Sản phẩm</th>
-              <th style="text-align: center; padding: 6px 4px; font-weight: 600;">SL</th>
-              <th style="text-align: right; padding: 6px 4px; font-weight: 600;">Đơn giá</th>
-              <th style="text-align: right; padding: 6px 8px; font-weight: 600;">Thành tiền</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(it, idx) in order.items" :key="idx" style="border-bottom: 1px solid #e5e7eb;">
-              <td style="text-align: left; padding: 6px 8px; color: #1a1a1a;">{{ it.productName }}</td>
-              <td style="text-align: center; padding: 6px 4px; color: #1a1a1a;">{{ num(it.quantity) }}</td>
-              <td style="text-align: right; padding: 6px 4px; color: #555;">{{ formatVND(it.unitPrice) }}</td>
-              <td style="text-align: right; padding: 6px 8px; color: #1a1a1a; font-weight: 500;">{{ formatVND(it.lineTotal) }}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- Tổng tiền -->
-        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #1a1a1a; padding-top: 8px; font-size: 14px;">
-          <span style="font-weight: 700; color: #1a1a1a;">TỔNG TIỀN</span>
-          <span style="font-weight: 700; color: #1d4ed8;">{{ formatVND(orderTotal) }}</span>
-        </div>
-        <div v-if="paid > 0 || debt > 0" style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 6px;">
-          <span style="color: #555;">Đã thanh toán:</span>
-          <span style="color: #047857; font-weight: 600;">{{ formatVND(paid) }}</span>
-        </div>
-        <div v-if="paid > 0 || debt > 0" style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px;">
-          <span style="color: #555;">Còn nợ:</span>
-          <span style="color: #dc2626; font-weight: 700;">{{ formatVND(debt) }}</span>
-        </div>
-
-        <!-- Thông tin chuyển khoản -->
-        <div v-if="hasBankInfo" style="margin-top: 14px; background: #f5f7fa; border: 1px dashed #1d4ed8; border-radius: 8px; padding: 10px 12px;">
-          <div style="font-size: 11px; font-weight: 700; color: #1d4ed8; margin-bottom: 4px;">THÔNG TIN CHUYỂN KHOẢN</div>
-          <div v-if="paymentInfo.bankName" style="font-size: 12px; color: #1a1a1a;">Ngân hàng: {{ paymentInfo.bankName }}</div>
-          <div v-if="paymentInfo.accountNumber" style="font-size: 12px; color: #1a1a1a;">Số TK: {{ paymentInfo.accountNumber }}</div>
-          <div v-if="paymentInfo.accountHolder" style="font-size: 12px; color: #1a1a1a;">Chủ TK: {{ paymentInfo.accountHolder }}</div>
-          <div v-if="paymentInfo.note" style="font-size: 11px; color: #555; margin-top: 4px;">{{ paymentInfo.note }}</div>
-        </div>
-
-        <div style="text-align: center; font-size: 10px; color: #999; margin-top: 16px;">
-          Cảm ơn quý khách đã đặt hàng cùng {{ COMPANY_NAME }}
         </div>
       </div>
     </div>
