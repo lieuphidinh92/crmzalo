@@ -41,6 +41,7 @@ model Organization {
   customerPayments    CustomerPayment[]
   stocktakeSessions   StocktakeSession[]
   apiKeys             ApiKey[]
+  notificationLogs    NotificationLog[]
 
   @@map("organizations")
 }
@@ -1457,4 +1458,57 @@ model ApiKey {
   @@index([orgId, userId])
   @@index([keyPrefix])
   @@map("api_keys")
+}
+
+/**
+ * Nhật ký gửi thông báo ra NGOÀI hệ thống (Lark, email, sau này Zalo OA...).
+ *
+ * MỖI DÒNG = 1 LẦN GỬI TỚI 1 KÊNH (không phải 1 "notification" chung). Cố ý
+ * gộp notification + delivery vào 1 bảng cho V1: 2 tin/ngày, tách 2 bảng chỉ
+ * thêm join mà không trả lời thêm được câu hỏi nào.
+ *
+ * `dedupeKey` + @@unique là CÁCH DUY NHẤT chống gửi trùng — không dùng biến
+ * trong RAM. Chặn được cả 3 ca thật: cron lỡ chạy 2 lần · Render deploy chồng
+ * 2 instance vài chục giây lúc rolling update · người bấm nút "gửi thử" lại.
+ * Quy trình bắt buộc: INSERT trước (dính P2002 = đã có ai gửi → im lặng bỏ
+ * qua), gửi xong mới UPDATE status='sent'.
+ */
+model NotificationLog {
+  id       String @id @default(uuid())
+  orgId    String @map("org_id")
+  // Sự kiện nghiệp vụ, vd 'VAT_PENDING'. Module nghiệp vụ chỉ phát ra tên này,
+  // KHÔNG biết gì về Lark/email.
+  event    String
+  // Nhóm người nhận, vd 'ACCOUNTING'. Ai nhận / kênh nào do notification-config
+  // quyết định, không hardcode trong module nghiệp vụ.
+  audience String
+  // 'lark' | 'email' | 'log' (và các kênh thêm sau).
+  channel  String
+  // Khoá chống trùng, vd 'vat_pending:2026-08-27:10h'. Ngày giờ trong khoá
+  // PHẢI tính theo giờ VN bằng Intl — toISOString() lấy giờ UTC, trước 07:00
+  // sáng VN sẽ ra ngày hôm trước và gửi trùng (đúng bẫy đã dính 4 lần).
+  dedupeKey String @map("dedupe_key")
+
+  // Dữ liệu thô đã dùng để render — để sau đọc lại biết lúc đó số liệu là gì.
+  payload Json   @default("{}")
+  title   String
+
+  // pending → sent | failed | skipped(kênh tắt/thiếu cấu hình)
+  status      String    @default("pending")
+  attempts    Int       @default(0)
+  nextRetryAt DateTime? @map("next_retry_at")
+  lastError   String?   @map("last_error")
+  sentAt      DateTime? @map("sent_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  // Có updatedAt vì dòng này bị SỬA thật (retry đổi status/attempts) — khác
+  // các bảng log append-only chỉ cần created_at.
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, channel, dedupeKey])
+  @@index([orgId, status, nextRetryAt])
+  @@index([orgId, event, createdAt])
+  @@map("notification_logs")
 }

@@ -90,3 +90,20 @@ DB dev cũ `zalocrm` vẫn còn nguyên; đổi lại bằng cách bỏ ghi chú
 production. Kéo lại: pg_dump KHÔNG dùng được (local v16, Supabase v17) → copy từng
 bảng bằng `psql \copy` **có liệt kê cột tường minh** (thứ tự cột 2 bên KHÁC nhau,
 copy thẳng là lệch cột mà không báo lỗi).
+
+## Notification Service — Phase 1 XONG code, CHƯA deploy (27/08/2026)
+
+Nền thông báo dùng chung + việc đầu tiên: nhắc kế toán xuất VAT **10:00 & 16:00** giờ VN
+(gộp cả `requested` + `partial`; không có đơn chờ thì không gửi).
+
+- Code mới: `backend/src/modules/notifications/` (types · config · service · retry-cron ·
+  admin-routes · providers/lark · providers/log · templates/vat-pending · format-vn) +
+  `modules/orders/vat-digest.ts` + `modules/orders/vat-notify-cron.ts`.
+- Sửa: `schema.prisma` (bảng **`notification_logs`**, thuần thêm mới) · `app.ts` (2 cron + 1 route) ·
+  `config/index.ts` · `render.yaml` (5 env).
+- Đã test local: tổng hợp số · nội dung · chặn trùng · gửi thử · retry 5'/20'/60' rồi bỏ cuộc ·
+  lỗi Lark thật (code 19001) · 403 với member · 401 không token. Dữ liệu test đã trả nguyên trạng.
+- ⏳ **Còn treo:** (1) anh Philip dán webhook nhóm Lark "Xuất Nhập Kho" vào env `LARK_WEBHOOK_ACCOUNTING`
+  trên Render — chưa có thì cron chạy nhưng chỉ ghi log, không ai nhận; (2) chưa commit/push;
+  (3) email là Phase 2 (tranhien1897@gmail.com) — cần sender domain `halo.com.vn` đã xác thực SPF/DKIM
+  kẻo vào spam.

@@ -45,3 +45,14 @@ services:
         sync: false
       - key: PANCAKE_API_KEY       # nếu có dùng Pancake; không thì để trống
         sync: false
+      # ── Thông báo ra ngoài (Notification Service, 27/8/2026) ──────────────
+      - key: LARK_WEBHOOK_ACCOUNTING        # webhook Custom Bot của nhóm Lark "Xuất Nhập Kho"
+        sync: false                         # trống = tự bỏ qua kênh Lark, KHÔNG crash
+      - key: LARK_WEBHOOK_SECRET_ACCOUNTING # chỉ cần khi bật "Signature verification" trong bot
+        sync: false
+      - key: NOTIFY_ACCOUNTING_EMAILS       # Phase 2 — email kế toán, cách nhau dấu phẩy
+        sync: false
+      - key: SALE_APP_URL                   # gốc link trong thông báo (màn Xuất VAT ở sale-app)
+        value: https://sale.halo.com.vn
+      - key: NOTIFY_ENABLED                 # đặt 'false' để tắt mọi thông báo ra ngoài
+        value: 'true'

@@ -162,3 +162,13 @@ bước) thì mở đúng mục trong
   ô tìm kiếm là chưa đủ: ai biết `contactId` (đơn cũ, F12) vẫn POST được đơn. Luật
   "khách của ai người ấy lên đơn" (25/8/2026) phải cắm ở 3 chỗ: search + POST /orders
   + PUT /customers (đổi người phụ trách) — thiếu 1 chỗ là lách được cả 3.
+
+## 🔔 Thông báo ra ngoài (Lark/email)
+
+- **Lark báo lỗi bằng HTTP 200 + `code != 0`** (token sai, bot bị gỡ khỏi nhóm). Chỉ kiểm `res.ok` là
+  ghi "đã gửi" trong khi nhóm không nhận được gì — phải đọc `code` trong body (verify 27/8 với token giả:
+  `code 19001 param invalid`).
+- **Chống gửi trùng phải bằng ràng buộc UNIQUE trong DB**, không bằng biến trong RAM: Render deploy kiểu
+  rolling chạy chồng 2 instance vài chục giây, mỗi tiến trình có RAM riêng.
+- **Khoá chống trùng theo ngày phải tính giờ VN** (`Intl`, không `toISOString`) — nếu không, tin lúc rạng
+  sáng mang khoá của ngày hôm trước. Nút "gửi thử" phải dùng khoá riêng, không thì ăn mất tin cron thật.

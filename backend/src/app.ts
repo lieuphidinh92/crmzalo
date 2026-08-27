@@ -53,6 +53,7 @@ import { aiSettingsRoutes } from './modules/jobs/ai-settings-routes.js';
 import { startJobScheduler } from './modules/jobs/job-scheduler.js';
 import { startDailyStatsAggregation } from './modules/jobs/daily-stats.js';
 import { notificationRoutes } from './modules/notifications/notification-routes.js';
+import { notificationAdminRoutes } from './modules/notifications/notification-admin-routes.js';
 import { searchRoutes } from './modules/search/search-routes.js';
 import { orderRoutes } from './modules/orders/order-routes.js';
 import { orderTransitionRoutes } from './modules/orders/order-transitions.js';
@@ -72,6 +73,9 @@ import { startInventoryCronJobs } from './modules/inventory/inventory-cron.js';
 import { importsRoutes } from './modules/imports/imports-routes.js';
 import { supplierDebtRoutes } from './modules/imports/supplier-debt-routes.js';
 import { startSupplierDebtCron } from './modules/imports/supplier-debt-cron.js';
+// Nhắc kế toán xuất VAT (10:00 & 16:00) + gửi lại thông báo hỏng (mỗi 10 phút).
+import { startVatNotifyCron } from './modules/orders/vat-notify-cron.js';
+import { startNotificationRetryCron } from './modules/notifications/notification-retry-cron.js';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
 import { quickReplyRoutes } from './modules/quick-replies/quick-reply-routes.js';
 import { learningRoutes } from './modules/learning/learning-routes.js';
@@ -176,6 +180,7 @@ async function bootstrap() {
   await app.register(jobRoutes);
   await app.register(aiSettingsRoutes);
   await app.register(notificationRoutes);
+  await app.register(notificationAdminRoutes);
   await app.register(searchRoutes);
   await app.register(orderRoutes);
   await app.register(orderTransitionRoutes);
@@ -272,6 +277,8 @@ async function bootstrap() {
     startInventoryCronJobs();
     startCustomerRankCron();
     startSupplierDebtCron();
+    startVatNotifyCron();
+    startNotificationRetryCron();
   } catch (err) {
     logger.error('Failed to start server:', err);
     process.exit(1);

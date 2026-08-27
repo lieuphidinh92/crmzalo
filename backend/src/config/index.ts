@@ -19,4 +19,21 @@ export const config = {
   supabaseUrl: (process.env.SUPABASE_URL || '').replace(/\/+$/, ''),
   supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY || '',
   supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET || 'payment-proofs',
+
+  // ── Notification Service (27/8/2026) ──────────────────────────────────────
+  // Credentials CHỈ ở env (Render → Environment, sync:false trong render.yaml).
+  // Bật/tắt từng kênh theo nhóm người nhận thì để trong bảng `app_settings` —
+  // đổi được mà không phải deploy lại.
+  // Tắt hẳn mọi thông báo ra ngoài (dùng khi test/nghỉ lễ): NOTIFY_ENABLED=false.
+  notifyEnabled: (process.env.NOTIFY_ENABLED || 'true') !== 'false',
+  // Webhook "Custom Bot" của nhóm Lark "Xuất Nhập Kho". Trống ở local → service
+  // tự rơi về LogProvider (ghi ra console), không crash.
+  larkWebhookAccounting: process.env.LARK_WEBHOOK_ACCOUNTING || '',
+  // Chỉ cần khi bật "Chữ ký" (Signature verification) trong cài đặt bot Lark.
+  larkSecretAccounting: process.env.LARK_WEBHOOK_SECRET_ACCOUNTING || '',
+  // Phase 2 — danh sách email kế toán, ngăn cách bằng dấu phẩy.
+  notifyAccountingEmails: process.env.NOTIFY_ACCOUNTING_EMAILS || '',
+  // Gốc link trong thông báo. Màn "Xuất VAT" của kế toán nằm ở SALE-APP
+  // (sale.halo.com.vn/vat/requested), KHÔNG phải CRM.
+  saleAppUrl: (process.env.SALE_APP_URL || 'https://sale.halo.com.vn').replace(/\/+$/, ''),
 };
