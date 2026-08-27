@@ -8,7 +8,6 @@
  * In/PDF: window.print() (@page A4) — nét nhất. "Tải ảnh" dùng html2canvas.
  */
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import html2canvas from 'html2canvas';
 import { readVND } from '../composables/useFormat';
 import { getCompany, COMPANY_LIST } from '../composables/useCompanies';
 
@@ -86,6 +85,9 @@ async function downloadImage() {
   if (!paper.value) return;
   downloading.value = true;
   try {
+    // Nạp html2canvas lúc bấm "Tải ảnh": mở XEM phiếu (in bằng window.print)
+    // không cần thư viện này, đỡ 202 KB cho lần mở phiếu đầu tiên.
+    const { default: html2canvas } = await import('html2canvas');
     const canvas = await html2canvas(paper.value, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
     const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
     const link = document.createElement('a');
