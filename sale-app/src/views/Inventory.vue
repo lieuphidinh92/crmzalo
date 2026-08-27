@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import KpiCard from '../components/KpiCard.vue';
 import InventoryBatchDialog from '../components/InventoryBatchDialog.vue';
 import { useInventory, expiryBadge, stockLevel } from '../composables/useInventory';
@@ -19,7 +20,20 @@ const {
   rowsFromAlerts,
 } = useInventory();
 
-const chip = ref('all');
+const route = useRoute();
+
+// Tin nhắc hằng ngày (Lark/email) mở thẳng đúng bộ lọc:
+//   /inventory?filter=low-stock            → tab "Cảnh báo tồn"
+//   /inventory?filter=near-expiry&days=180 → tab "Sắp hết HSD" theo mốc 6 tháng
+// Không có tham số thì giữ nguyên hành vi cũ (tab "Tất cả", HSD 90 ngày).
+const CHIP_HOP_LE = ['all', 'low-stock', 'near-expiry', 'expired'];
+const chipTuLink = CHIP_HOP_LE.includes(route.query.filter) ? route.query.filter : 'all';
+const ngayHSDTuLink = Number(route.query.days) > 0 ? Number(route.query.days) : null;
+/** Nhãn thẻ KPI phải theo mốc ĐANG dùng, không ghi cứng 90 — vào từ link của
+ *  tin nhắc (days=180) mà nhãn vẫn ghi "<90d" là con số và chữ đá nhau. */
+const ngayHSDHienThi = ngayHSDTuLink ?? 90;
+
+const chip = ref(chipTuLink);
 const q = ref('');
 const brandId = ref('');
 const page = ref(1);
@@ -70,6 +84,7 @@ async function reloadList() {
     q: q.value.trim(),
     brand: brandId.value,
     filter,
+    days: ngayHSDTuLink,
     page: page.value,
     limit: limit.value,
   });
@@ -83,7 +98,7 @@ watch([chip, q, brandId], () => {
 watch(page, reloadList);
 
 onMounted(async () => {
-  await Promise.all([loadAlerts(), loadBrands(), reloadList()]);
+  await Promise.all([loadAlerts(ngayHSDTuLink), loadBrands(), reloadList()]);
 });
 
 const totalActiveLabel = computed(() => {
@@ -145,7 +160,7 @@ function badgeForRow(row) {
         :trend-label="summary.lowStockCount > 0 ? 'Tồn ≤ ngưỡng cảnh báo' : 'Tồn ổn định'"
       />
       <KpiCard
-        label="Lô sắp hết HSD (<90d)"
+        :label="`Lô sắp hết HSD (<${ngayHSDHienThi}d)`"
         :value="summary.expiringCount.toLocaleString('vi-VN')"
         icon="coins"
         :icon-color="summary.expiredCount > 0 ? 'red' : 'amber'"
