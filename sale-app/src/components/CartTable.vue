@@ -1,9 +1,21 @@
 <script setup>
+import MoneyInput from './MoneyInput.vue';
 import { ref, computed } from 'vue';
 import { usePOSStore } from '../stores/pos';
 import { formatVND } from '../composables/useFormat';
+import OrderItemRow from './OrderItemRow.vue';
 
 const pos = usePOSStore();
+
+/**
+ * Giỏ hàng có HAI bố cục (27/8/2026):
+ *  - Desktop (≥1024px): BẢNG 5 cột — giữ nguyên 100% như trước.
+ *  - Mobile (<1024px): danh sách THẺ (OrderItemRow) — bảng 5 cột trên máy
+ *    390px bị nén còn ~286px: tên SP vụn ra, ô SL/đơn giá chỉ cao 28–32px,
+ *    ngón tay bấm không nổi. Thẻ cho ô bấm 44px và đọc được tên đầy đủ.
+ * ⛔ Cả 2 bố cục gọi CÙNG action của store (updateQuantity / updateUnitPrice /
+ *    updateDiscount / removeProduct) → không có nhánh tính tiền riêng nào.
+ */
 
 // Ghi chú đơn — tối giản: chỉ hiện textarea khi user bấm thêm
 // (mở sẵn nếu đã có nội dung, ví dụ khi đặt lại đơn cũ).
@@ -25,21 +37,20 @@ function dec(it) {
 function inc(it) {
   pos.updateQuantity(it.productId, it.quantity + 1);
 }
-function onQtyInput(it, e) {
-  const val = parseInt(e.target.value);
-  if (!isNaN(val) && val >= 1) pos.updateQuantity(it.productId, val);
+// MoneyInput đã nhả ra SỐ NGUYÊN sạch (gõ "1.000" ra 1000, không còn cảnh
+// parseInt("1.000") = 1 như trước 27/8/2026).
+function onQtyInput(it, val) {
+  if (val >= 1) pos.updateQuantity(it.productId, val);
 }
 
 // ── Đơn giá thương lượng (integer VND >= 0) ──
-function onPriceInput(it, e) {
-  const val = parseInt(e.target.value);
-  pos.updateUnitPrice(it.productId, isNaN(val) || val < 0 ? 0 : val);
+function onPriceInput(it, val) {
+  pos.updateUnitPrice(it.productId, Math.max(0, Number(val) || 0));
 }
 
 // ── Chiết khấu dòng (integer VND >= 0) ──
-function onDiscountInput(it, e) {
-  const val = parseInt(e.target.value);
-  pos.updateDiscount(it.productId, isNaN(val) || val < 0 ? 0 : val);
+function onDiscountInput(it, val) {
+  pos.updateDiscount(it.productId, Math.max(0, Number(val) || 0));
 }
 
 // ── Cảnh báo tồn (mềm, mỗi dòng) ──
@@ -63,7 +74,7 @@ const itemCount = computed(() => pos.items.length);
       <button
         v-if="itemCount > 0"
         @click="pos.clearAll()"
-        class="text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg px-2 py-1 transition-colors"
+        class="tap shrink-0 h-11 lg:h-auto flex items-center text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg px-2 py-1 -my-2 lg:my-0 transition-colors"
       >
         Xóa tất cả
       </button>
@@ -83,7 +94,21 @@ const itemCount = computed(() => pos.items.length);
 
     <!-- Bảng giỏ hàng -->
     <template v-else>
-      <div class="flex-1 overflow-y-auto">
+      <!-- MOBILE: danh sách thẻ, mỗi SP 1 thẻ (ô bấm 44px) -->
+      <div class="lg:hidden px-3 py-3 space-y-3">
+        <OrderItemRow
+          v-for="it in pos.items"
+          :key="it.productId"
+          :item="it"
+          @update-qty="pos.updateQuantity(it.productId, $event)"
+          @update-price="pos.updateUnitPrice(it.productId, $event)"
+          @update-discount="pos.updateDiscount(it.productId, $event)"
+          @remove="pos.removeProduct(it.productId)"
+        />
+      </div>
+
+      <!-- DESKTOP: bảng 5 cột (giữ nguyên) -->
+      <div class="hidden lg:block flex-1 overflow-y-auto">
         <table class="w-full text-left">
           <thead class="sticky top-0 bg-surface-50 z-10">
             <tr class="text-[11px] uppercase tracking-wide text-ink-secondary border-b border-line-200">
@@ -147,11 +172,10 @@ const itemCount = computed(() => pos.items.length);
                       class="w-7 h-8 text-ink-primary font-bold hover:bg-line-200 rounded-l-lg disabled:opacity-40 disabled:cursor-not-allowed"
                       aria-label="Giảm"
                     >−</button>
-                    <input
-                      :value="it.quantity"
-                      @input="onQtyInput(it, $event)"
-                      type="number"
-                      min="1"
+                    <MoneyInput
+                      :model-value="it.quantity"
+                      :min="1"
+                      @update:model-value="onQtyInput(it, $event)"
                       class="w-9 h-8 text-center bg-transparent outline-none text-sm font-semibold text-ink-primary"
                     />
                     <button
@@ -165,26 +189,18 @@ const itemCount = computed(() => pos.items.length);
 
               <!-- Đơn giá: input sửa được + ô CK nhỏ -->
               <td class="px-2 py-3">
-                <input
-                  :value="it.unitPrice"
-                  @input="onPriceInput(it, $event)"
-                  type="number"
-                  min="0"
-                  step="1000"
-                  inputmode="numeric"
-                  class="w-full h-8 px-2 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-1 focus:ring-royal-100 outline-none text-sm text-right text-ink-primary"
+                <MoneyInput
+                  :model-value="it.unitPrice"
+                  @update:model-value="onPriceInput(it, $event)"
+                  class="w-full h-8 px-2 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-1 focus:ring-royal-100 outline-none text-sm text-right text-ink-primary tabular-nums"
                 />
                 <div class="flex items-center justify-end gap-1 mt-1">
                   <span class="text-[10px] text-ink-secondary">CK</span>
-                  <input
-                    :value="it.discountValue || 0"
-                    @input="onDiscountInput(it, $event)"
-                    type="number"
-                    min="0"
-                    step="1000"
-                    inputmode="numeric"
+                  <MoneyInput
+                    :model-value="it.discountValue || 0"
+                    @update:model-value="onDiscountInput(it, $event)"
                     placeholder="0"
-                    class="w-20 h-7 px-2 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-1 focus:ring-royal-100 outline-none text-[11px] text-right text-ink-secondary"
+                    class="w-20 h-7 px-2 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-1 focus:ring-royal-100 outline-none text-[11px] text-right text-ink-secondary tabular-nums"
                   />
                 </div>
               </td>
@@ -219,7 +235,7 @@ const itemCount = computed(() => pos.items.length);
         <button
           v-if="!showNote"
           @click="toggleNote"
-          class="text-xs font-medium text-royal-700 hover:text-royal-800"
+          class="tap h-11 lg:h-auto flex items-center text-xs font-medium text-royal-700 hover:text-royal-800 -my-2 lg:my-0"
         >
           + Thêm ghi chú cho đơn hàng
         </button>
@@ -231,10 +247,17 @@ const itemCount = computed(() => pos.items.length);
             v-model="pos.note"
             rows="2"
             placeholder="Ghi chú giao hàng, yêu cầu đặc biệt..."
-            class="w-full px-3 py-2 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-1 focus:ring-royal-100 outline-none text-sm text-ink-primary resize-none"
+            class="w-full px-3 py-2.5 lg:py-2 rounded-lg border border-line-300 focus:border-royal-700 focus:ring-1 focus:ring-royal-100 outline-none text-sm text-ink-primary resize-none"
           ></textarea>
         </div>
       </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+/* iOS huỷ cú bấm nếu ngón trượt nhẹ / nghi ngờ double-tap-zoom (27/8/2026). */
+.tap {
+  touch-action: manipulation;
+}
+</style>

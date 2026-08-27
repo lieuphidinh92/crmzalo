@@ -18,8 +18,10 @@ import { useTaxLookup, isLookupableTaxCode } from '../composables/useTaxLookup';
 
 const emit = defineEmits(['close', 'created']);
 
+// 44px trên điện thoại (chuẩn ngón tay), desktop giữ 40px như cũ — form này mở
+// từ cả màn Khách hàng và màn Tạo đơn, sale hay nhập KH mới ngay tại quầy (27/8/2026).
 const inputCls =
-  'w-full h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm';
+  'w-full h-11 lg:h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-base lg:text-sm';
 const labelCls = 'block text-xs font-medium text-ink-primary mb-1';
 
 const auth = useAuthStore();
@@ -157,7 +159,8 @@ async function submit() {
         <h3 class="text-lg font-bold text-ink-primary">Tạo khách hàng mới</h3>
         <button
           @click="emit('close')"
-          class="text-ink-disabled hover:text-ink-primary text-xl leading-none"
+          aria-label="Đóng"
+          class="w-11 h-11 lg:w-auto lg:h-auto -mr-2 lg:mr-0 flex items-center justify-center text-ink-disabled hover:text-ink-primary text-xl leading-none"
         >
           ✕
         </button>
@@ -192,7 +195,7 @@ async function submit() {
               type="button"
               @click="doTaxLookup"
               :disabled="looking || !canLookupTax"
-              class="h-10 px-3 shrink-0 rounded-lg border border-royal-700 text-royal-700 text-[13px] font-semibold hover:bg-royal-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+              class="h-11 lg:h-10 px-3 shrink-0 rounded-lg border border-royal-700 text-royal-700 text-[13px] font-semibold hover:bg-royal-50 active:bg-royal-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
               title="Tra cứu tên đơn vị + địa chỉ theo mã số thuế (dữ liệu Cục Thuế)"
             >
               <svg
@@ -274,11 +277,12 @@ async function submit() {
           />
         </div>
 
-        <label class="flex items-center gap-2 text-[13px] text-ink-primary cursor-pointer">
+        <!-- Vùng bấm của ô tick là cả <label> → cho nhãn cao 44px trên điện thoại -->
+        <label class="flex items-center gap-2 min-h-11 lg:min-h-0 py-1 lg:py-0 text-[13px] text-ink-primary cursor-pointer">
           <input
             v-model="sameShippingAddress"
             type="checkbox"
-            class="w-4 h-4 accent-royal-700 shrink-0"
+            class="w-5 h-5 lg:w-4 lg:h-4 accent-royal-700 shrink-0"
           />
           Địa chỉ nhận hàng trùng địa chỉ trên hoá đơn
         </label>

@@ -207,7 +207,7 @@ function createOrder() {
           <!-- Header -->
           <div class="h-14 px-5 flex items-center justify-between border-b border-line-200 shrink-0">
             <div class="text-sm font-semibold text-ink-primary">Chi tiết khách hàng</div>
-            <button @click="emit('close')" class="w-8 h-8 rounded-lg hover:bg-surface-soft flex items-center justify-center text-ink-secondary" aria-label="Đóng">
+            <button @click="emit('close')" class="tap w-11 h-11 lg:w-8 lg:h-8 -mr-2 lg:mr-0 rounded-lg hover:bg-surface-soft active:bg-surface-soft flex items-center justify-center text-ink-secondary" aria-label="Đóng">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -234,7 +234,9 @@ function createOrder() {
                     {{ (customer.full_name || '?').slice(0, 1).toUpperCase() }}
                   </div>
                   <div class="min-w-0 flex-1">
-                    <h2 class="text-lg font-bold text-ink-primary leading-tight">{{ customer.full_name || '—' }}</h2>
+                    <!-- Tên dài kiểu "CÔNG TY TNHH THƯƠNG MẠI ..." — cho 2 dòng
+                         trên điện thoại rồi mới "..." (27/8/2026) -->
+                    <h2 class="text-lg font-bold text-ink-primary leading-tight line-clamp-2 lg:line-clamp-none">{{ customer.full_name || '—' }}</h2>
                     <div class="text-xs text-ink-secondary mt-0.5 flex flex-wrap gap-x-2">
                       <span v-if="customer.phone">📞 {{ customer.phone }}</span>
                       <span v-if="customer.store_name">· {{ customer.store_name }}</span>
@@ -261,14 +263,16 @@ function createOrder() {
                   <button
                     v-if="!editing"
                     @click="startEdit"
-                    class="shrink-0 h-8 px-3 rounded-btn border border-line-300 hover:border-royal-700 hover:text-royal-700 text-xs font-medium text-ink-primary"
+                    class="tap shrink-0 h-11 lg:h-8 px-4 lg:px-3 rounded-btn border border-line-300 hover:border-royal-700 hover:text-royal-700 active:bg-surface-soft text-xs font-medium text-ink-primary"
                   >
                     Sửa
                   </button>
                 </div>
 
                 <!-- Stat cards — PR4: thêm DS 60 ngày + Sinh nhật khi có -->
-                <div class="grid grid-cols-4 gap-2 mt-4">
+                <!-- Điện thoại: 4 thẻ số liệu chia 4 cột chỉ còn ~80px/thẻ nên
+                     "1,234,567 đ" bị xuống dòng từng cụm → xếp 2x2 (27/8/2026) -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
                   <div class="p-2.5 rounded-input bg-surface-soft">
                     <div class="text-[10px] text-ink-secondary uppercase">DS tổng</div>
                     <div class="text-sm font-bold text-ink-primary tabular-nums">{{ formatVND(customer.stats?.total_revenue || 0) }}</div>
@@ -309,43 +313,43 @@ function createOrder() {
                 <div class="grid grid-cols-2 gap-3">
                   <div class="col-span-2">
                     <label class="block text-xs font-medium text-ink-primary mb-1">Tên KH *</label>
-                    <input v-model="form.fullName" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                    <input v-model="form.fullName" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
                   </div>
                   <div>
                     <label class="block text-xs font-medium text-ink-primary mb-1">SĐT *</label>
-                    <input v-model="form.phone" type="tel" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                    <input v-model="form.phone" type="tel" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
                   </div>
                   <div>
                     <label class="block text-xs font-medium text-ink-primary mb-1">Tỉnh / TP</label>
-                    <input v-model="form.province" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                    <input v-model="form.province" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
                   </div>
                   <div class="col-span-2">
                     <label class="block text-xs font-medium text-ink-primary mb-1">Tên cửa hàng</label>
-                    <input v-model="form.storeName" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                    <input v-model="form.storeName" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
                   </div>
                   <div class="col-span-2">
                     <label class="block text-xs font-medium text-ink-primary mb-1">Địa chỉ</label>
-                    <input v-model="form.address" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                    <input v-model="form.address" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
                   </div>
                   <div>
                     <label class="block text-xs font-medium text-ink-primary mb-1">Loại KH</label>
-                    <select v-model="form.customerType" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm bg-white">
+                    <select v-model="form.customerType" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm bg-white">
                       <option v-for="o in TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
                     </select>
                   </div>
                   <div>
                     <label class="block text-xs font-medium text-ink-primary mb-1">Bảng giá</label>
-                    <select v-model="form.policyTier" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm bg-white">
+                    <select v-model="form.policyTier" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm bg-white">
                       <option v-for="o in TIER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
                     </select>
                   </div>
                   <div>
                     <label class="block text-xs font-medium text-ink-primary mb-1">Hạn mức công nợ (đ)</label>
-                    <input v-model="form.creditLimitText" @blur="formatCreditLimit" type="text" inputmode="numeric" placeholder="Trống = không giới hạn" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                    <input v-model="form.creditLimitText" @blur="formatCreditLimit" type="text" inputmode="numeric" placeholder="Trống = không giới hạn" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
                   </div>
                   <div v-if="isManager" class="col-span-2">
                     <label class="block text-xs font-medium text-ink-primary mb-1">Sale phụ trách</label>
-                    <select v-model="form.assignedUserId" class="w-full h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm bg-white">
+                    <select v-model="form.assignedUserId" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm bg-white">
                       <option :value="null">— Chưa ai phụ trách (ai lên đơn thì nhận) —</option>
                       <option v-for="s in staffList" :key="s.id" :value="s.id">{{ s.fullName }}</option>
                     </select>
@@ -364,10 +368,10 @@ function createOrder() {
                 </div>
 
                 <div class="flex gap-2 pt-1">
-                  <button @click="editing = false" :disabled="saving" class="flex-1 h-11 rounded-btn border border-line-300 text-ink-primary font-medium hover:bg-surface-50 disabled:opacity-50">
+                  <button @click="editing = false" :disabled="saving" class="tap flex-1 h-11 rounded-btn border border-line-300 text-ink-primary font-medium hover:bg-surface-50 disabled:opacity-50">
                     Huỷ
                   </button>
-                  <button @click="saveEdit" :disabled="saving" class="flex-1 h-11 rounded-btn bg-royal-700 hover:bg-royal-800 text-white font-semibold disabled:opacity-50">
+                  <button @click="saveEdit" :disabled="saving" class="tap flex-1 h-11 rounded-btn bg-royal-700 hover:bg-royal-800 text-white font-semibold disabled:opacity-50">
                     {{ saving ? 'Đang lưu...' : 'Lưu' }}
                   </button>
                 </div>
@@ -382,7 +386,7 @@ function createOrder() {
                       v-for="t in tabs"
                       :key="t.key"
                       @click="activeTab = t.key"
-                      class="flex-1 h-12 text-sm font-medium transition border-b-2"
+                      class="tap flex-1 h-12 text-sm font-medium transition border-b-2"
                       :class="activeTab === t.key ? 'text-royal-700 border-royal-700' : 'text-ink-secondary border-transparent hover:text-ink-primary'"
                     >
                       {{ t.label }}
@@ -471,7 +475,7 @@ function createOrder() {
 
           <!-- Sticky CTA -->
           <div v-if="customer && !loading && !editing" class="p-4 border-t border-line-200 shrink-0">
-            <button @click="createOrder" class="w-full h-12 rounded-btn bg-royal-700 hover:bg-royal-800 text-white font-bold transition shadow-pop">
+            <button @click="createOrder" class="tap w-full h-12 rounded-btn bg-royal-700 hover:bg-royal-800 text-white font-bold transition shadow-pop">
               + Tạo đơn cho KH này
             </button>
           </div>
@@ -482,6 +486,10 @@ function createOrder() {
 </template>
 
 <style scoped>
+/* iOS hay huỷ cú bấm khi ngón trượt nhẹ trên nút/tab (27/8/2026) */
+.tap {
+  touch-action: manipulation;
+}
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;

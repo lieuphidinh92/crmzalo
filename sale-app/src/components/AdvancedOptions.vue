@@ -1,4 +1,5 @@
 <script setup>
+import MoneyInput from './MoneyInput.vue';
 import { ref, computed } from 'vue';
 import { usePOSStore } from '../stores/pos';
 import { useTaxLookup, isLookupableTaxCode } from '../composables/useTaxLookup';
@@ -8,8 +9,10 @@ const pos = usePOSStore();
 // Khối "Tùy chọn nâng cao" gập/mở — mặc định gập để màn chính gọn.
 const open = ref(false);
 
+// Mobile 44px / desktop giữ 40px (27/8/2026) — ô nhập cao 40px trên điện thoại
+// vẫn dưới ngưỡng ngón tay, nhất là ô Phí ship / Trả trước (ra tiền).
 const inputCls =
-  'w-full h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm';
+  'w-full h-11 lg:h-10 px-3 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm';
 const labelCls = 'text-[11px] uppercase tracking-wide text-ink-secondary mb-1.5';
 
 // ── Tra cứu MST → tự điền tên đơn vị + địa chỉ xuất hoá đơn ───────────────
@@ -48,7 +51,7 @@ function undoTaxFill() {
     <button
       type="button"
       @click="open = !open"
-      class="w-full flex items-center justify-between px-3 py-3 text-left"
+      class="tap w-full flex items-center justify-between px-3 py-3 min-h-[44px] text-left"
     >
       <span class="text-sm font-semibold text-ink-primary">Tùy chọn nâng cao</span>
       <svg
@@ -72,7 +75,8 @@ function undoTaxFill() {
         </div>
         <div>
           <div :class="labelCls">Trả trước (nếu có)</div>
-          <input v-model.number="pos.paidAmount" type="number" min="0" step="1000" inputmode="numeric" placeholder="0" :class="inputCls" />
+          <!-- Ô TIỀN: dùng MoneyInput, KHÔNG dùng type=number (gõ "94.250" ra 94đ) -->
+          <MoneyInput v-model="pos.paidAmount" placeholder="0" :class="inputCls + ' tabular-nums'" />
         </div>
       </div>
 
@@ -88,7 +92,7 @@ function undoTaxFill() {
             Để trống nếu giao đúng theo khách hàng đã chọn.
           </div>
 
-          <div class="grid grid-cols-2 gap-2 mb-2">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-2 mb-2">
             <div>
               <div :class="labelCls">Tên người nhận</div>
               <input
@@ -116,19 +120,20 @@ function undoTaxFill() {
               v-model="pos.deliveryAddress"
               rows="2"
               placeholder="Địa chỉ giao hàng..."
-              class="w-full px-3 py-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm resize-none"
+              class="w-full px-3 py-2.5 lg:py-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm resize-none"
             />
           </div>
 
           <div>
             <div :class="labelCls">Phí ship (nếu có)</div>
-            <input v-model.number="pos.shippingFee" type="number" min="0" step="1000" inputmode="numeric" placeholder="0" :class="inputCls" />
+            <!-- Ô TIỀN: xem ghi chú ở ô "Trả trước" -->
+            <MoneyInput v-model="pos.shippingFee" placeholder="0" :class="inputCls + ' tabular-nums'" />
           </div>
         </div>
 
         <!-- 🧾 THÔNG TIN XUẤT VAT -->
         <div class="border border-line-200 rounded-lg p-3 bg-surface-soft/40">
-          <label class="flex items-center justify-between cursor-pointer">
+          <label class="tap flex items-center justify-between min-h-[44px] lg:min-h-0 cursor-pointer">
             <span class="flex items-center gap-2">
               <span class="text-base leading-none">🧾</span>
               <span class="text-sm font-semibold text-ink-primary">Thông tin xuất VAT</span>
@@ -155,7 +160,7 @@ function undoTaxFill() {
                     { v: 'cong_ty', l: 'Công ty' },
                   ]"
                   :key="opt.v"
-                  class="flex items-center justify-center text-xs font-medium px-2 py-2 rounded-lg border cursor-pointer transition"
+                  class="tap flex items-center justify-center text-center text-xs font-medium px-2 py-2 min-h-[44px] lg:min-h-0 rounded-lg border cursor-pointer transition"
                   :class="
                     pos.invoiceBuyerType === opt.v
                       ? 'bg-royal-50 text-royal-700 border-royal-700'
@@ -175,7 +180,7 @@ function undoTaxFill() {
               <input v-model="pos.invoiceBuyerName" type="text" placeholder="Tên xuất hóa đơn..." :class="inputCls" />
             </div>
 
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
               <div>
                 <div :class="labelCls">
                   {{ pos.invoiceBuyerType === 'ca_nhan' ? 'Số CCCD' : 'Mã số thuế' }}
@@ -196,7 +201,7 @@ function undoTaxFill() {
                     type="button"
                     @click="doTaxLookup"
                     :disabled="looking || !canLookupTax"
-                    class="w-10 h-10 shrink-0 rounded-lg border border-royal-700 text-royal-700 hover:bg-royal-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                    class="tap w-11 h-11 lg:w-10 lg:h-10 shrink-0 rounded-lg border border-royal-700 text-royal-700 hover:bg-royal-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
                     title="Tra cứu tên + địa chỉ theo mã số thuế (dữ liệu Cục Thuế)"
                   >
                     <svg
@@ -228,7 +233,7 @@ function undoTaxFill() {
                   <button
                     v-if="undoSnapshot"
                     type="button"
-                    class="text-royal-700 font-semibold underline ml-0.5"
+                    class="tap inline-flex items-center min-h-[44px] lg:min-h-0 px-1.5 lg:px-0 -my-2 lg:my-0 text-royal-700 font-semibold underline ml-0.5"
                     @click="undoTaxFill"
                   >
                     Hoàn tác
@@ -249,15 +254,15 @@ function undoTaxFill() {
                 v-model="pos.invoiceAddress"
                 rows="2"
                 placeholder="Địa chỉ trên hóa đơn..."
-                class="w-full px-3 py-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm resize-none"
+                class="w-full px-3 py-2.5 lg:py-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm resize-none"
               />
             </div>
 
-            <label class="flex items-center gap-2 text-[13px] text-ink-primary cursor-pointer">
+            <label class="tap flex items-center gap-2 min-h-[44px] lg:min-h-0 text-[13px] text-ink-primary cursor-pointer">
               <input
                 type="checkbox"
                 v-model="pos.saveInvoiceToCustomer"
-                class="h-4 w-4 rounded border-line-300 text-royal-700 focus:ring-royal-100"
+                class="h-5 w-5 lg:h-4 lg:w-4 shrink-0 rounded border-line-300 text-royal-700 focus:ring-royal-100"
               />
               Lưu làm thông tin hóa đơn mặc định cho khách này
             </label>
@@ -273,3 +278,10 @@ function undoTaxFill() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* iOS huỷ cú bấm nếu ngón trượt nhẹ / nghi ngờ double-tap-zoom (27/8/2026). */
+.tap {
+  touch-action: manipulation;
+}
+</style>

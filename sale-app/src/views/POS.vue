@@ -117,8 +117,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
     <div
       class="flex-1 min-h-0 w-full grid grid-cols-1 lg:grid-cols-[minmax(240px,23fr)_minmax(0,52fr)_minmax(260px,25fr)] gap-4 p-4 lg:overflow-hidden"
     >
-      <!-- CỘT 1 — Khách hàng -->
-      <section class="flex flex-col min-h-0 min-w-0 lg:h-full">
+      <!-- CỘT 1 — Khách hàng.
+           Trên ĐIỆN THOẠI 3 khối xếp dọc theo thứ tự làm việc thật:
+           Khách → Tìm sản phẩm → Giỏ hàng (anh chốt 27/8/2026). Trước đây giỏ
+           hàng nằm giữa nên sale phải cuộn qua cả giỏ + vận chuyển + tổng tiền
+           mới tới ô tìm SP. Máy tính vẫn 3 cột ngang như cũ (lg:order-none). -->
+      <section class="order-1 lg:order-none flex flex-col min-h-0 min-w-0 lg:h-full">
         <div class="flex items-center gap-2 mb-2 px-1 shrink-0">
           <span class="w-5 h-5 rounded-full bg-royal-700 text-white text-[11px] font-bold flex items-center justify-center">1</span>
           <span class="text-sm font-semibold text-ink-primary">Khách hàng</span>
@@ -129,9 +133,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
       </section>
 
       <!-- CỘT 2 — Giỏ hàng + vận chuyển/thanh toán + tổng tiền sticky -->
-      <section class="flex flex-col min-h-0 min-w-0 lg:h-full">
+      <section class="order-3 lg:order-none flex flex-col min-h-0 min-w-0 lg:h-full">
         <div class="flex items-center gap-2 mb-2 px-1 shrink-0">
-          <span class="w-5 h-5 rounded-full bg-royal-700 text-white text-[11px] font-bold flex items-center justify-center">2</span>
+          <!-- Số bước đổi theo thứ tự thực tế của từng khổ màn -->
+          <span class="w-5 h-5 rounded-full bg-royal-700 text-white text-[11px] font-bold flex items-center justify-center">
+            <span class="lg:hidden">3</span><span class="hidden lg:inline">2</span>
+          </span>
           <span class="text-sm font-semibold text-ink-primary">Giỏ hàng</span>
         </div>
 
@@ -146,13 +153,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
           <select
             v-if="isManager"
             v-model="pos.assignedSaleId"
-            class="flex-1 min-w-0 h-9 px-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm font-medium bg-white"
+            class="tap flex-1 min-w-0 h-11 lg:h-9 px-2 rounded-lg border border-line-300 focus:border-royal-700 outline-none text-sm font-medium bg-white"
           >
             <option v-for="s in pos.staffList" :key="s.id" :value="s.id">{{ s.fullName }}</option>
           </select>
           <div
             v-else
-            class="flex-1 min-w-0 h-9 px-2 rounded-lg border border-line-300 bg-surface-soft flex items-center text-sm font-medium text-ink-secondary truncate"
+            class="flex-1 min-w-0 h-11 lg:h-9 px-2 rounded-lg border border-line-300 bg-surface-soft flex items-center text-sm font-medium text-ink-secondary truncate"
             title="Chỉ chủ/quản lý mới đổi được nhân viên bán"
           >
             {{ myStaffName }}
@@ -171,7 +178,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
                 <label
                   v-for="opt in SHIPPING"
                   :key="opt.v"
-                  class="flex items-center justify-center text-xs font-medium px-2 py-2 rounded-lg border cursor-pointer transition"
+                  class="tap flex items-center justify-center text-center text-xs font-medium px-2 py-2 min-h-[44px] lg:min-h-0 rounded-lg border cursor-pointer transition"
                   :class="pos.shippingMethod === opt.v ? 'bg-royal-50 text-royal-700 border-royal-700' : 'bg-white text-ink-primary border-line-300'"
                 >
                   <input type="radio" :value="opt.v" v-model="pos.shippingMethod" class="sr-only" />
@@ -185,7 +192,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
                 <label
                   v-for="opt in PAYMENT"
                   :key="opt.v"
-                  class="flex items-center justify-center text-xs font-medium px-2 py-2 rounded-lg border cursor-pointer transition"
+                  class="tap flex items-center justify-center text-center text-xs font-medium px-2 py-2 min-h-[44px] lg:min-h-0 rounded-lg border cursor-pointer transition"
                   :class="pos.paymentMethod === opt.v ? 'bg-royal-50 text-royal-700 border-royal-700' : 'bg-white text-ink-primary border-line-300'"
                 >
                   <input type="radio" :value="opt.v" v-model="pos.paymentMethod" class="sr-only" />
@@ -235,7 +242,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
               @click="submit('draft')"
               :disabled="!canSubmit"
               type="button"
-              class="flex-1 h-12 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed transition"
+              class="tap flex-1 h-12 rounded-xl bg-royal-700 hover:bg-royal-800 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
               {{ pos.submitting ? 'Đang lưu...' : '⤓ Lưu tạm / Đơn nháp' }}
             </button>
@@ -243,12 +250,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
         </div>
       </section>
 
-      <!-- CỘT 3 — Tìm sản phẩm -->
-      <section class="flex flex-col min-h-0 min-w-0 lg:h-full">
+      <!-- CỘT 3 — Tìm sản phẩm (trên điện thoại đứng NGAY SAU khách hàng) -->
+      <section class="order-2 lg:order-none flex flex-col min-h-0 min-w-0 lg:h-full">
         <div class="flex items-center gap-2 mb-2 px-1 shrink-0">
-          <span class="w-5 h-5 rounded-full bg-royal-700 text-white text-[11px] font-bold flex items-center justify-center">3</span>
+          <span class="w-5 h-5 rounded-full bg-royal-700 text-white text-[11px] font-bold flex items-center justify-center">
+            <span class="lg:hidden">2</span><span class="hidden lg:inline">3</span>
+          </span>
           <span class="text-sm font-semibold text-ink-primary">Tìm sản phẩm</span>
-          <span class="ml-auto text-[11px] text-ink-disabled">Phím tắt: F2</span>
+          <span class="ml-auto hidden lg:inline text-[11px] text-ink-disabled">Phím tắt: F2</span>
         </div>
         <div class="flex-1 min-h-0 bg-white border border-line-200 rounded-xl p-3 lg:overflow-hidden">
           <ProductFinder ref="productFinderRef" />
@@ -276,3 +285,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
     />
   </div>
 </template>
+
+<style scoped>
+/* iOS huỷ cú bấm nếu ngón trượt nhẹ / nghi ngờ double-tap-zoom (27/8/2026). */
+.tap {
+  touch-action: manipulation;
+}
+</style>
