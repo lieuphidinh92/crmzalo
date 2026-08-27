@@ -91,23 +91,24 @@ production. Kéo lại: pg_dump KHÔNG dùng được (local v16, Supabase v17) 
 bảng bằng `psql \copy` **có liệt kê cột tường minh** (thứ tự cột 2 bên KHÁC nhau,
 copy thẳng là lệch cột mà không báo lỗi).
 
-## Notification Service — Phase 1 XONG code, CHƯA deploy (27/08/2026)
+## Notification Service — ĐÃ LIVE (27/08/2026)
 
 Nền thông báo dùng chung + việc đầu tiên: nhắc kế toán xuất VAT **10:00 & 16:00** giờ VN
-(gộp cả `requested` + `partial`; không có đơn chờ thì không gửi).
+(gộp cả `requested` + `partial`). Hàng chờ trống thì cron IM, không spam nhóm.
 
-- Code mới: `backend/src/modules/notifications/` (types · config · service · retry-cron ·
-  admin-routes · providers/lark · providers/log · templates/vat-pending · format-vn) +
-  `modules/orders/vat-digest.ts` + `modules/orders/vat-notify-cron.ts`.
-- Sửa: `schema.prisma` (bảng **`notification_logs`**, thuần thêm mới) · `app.ts` (2 cron + 1 route) ·
-  `config/index.ts` · `render.yaml` (5 env).
-- Đã test local: tổng hợp số · nội dung · chặn trùng · gửi thử · retry 5'/20'/60' rồi bỏ cuộc ·
-  lỗi Lark thật (code 19001) · 403 với member · 401 không token. Dữ liệu test đã trả nguyên trạng.
-- ✅ **ĐÃ LIVE 27/08** (`bf8737c`): webhook nhóm Lark "Xuất Nhập Kho" đã dán trên Render, bảng
-  `notification_logs` đã có trên Supabase, endpoint production trả 200.
-- **Phase 2 (email qua Brevo) + chẩn đoán kênh:** code xong, CHƯA push. Cần anh Philip tạo tài khoản
-  Brevo → lấy `BREVO_API_KEY` + xác thực địa chỉ gửi (`EMAIL_FROM`). Người nhận đã chốt:
-  `tranhien1897@gmail.com`. Chưa có key thì kênh email tự bỏ qua kèm lý do, Lark vẫn chạy bình thường.
-- ⏳ **Chưa chứng minh được:** chưa có yêu cầu VAT thật nào (1070 đơn đều `not_issued`) nên đường
-  cron → Lark với dữ liệu thật chưa chạy lần nào. Kiểm cấu hình bằng
-  `GET /api/v1/notifications/vat-preview` (xem `channels`).
+**Đang chạy trên production:** Lark nhóm "Xuất Nhập Kho" + email `tranhien1897@gmail.com`.
+3 commit: `bf8737c` (nền + Lark) · `206bd83` (email Brevo + chẩn đoán kênh) · `6df79e1` (gửi thử tin mẫu).
+
+- Code: `backend/src/modules/notifications/` (types · config · service · retry-cron · admin-routes ·
+  providers/lark · providers/email · providers/log · templates/vat-pending · format-vn) +
+  `modules/orders/vat-digest.ts` + `vat-notify-cron.ts`. Bảng `notification_logs`.
+- **Env trên Render (đã đặt):** `LARK_WEBHOOK_ACCOUNTING` · `BREVO_API_KEY` · `EMAIL_FROM`
+  (`lieuphidinh92@gmail.com`, đã xác thực trong Brevo) · `NOTIFY_ACCOUNTING_EMAILS` · `SALE_APP_URL`.
+- **Tự kiểm bất cứ lúc nào (owner/admin):** `GET /api/v1/notifications/vat-preview` xem kênh nào sẵn
+  sàng (không gửi) · `POST /api/v1/notifications/test` gửi thử (hàng chờ trống thì gửi tin MẪU có nhãn
+  `[THỬ NGHIỆM]`) · `GET /api/v1/notifications/logs` nhật ký.
+- Đã verify từ production 19:54 27/8: cả 2 kênh `sent`, ghi đúng vào `notification_logs`.
+- ⚠️ **Brevo đang TẮT ràng buộc IP** (bật lại ở app.brevo.com/security/authorised_ips nếu muốn siết —
+  nhớ khai IP outbound của Render, xem tab Connect của service). Nên xoay `BREVO_API_KEY` khi tiện.
+- ⏳ **Chưa xảy ra lần nào với dữ liệu THẬT:** 1070 đơn đều `not_issued`, chưa sale nào bấm "Yêu cầu
+  xuất VAT". Lần đầu có đơn thật, 10:00 hoặc 16:00 sẽ tự bắn.
