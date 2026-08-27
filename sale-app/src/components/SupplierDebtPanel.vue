@@ -297,7 +297,7 @@ onMounted(loadList);
         <div class="shrink-0 flex items-center">
           <button
             @click="openSupplier(s)"
-            class="h-9 px-3 rounded-btn bg-royal-700 hover:bg-royal-800 text-white text-xs font-semibold shadow-pop flex items-center gap-1.5"
+            class="h-11 lg:h-9 px-3 rounded-btn bg-royal-700 hover:bg-royal-800 active:bg-royal-800 text-white text-xs font-semibold shadow-pop flex items-center gap-1.5"
           >
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
             Chi tiết
@@ -320,7 +320,7 @@ onMounted(loadList);
               <span v-if="detail?.supplier?.paymentTermDays"> · Hạn TT {{ detail.supplier.paymentTermDays }} ngày</span>
             </div>
           </div>
-          <button @click="closeDetail" class="shrink-0 w-8 h-8 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary">
+          <button @click="closeDetail" class="shrink-0 w-11 h-11 lg:w-8 lg:h-8 rounded-full hover:bg-surface-soft active:bg-surface-soft flex items-center justify-center text-ink-secondary">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
@@ -400,7 +400,7 @@ onMounted(loadList);
                   <button
                     v-if="canRecordPayment"
                     @click="openPayForm(o)"
-                    class="mt-2.5 w-full h-9 rounded-btn bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center justify-center gap-1.5"
+                    class="mt-2.5 w-full h-11 lg:h-9 rounded-btn bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center justify-center gap-1.5"
                   >
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                     Ghi thanh toán
@@ -450,7 +450,7 @@ onMounted(loadList);
               <span class="font-semibold text-rose-600">{{ formatVND(payOrder.debt_amount) }}</span>
             </div>
           </div>
-          <button @click="closePayForm" class="shrink-0 w-8 h-8 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary">
+          <button @click="closePayForm" class="shrink-0 w-11 h-11 lg:w-8 lg:h-8 rounded-full hover:bg-surface-soft active:bg-surface-soft flex items-center justify-center text-ink-secondary">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>

@@ -194,6 +194,15 @@ bước) thì mở đúng mục trong
   (`flex items-center`) → chữ xuống dòng từng từ, và 2 nút VAT bị `hidden sm:flex` = **mất chức năng trên
   điện thoại**. Tách `MobileOrderCard.vue` (thẻ dọc, ô bấm 44px) và để hàm hiển thị dùng chung ở
   `composables/useOrderRow.js` để bảng desktop + thẻ mobile không lệch nhãn.
+- **Hàng tab / hàng nút trên mobile phải `overflow-x-auto` + `whitespace-nowrap` + `shrink-0`.** Để `flex`
+  thường là cả TRANG tràn ngang, không chỉ hàng đó: Công nợ tràn 104px ở 390px (4 tab lớn), Sản phẩm tràn
+  41px (4 nút admin trên header). Nhãn dài thì cho bản ngắn ở mobile (`<span class="lg:hidden">`), và gom
+  việc ít dùng vào 1 bảng trồi lên thay vì nhồi hết lên header.
+- **Lưới ảnh 2 cột KHÔNG dùng được cho danh sách SP trên điện thoại:** phần lớn SKU chưa có ảnh nên ô xám
+  trống ăn ~60% chiều cao, 1 màn xem được 2 SP. Đổi sang thẻ dòng (ảnh 64px) = ~6 SP/màn.
+- **Test mobile bằng Chrome headless phải CHẶN `/sw.js` + `/registerSW.js`.** PWA `autoUpdate` tự reload
+  trang khi service worker nhận quyền → phép đo vỡ giữa chừng ("Execution context destroyed", danh sách
+  rỗng, số đo sai). Kèm profile riêng mỗi khổ màn (SW cache `/api` của lần trước).
 - **Kiểm layout mobile bằng Chrome headless được, không cần điện thoại:** puppeteer-core + Chrome của máy,
   chặn `/api/*` trả dữ liệu giả, đo `scrollWidth > clientWidth` (tràn ngang) và `getBoundingClientRect`
   của mọi `<button>` (< 44px). Nhớ **profile riêng mỗi lần** — service worker PWA cache `/api` làm lần sau

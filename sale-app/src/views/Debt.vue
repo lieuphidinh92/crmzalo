@@ -596,18 +596,22 @@ onMounted(loadList);
     </div>
 
     <!-- Tabs lớn: Phải thu KH / Phải trả NCC -->
-    <div class="flex gap-1 mb-4 border-b border-line-200">
+    <!-- 4 tab lớn: trên điện thoại phải CUỘN NGANG. Trước 27/8/2026 để flex
+         thường nên "Phải thu Khách hàng" vỡ 3 dòng và 2 tab cuối đẩy cả trang
+         tràn ngang 104px ở màn 390px. -->
+    <div class="flex gap-1 mb-4 border-b border-line-200 overflow-x-auto no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0">
       <button
         @click="openMainTab('receivable')"
-        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
+        class="tap h-11 lg:h-auto px-3.5 lg:px-4 lg:py-2.5 shrink-0 whitespace-nowrap text-sm font-semibold border-b-2 -mb-px transition-colors"
         :class="mainTab === 'receivable' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
       >
-        Phải thu Khách hàng
+        <span class="lg:hidden">Phải thu KH</span>
+        <span class="hidden lg:inline">Phải thu Khách hàng</span>
       </button>
       <button
         v-if="canSeePayable"
         @click="openMainTab('payable')"
-        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
+        class="tap h-11 lg:h-auto px-3.5 lg:px-4 lg:py-2.5 shrink-0 whitespace-nowrap text-sm font-semibold border-b-2 -mb-px transition-colors"
         :class="mainTab === 'payable' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
       >
         Phải trả NCC
@@ -615,7 +619,7 @@ onMounted(loadList);
       <button
         v-if="canSeeCompany"
         @click="openMainTab('company')"
-        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap"
+        class="tap h-11 lg:h-auto px-3.5 lg:px-4 lg:py-2.5 shrink-0 whitespace-nowrap text-sm font-semibold border-b-2 -mb-px transition-colors"
         :class="mainTab === 'company' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
       >
         Chi tiết công nợ
@@ -623,10 +627,11 @@ onMounted(loadList);
       <button
         v-if="canSeeCompany"
         @click="openMainTab('updates')"
-        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors whitespace-nowrap"
+        class="tap h-11 lg:h-auto px-3.5 lg:px-4 lg:py-2.5 shrink-0 whitespace-nowrap text-sm font-semibold border-b-2 -mb-px transition-colors"
         :class="mainTab === 'updates' ? 'border-royal-600 text-royal-700' : 'border-transparent text-ink-secondary hover:text-ink-primary'"
       >
-        Lịch sử update công nợ
+        <span class="lg:hidden">Lịch sử update</span>
+        <span class="hidden lg:inline">Lịch sử update công nợ</span>
       </button>
     </div>
 
@@ -743,7 +748,7 @@ onMounted(loadList);
               <span v-if="selected.phone"> · 📞 {{ selected.phone }}</span>
             </div>
           </div>
-          <button @click="closeDetail" class="shrink-0 w-8 h-8 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary">
+          <button @click="closeDetail" class="shrink-0 w-11 h-11 lg:w-8 lg:h-8 rounded-full hover:bg-surface-soft active:bg-surface-soft flex items-center justify-center text-ink-secondary">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -979,7 +984,7 @@ onMounted(loadList);
       <div class="relative bg-white w-full lg:max-w-md lg:rounded-card rounded-t-2xl shadow-pop max-h-[92vh] flex flex-col">
         <div class="flex items-center justify-between gap-3 p-4 border-b border-line-200">
           <div class="font-bold text-ink-primary">Thu tiền · {{ selected?.full_name }}</div>
-          <button @click="closePayForm" class="shrink-0 w-8 h-8 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary">
+          <button @click="closePayForm" class="shrink-0 w-11 h-11 lg:w-8 lg:h-8 rounded-full hover:bg-surface-soft active:bg-surface-soft flex items-center justify-center text-ink-secondary">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -1131,7 +1136,7 @@ onMounted(loadList);
               {{ customers.length }} đại lý · {{ formatVND(summary.total || 0) }}
             </div>
           </div>
-          <button @click="showAllDebt = false" class="shrink-0 w-8 h-8 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary">
+          <button @click="showAllDebt = false" class="shrink-0 w-11 h-11 lg:w-8 lg:h-8 rounded-full hover:bg-surface-soft active:bg-surface-soft flex items-center justify-center text-ink-secondary">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -1186,7 +1191,7 @@ onMounted(loadList);
               {{ overdueList.length }} khách · {{ summary.overdue_order_count || 0 }} đơn · {{ formatVND(summary.overdue_total || 0) }}
             </div>
           </div>
-          <button @click="showOverdue = false" class="shrink-0 w-8 h-8 rounded-full hover:bg-surface-soft flex items-center justify-center text-ink-secondary">
+          <button @click="showOverdue = false" class="shrink-0 w-11 h-11 lg:w-8 lg:h-8 rounded-full hover:bg-surface-soft active:bg-surface-soft flex items-center justify-center text-ink-secondary">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -1257,7 +1262,7 @@ onMounted(loadList);
           <input
             type="date"
             v-model="cLedgerFilter.from"
-            class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary"
+            class="mt-0.5 h-11 lg:h-auto border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary"
           />
         </label>
         <label class="flex flex-col text-[11px] text-ink-secondary">
@@ -1265,7 +1270,7 @@ onMounted(loadList);
           <input
             type="date"
             v-model="cLedgerFilter.to"
-            class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary"
+            class="mt-0.5 h-11 lg:h-auto border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary"
           />
         </label>
         <input
@@ -1273,11 +1278,11 @@ onMounted(loadList);
           v-model="cLedgerFilter.q"
           @keyup.enter="applyCLedgerFilter"
           placeholder="Tìm khách (tên, SĐT, cửa hàng)…"
-          class="flex-1 min-w-[180px] border border-line-300 rounded-btn px-3 py-1.5 text-sm text-ink-primary"
+          class="flex-1 min-w-[180px] h-11 lg:h-auto border border-line-300 rounded-btn px-3 py-1.5 text-sm text-ink-primary"
         />
         <button
           @click="applyCLedgerFilter"
-          class="bg-royal-600 hover:bg-royal-700 text-white text-sm font-semibold px-4 py-1.5 rounded-btn transition-colors"
+          class="h-11 lg:h-auto bg-royal-600 hover:bg-royal-700 text-white text-sm font-semibold px-4 py-1.5 rounded-btn transition-colors"
         >
           Xem
         </button>
@@ -1438,24 +1443,24 @@ onMounted(loadList);
       <div class="flex flex-wrap items-end gap-2 mb-3">
         <label class="flex flex-col text-[11px] text-ink-secondary">
           Nhập từ ngày
-          <input type="date" v-model="updFilter.from" class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
+          <input type="date" v-model="updFilter.from" class="mt-0.5 h-11 lg:h-auto border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
         </label>
         <label class="flex flex-col text-[11px] text-ink-secondary">
           Đến ngày
-          <input type="date" v-model="updFilter.to" class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
+          <input type="date" v-model="updFilter.to" class="mt-0.5 h-11 lg:h-auto border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
         </label>
         <label class="flex flex-col text-[11px] text-ink-secondary">
           Người nhập
-          <select v-model="updFilter.userId" class="mt-0.5 border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary bg-white">
+          <select v-model="updFilter.userId" class="mt-0.5 h-11 lg:h-auto border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary bg-white">
             <option value="">Tất cả</option>
             <option v-for="st in updStaff" :key="st.id" :value="st.id">{{ st.fullName }}</option>
           </select>
         </label>
         <label class="flex flex-col text-[11px] text-ink-secondary flex-1 min-w-[180px]">
           Tìm khách
-          <input v-model="updFilter.q" type="search" placeholder="Tên / SĐT / cửa hàng…" class="mt-0.5 w-full border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
+          <input v-model="updFilter.q" type="search" placeholder="Tên / SĐT / cửa hàng…" class="mt-0.5 h-11 lg:h-auto w-full border border-line-300 rounded-btn px-2 py-1.5 text-sm text-ink-primary" />
         </label>
-        <button @click="applyUpdFilter" class="h-[34px] px-4 rounded-btn bg-royal-700 text-white text-sm font-semibold">Xem</button>
+        <button @click="applyUpdFilter" class="h-11 lg:h-[34px] px-4 rounded-btn bg-royal-700 text-white text-sm font-semibold">Xem</button>
       </div>
 
       <div v-if="updLoading" class="space-y-2">
@@ -1626,3 +1631,18 @@ onMounted(loadList);
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Thanh cuộn ngang hàng tab: ẩn cho gọn (vẫn kéo được). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* iOS huỷ cú bấm nếu ngón trượt nhẹ ở tab sát mép (xem BottomNav 27/8/2026). */
+.tap {
+  touch-action: manipulation;
+}
+</style>
