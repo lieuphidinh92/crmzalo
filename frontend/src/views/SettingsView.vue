@@ -10,6 +10,7 @@
       <v-tab value="teams">Đội nhóm</v-tab>
       <v-tab value="org">Tổ chức</v-tab>
       <v-tab v-if="authStore.isAdmin" value="api-keys">Mã API</v-tab>
+      <v-tab v-if="authStore.isAdmin" value="notifications">Thông báo</v-tab>
     </v-tabs>
 
     <v-window v-model="tab">
@@ -181,6 +182,11 @@
       <v-window-item value="api-keys">
         <ApiKeyManagement v-if="authStore.isAdmin" />
       </v-window-item>
+
+      <!-- Tab 5: Thông báo tự động (Lark/email) — owner/admin -->
+      <v-window-item value="notifications">
+        <NotificationSettings v-if="authStore.isAdmin" />
+      </v-window-item>
     </v-window>
   </div>
 </template>
@@ -192,6 +198,7 @@ import { useAuthStore } from '@/stores/auth';
 import TeamManagement from '@/components/settings/TeamManagement.vue';
 import OrgSettings from '@/components/settings/OrgSettings.vue';
 import ApiKeyManagement from '@/components/settings/ApiKeyManagement.vue';
+import NotificationSettings from '@/components/settings/NotificationSettings.vue';
 
 const { users, loading, error, fetchUsers, createUser, updateUser, resetPassword, autoResetPassword } = useUsers();
 const authStore = useAuthStore();

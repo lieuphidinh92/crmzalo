@@ -48,3 +48,22 @@ export function formatWaited(hours: number): string {
   const rem = h % 24;
   return rem === 0 ? `${d} ngày` : `${d} ngày ${rem} giờ`;
 }
+
+/**
+ * 352931500 → '352,9 triệu' · 1250000000 → '1,25 tỷ' · 850000 → '850,000 đ'
+ *
+ * Dùng cho tin nhắn nhắc việc: anh Philip đọc trên điện thoại, "352,9 triệu"
+ * nắm ngay còn "352,931,500 đ" phải đếm số 0. Chứng từ/hoá đơn thì vẫn phải
+ * dùng `formatVnd` (số nguyên đồng đầy đủ) — KHÔNG dùng hàm này cho số liệu
+ * kế toán.
+ */
+export function formatTien(amount: number): string {
+  const v = Math.round(amount);
+  if (v >= 1_000_000_000) {
+    return `${(v / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '').replace('.', ',')} tỷ`;
+  }
+  if (v >= 1_000_000) {
+    return `${(v / 1_000_000).toFixed(1).replace(/,?\.0$/, '').replace('.', ',')} triệu`;
+  }
+  return formatVnd(v);
+}

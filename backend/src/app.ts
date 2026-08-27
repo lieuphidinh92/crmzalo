@@ -73,8 +73,8 @@ import { startInventoryCronJobs } from './modules/inventory/inventory-cron.js';
 import { importsRoutes } from './modules/imports/imports-routes.js';
 import { supplierDebtRoutes } from './modules/imports/supplier-debt-routes.js';
 import { startSupplierDebtCron } from './modules/imports/supplier-debt-cron.js';
-// Nhắc kế toán xuất VAT (10:00 & 16:00) + gửi lại thông báo hỏng (mỗi 10 phút).
-import { startVatNotifyCron } from './modules/orders/vat-notify-cron.js';
+// Tin nhắc gộp (VAT + công nợ + tồn kho) 10:00 & 16:00 + gửi lại tin hỏng mỗi 10 phút.
+import { startDailyDigestCron } from './modules/notifications/daily-digest-cron.js';
 import { startNotificationRetryCron } from './modules/notifications/notification-retry-cron.js';
 import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
 import { quickReplyRoutes } from './modules/quick-replies/quick-reply-routes.js';
@@ -277,7 +277,7 @@ async function bootstrap() {
     startInventoryCronJobs();
     startCustomerRankCron();
     startSupplierDebtCron();
-    startVatNotifyCron();
+    startDailyDigestCron();
     startNotificationRetryCron();
   } catch (err) {
     logger.error('Failed to start server:', err);

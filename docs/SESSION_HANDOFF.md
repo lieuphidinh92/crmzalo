@@ -110,5 +110,14 @@ Nền thông báo dùng chung + việc đầu tiên: nhắc kế toán xuất VA
 - Đã verify từ production 19:54 27/8: cả 2 kênh `sent`, ghi đúng vào `notification_logs`.
 - ⚠️ **Brevo đang TẮT ràng buộc IP** (bật lại ở app.brevo.com/security/authorised_ips nếu muốn siết —
   nhớ khai IP outbound của Render, xem tab Connect của service). Nên xoay `BREVO_API_KEY` khi tiện.
+- **Phase 3A (27/8):** tab **"Thông báo"** trong Cài đặt CRM — bật/tắt kênh cho từng nhóm + nút Gửi thử +
+  nhật ký 20 tin gần nhất. Backend `GET/PUT /api/v1/notifications/settings`. Đã test bằng trình duyệt
+  (công tắc khớp DB cả 2 chiều). ⚠️ Frontend CRM có cửa ải `vue-tsc` — push là Vercel build, lỗi TS = FAIL.
+- **Phase 3B (27/8):** tin 10:00/16:00 giờ là **1 tin gộp 3 mục** (VAT · công nợ quá hạn KH+NCC · tồn kho),
+  gửi nhóm Lark "Xuất Nhập Kho" + email. File mới: `orders/debt-digest.ts` · `inventory/inventory-digest.ts` ·
+  `notifications/daily-digest-cron.ts` · `templates/daily-digest.ts` (`vat-notify-cron.ts` đã xoá, thay bằng
+  daily-digest-cron). Sự kiện log đổi thành `DAILY_DIGEST` (giữ template `VAT_PENDING` cho dòng log cũ retry được).
+  ⚠️ **Đợt này có sửa sale-app** (`views/Inventory.vue`, `composables/useInventory.js` — đọc `?filter=`/`?days=`)
+  → phải cherry-pick sang nhánh **`main`**, không chỉ push `feature/sale-app-nhom1`.
 - ⏳ **Chưa xảy ra lần nào với dữ liệu THẬT:** 1070 đơn đều `not_issued`, chưa sale nào bấm "Yêu cầu
   xuất VAT". Lần đầu có đơn thật, 10:00 hoặc 16:00 sẽ tự bắn.

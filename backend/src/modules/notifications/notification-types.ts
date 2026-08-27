@@ -15,7 +15,10 @@ export const AUDIENCES = ['ACCOUNTING'] as const;
 export type Audience = (typeof AUDIENCES)[number];
 
 /** Sự kiện nghiệp vụ. Tên phải ổn định — nó nằm trong `notification_logs`. */
-export const NOTIFICATION_EVENTS = ['VAT_PENDING'] as const;
+// VAT_PENDING giữ lại dù cron không còn phát nữa: các dòng log CŨ trên
+// production mang tên này, và cron gửi-lại render LẠI từ payload cũ → xoá tên
+// sự kiện là những dòng đó vỡ khi retry.
+export const NOTIFICATION_EVENTS = ['VAT_PENDING', 'DAILY_DIGEST'] as const;
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 
 /** Mã kênh. Trùng với cột `channel` trong `notification_logs`. */

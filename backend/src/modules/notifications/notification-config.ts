@@ -38,6 +38,11 @@ export interface ChannelPlan {
   skipReason?: string;
 }
 
+/** Khoá trong `app_settings` cho 1 cặp nhóm-kênh. Đổi dạng khoá là mất cấu hình cũ. */
+function settingKey(audience: Audience, channel: Channel): string {
+  return `notify.${audience}.${channel}`;
+}
+
 /** Đọc cờ bật/tắt trong app_settings, gộp với mặc định trong code. */
 async function readChannelFlags(orgId: string, audience: Audience): Promise<Record<Channel, boolean>> {
   const flags = { ...CHANNEL_DEFAULTS[audience] };
@@ -131,6 +136,69 @@ export async function describeChannels(
 ): Promise<Array<{ channel: string; sanSang: boolean; lyDo: string | null }>> {
   const plans = await planChannels(orgId, audience);
   return plans.map(p => ({ channel: p.channel, sanSang: !!p.provider, lyDo: p.skipReason ?? null }));
+}
+
+/**
+ * Vì sao 1 kênh KHÔNG dùng được — chỉ xét credentials, không xét bật/tắt.
+ * Tách riêng khỏi `planChannels` để màn Cài đặt hiện được trạng thái của cả kênh
+ * đang TẮT (kênh tắt không nằm trong kế hoạch gửi nên `planChannels` không thấy).
+ */
+function readinessOf(audience: Audience, channel: Channel): string | null {
+  if (channel === 'log') return null;
+  if (channel === 'lark') {
+    return webhookFor(audience) ? null : 'Chưa cấu hình LARK_WEBHOOK_ACCOUNTING';
+  }
+  if (channel === 'email') {
+    if (!config.brevoApiKey) return 'Chưa cấu hình BREVO_API_KEY';
+    if (!config.emailFrom) return 'Chưa cấu hình EMAIL_FROM (địa chỉ gửi đã xác thực trong Brevo)';
+    if (recipientsFor(audience).length === 0) return 'Chưa có người nhận trong NOTIFY_ACCOUNTING_EMAILS';
+    return null;
+  }
+  return 'Kênh chưa hỗ trợ';
+}
+
+/** Kênh thật (bỏ 'log' — đó chỉ là dự phòng nội bộ, không phải lựa chọn của anh). */
+const CONFIGURABLE_CHANNELS: Channel[] = ['lark', 'email'];
+
+export interface ChannelSetting {
+  channel: Channel;
+  /** Anh có bật kênh này cho nhóm đó không. */
+  batTat: boolean;
+  /** Đã đủ cấu hình để gửi chưa (khoá/địa chỉ/người nhận). */
+  sanSang: boolean;
+  lyDo: string | null;
+}
+
+/** Dữ liệu cho tab "Thông báo" trong Cài đặt: kênh nào bật, kênh nào đủ cấu hình. */
+export async function getChannelSettings(
+  orgId: string,
+  audience: Audience,
+): Promise<ChannelSetting[]> {
+  const flags = await readChannelFlags(orgId, audience);
+  return CONFIGURABLE_CHANNELS.map(channel => {
+    const lyDo = readinessOf(audience, channel);
+    return { channel, batTat: flags[channel], sanSang: lyDo === null, lyDo };
+  });
+}
+
+/**
+ * Bật/tắt 1 kênh cho 1 nhóm. Ghi vào `app_settings` nên có hiệu lực NGAY, không
+ * cần deploy lại và không cần khởi động lại máy chủ (mỗi lần gửi đều đọc lại).
+ */
+export async function setChannelEnabled(
+  orgId: string,
+  audience: Audience,
+  channel: Channel,
+  enabled: boolean,
+): Promise<void> {
+  const key = settingKey(audience, channel);
+  const value = enabled ? 'on' : 'off';
+  await prisma.appSetting.upsert({
+    where: { orgId_settingKey: { orgId, settingKey: key } },
+    create: { orgId, settingKey: key, valuePlain: value },
+    update: { valuePlain: value },
+  });
+  logger.info(`[notify] ${key} = ${value}`);
 }
 
 function webhookFor(audience: Audience): string {

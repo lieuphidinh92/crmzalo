@@ -1797,7 +1797,11 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         // broader window and filter in code (acceptable at ~1k products).
         // For larger catalog → switch to $queryRaw with WHERE total_stock <= warning_stock.
       } else if (filter === 'near-expiry') {
-        const cutoff = new Date(Date.now() + 90 * 86400_000);
+        // Mặc định 90 ngày (chip "Sắp hết HSD" trên màn Tồn kho). Tin nhắc hằng
+        // ngày mở link kèm `days=180` vì anh Philip định nghĩa "cận date" là
+        // dưới 6 tháng — số trong tin và số trên màn hình phải khớp nhau.
+        const days = Math.min(730, Math.max(1, parseInt((request.query as Record<string, string>).days ?? '') || 90));
+        const cutoff = new Date(Date.now() + days * 86400_000);
         where.batches = {
           some: { status: 'active', currentQuantity: { gt: 0 }, expiryDate: { lt: cutoff } },
         };

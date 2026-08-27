@@ -172,3 +172,12 @@ bước) thì mở đúng mục trong
   rolling chạy chồng 2 instance vài chục giây, mỗi tiến trình có RAM riêng.
 - **Khoá chống trùng theo ngày phải tính giờ VN** (`Intl`, không `toISOString`) — nếu không, tin lúc rạng
   sáng mang khoá của ngày hôm trước. Nút "gửi thử" phải dùng khoá riêng, không thì ăn mất tin cron thật.
+
+- **Lọc "quá hạn" trên cột `@db.Date` phải tự dựng mốc theo giờ VN.** `debt_due_date` /
+  `payment_due_date` là cột DATE nên Prisma CẮT mốc so sánh về ngày: viết `{ lt: new Date() }` thì từ
+  00:00–07:00 giờ VN mốc lùi 1 ngày → **sót đơn quá hạn của hôm qua** (đo thật 27/8: chạy lúc 02:00 sáng
+  ra 20 đơn thay vì 24). Đúng: `new Date(`${vnDateKey()}T00:00:00Z`)`. Đơn đến hạn HÔM NAY chưa phải quá
+  hạn nên dùng `lt`, không phải `lte`. ⏳ 5 chỗ cũ trong repo vẫn viết `lt: new Date()`
+  (`order-routes.ts` ×2, `notification-routes.ts`, `sale-app-routes.ts`, `order-cron.ts`) — chưa sửa.
+- **Cảnh báo phải lọc theo hàng ĐANG BÁN, không thì thành rác.** `warning_stock` mặc định 30 cho cả 977 mã
+  → cảnh báo tồn thấp ra 931 mã. Lọc `hasSales && sellable && status='active'` còn ~30 mã dùng được.

@@ -53,7 +53,11 @@ export async function inventoryAlertsRoutes(app: FastifyInstance): Promise<void>
         const user = request.user!;
         const now = new Date();
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const horizon90 = new Date(todayStart.getTime() + 90 * 24 * 60 * 60 * 1000);
+        // Mặc định 90 ngày. Tin nhắc hằng ngày mở link kèm `?days=180` vì anh
+        // Philip định nghĩa "cận date" là dưới 6 tháng — số trong tin nhắn và số
+        // trên màn hình phải khớp, nếu không người đọc tưởng hệ thống báo sai.
+        const days = Math.min(730, Math.max(1, parseInt((request.query as Record<string, string>).days ?? '') || 90));
+        const horizon90 = new Date(todayStart.getTime() + days * 24 * 60 * 60 * 1000);
 
         // Pull all the candidates concurrently — three independent reads.
         const [lowStockProducts, expiringBatches, expiredBatches] = await Promise.all([

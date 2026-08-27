@@ -6,6 +6,7 @@
  * đụng vào service, không đụng vào provider.
  */
 import { renderVatPending, type VatPendingData } from './vat-pending.js';
+import { renderDailyDigest, type DailyDigestData } from './daily-digest.js';
 import type { NotificationEvent, RenderedMessage } from '../notification-types.js';
 
 export function renderTemplate(
@@ -15,6 +16,8 @@ export function renderTemplate(
   switch (event) {
     case 'VAT_PENDING':
       return renderVatPending(data as unknown as VatPendingData);
+    case 'DAILY_DIGEST':
+      return renderDailyDigest(data as unknown as DailyDigestData);
     default: {
       // Bắt lỗi ngay lúc biên dịch nếu quên khai template cho sự kiện mới.
       const never: never = event;
