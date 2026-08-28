@@ -24,6 +24,12 @@ const activeIdx = ref(0);
 
 const active = computed(() => invoices.value[activeIdx.value] || null);
 const isPdf = computed(() => /\.pdf($|\?)/i.test(active.value?.fileUrl || ''));
+const pdfPreviewUrl = computed(() => {
+  const url = active.value?.fileUrl || '';
+  if (!url) return '';
+  // Mở PDF vừa nguyên trang A4 và thu gọn cột thumbnail của trình đọc PDF.
+  return `${url.split('#')[0]}#page=1&zoom=page-fit&navpanes=0`;
+});
 
 watch(
   () => props.order?.id,
@@ -104,11 +110,11 @@ async function copyMessage() {
   <transition name="fade">
     <div
       v-if="order"
-      class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2.5 sm:p-4"
       @click.self="emit('close')"
     >
-      <div class="w-full max-w-[760px] bg-white rounded-card shadow-pop flex flex-col max-h-[92vh]">
-        <div class="px-5 py-3.5 border-b border-line-200 flex items-center justify-between gap-3 shrink-0">
+      <div class="w-full max-w-[640px] bg-white rounded-card shadow-pop flex flex-col max-h-[96vh] sm:max-h-[94vh]">
+        <div class="px-4 py-2.5 border-b border-line-200 flex items-center justify-between gap-3 shrink-0">
           <div class="min-w-0">
             <div class="text-base font-bold text-ink-primary">Hoá đơn VAT</div>
             <div class="text-[12px] text-ink-secondary truncate">
@@ -126,7 +132,7 @@ async function copyMessage() {
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-4 space-y-3">
+        <div class="flex-1 overflow-y-auto p-3 space-y-2.5">
           <div v-if="loading" class="h-[420px] bg-surface-soft animate-pulse rounded-card"></div>
 
           <div v-else-if="errorMsg" class="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[13px] text-amber-800">
@@ -149,7 +155,7 @@ async function copyMessage() {
               </button>
             </div>
 
-            <div class="rounded-card border border-line-200 p-3 grid grid-cols-2 lg:grid-cols-4 gap-3 text-[12px]">
+            <div class="rounded-card border border-line-200 px-3 py-2 grid grid-cols-2 lg:grid-cols-4 gap-x-3 gap-y-1.5 text-[12px]">
               <div>
                 <div class="text-ink-secondary">Số hoá đơn</div>
                 <div class="font-semibold text-ink-primary">{{ active.invoiceNumber }}</div>
@@ -177,11 +183,11 @@ async function copyMessage() {
             </div>
 
             <!-- Xem nhanh file đã ký -->
-            <div v-if="active.fileUrl" class="rounded-card border border-line-200 overflow-hidden">
+            <div v-if="active.fileUrl" class="w-full max-w-[520px] aspect-[210/297] mx-auto rounded-card border border-line-200 overflow-hidden bg-surface-soft">
               <iframe
                 v-if="isPdf"
-                :src="active.fileUrl"
-                class="w-full h-[420px] bg-surface-soft"
+                :src="pdfPreviewUrl"
+                class="w-full h-full bg-surface-soft"
                 title="Hoá đơn VAT"
               ></iframe>
               <div v-else class="p-6 text-center text-[13px] text-ink-secondary">
@@ -196,7 +202,7 @@ async function copyMessage() {
           </template>
         </div>
 
-        <div class="px-5 py-3 border-t border-line-200 flex flex-wrap gap-2 justify-end shrink-0">
+        <div class="px-4 py-2.5 border-t border-line-200 flex flex-wrap gap-2 justify-end shrink-0">
           <button
             @click="emit('close')"
             class="h-10 px-4 rounded-btn border border-line-300 text-sm font-semibold text-ink-secondary hover:bg-surface-soft transition"
