@@ -112,7 +112,7 @@ const isDraft = props.order.status === 'draft';
       v-if="docType"
       :order="order"
       :type="docType"
-      :company-key="order.invoicingCompany || 'halovn'"
+      :company-key="order.invoicingCompany || 'inocare'"
       @close="docType = null"
       @done="emit('close')"
     />

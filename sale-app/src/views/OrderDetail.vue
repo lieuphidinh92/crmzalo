@@ -1429,7 +1429,7 @@ async function saveStageDocs() {
       v-if="showDoc && docOrder"
       :order="docOrder"
       type="export"
-      company-key="halovn"
+      company-key="inocare"
       @close="showDoc = false"
       @done="showDoc = false"
     />

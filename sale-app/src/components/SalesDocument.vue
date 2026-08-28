@@ -9,12 +9,12 @@
  */
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { readVND } from '../composables/useFormat';
-import { getCompany, COMPANY_LIST } from '../composables/useCompanies';
+import { getCompany, COMPANY_LIST, DEFAULT_COMPANY_KEY } from '../composables/useCompanies';
 
 const props = defineProps({
   order: { type: Object, required: true },
   type: { type: String, default: 'export' }, // export | handover
-  companyKey: { type: String, default: 'halovn' },
+  companyKey: { type: String, default: DEFAULT_COMPANY_KEY },
 });
 const emit = defineEmits(['close', 'done']);
 
@@ -24,7 +24,7 @@ const isExport = computed(() => activeType.value === 'export');
 const fileSlug = computed(() => (isExport.value ? 'phieu-xuat-kho' : 'bien-ban-ban-giao'));
 
 // Cho phép đổi pháp nhân ngay trên phiếu (phòng khi chọn nhầm / đơn nháp).
-const activeKey = ref(props.companyKey || 'halovn');
+const activeKey = ref(props.companyKey || DEFAULT_COMPANY_KEY);
 const co = computed(() => getCompany(activeKey.value));
 
 // Mã VietQR động: tự điền số tiền + nội dung CK = số đơn. Ảnh từ img.vietqr.io.

@@ -43,7 +43,7 @@ export const usePOSStore = defineStore('pos', () => {
   const assignedSaleId = ref(null);
   const referrerName = ref('');
   // Pháp nhân xuất chứng từ (Phiếu xuất kho + Biên bản bàn giao): halovn | inocare
-  const invoicingCompany = ref('halovn');
+  const invoicingCompany = ref('inocare');
   const submitting = ref(false);
 
   // Tải danh sách nhân viên (gọi 1 lần khi mở màn). Mặc định NV sale = NV đăng nhập.
@@ -307,7 +307,7 @@ export const usePOSStore = defineStore('pos', () => {
     // Reset NV sale về NV đang đăng nhập (mặc định khách mới); giữ staffList đã tải.
     assignedSaleId.value = currentUserId();
     referrerName.value = '';
-    invoicingCompany.value = 'halovn';
+    invoicingCompany.value = 'inocare';
   }
 
   function changeTier(tier) {

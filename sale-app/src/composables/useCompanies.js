@@ -39,8 +39,11 @@ export const COMPANIES = {
   },
 };
 
-export const COMPANY_LIST = [COMPANIES.halovn, COMPANIES.inocare];
+export const DEFAULT_COMPANY_KEY = 'inocare';
+
+// Inocare là pháp nhân bán hàng chính, luôn ưu tiên hiển thị trước HaloVN.
+export const COMPANY_LIST = [COMPANIES.inocare, COMPANIES.halovn];
 
 export function getCompany(key) {
-  return COMPANIES[key] || COMPANIES.halovn;
+  return COMPANIES[key] || COMPANIES[DEFAULT_COMPANY_KEY];
 }
