@@ -2721,17 +2721,20 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         agg.set(o.assignedSaleId, a);
       }
 
-      // Map về từng user (không có đơn → revenue 0, order_count 0).
+      // Map về từng user và bỏ người không phát sinh đơn trong kỳ. Lọc trước
+      // khi đánh rank để thứ hạng luôn liên tục, không còn các dòng 0đ/0 đơn.
       type LbRow = { sale_id: string; name: string; revenue: number; order_count: number };
-      const rowsRaw: LbRow[] = users.map((u: { id: string; fullName: string | null }) => {
-        const a = agg.get(u.id) ?? { revenue: 0, order_count: 0 };
-        return {
-          sale_id: u.id,
-          name: u.fullName ?? '—',
-          revenue: Math.round(a.revenue),
-          order_count: a.order_count,
-        };
-      });
+      const rowsRaw: LbRow[] = users
+        .map((u: { id: string; fullName: string | null }) => {
+          const a = agg.get(u.id) ?? { revenue: 0, order_count: 0 };
+          return {
+            sale_id: u.id,
+            name: u.fullName ?? '—',
+            revenue: Math.round(a.revenue),
+            order_count: a.order_count,
+          };
+        })
+        .filter((r: LbRow) => r.order_count > 0);
 
       // Xếp hạng: revenue desc → order_count desc → tên A→Z.
       rowsRaw.sort((a, b) => {

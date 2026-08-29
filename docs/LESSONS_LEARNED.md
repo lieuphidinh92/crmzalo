@@ -137,6 +137,9 @@ bước) thì mở đúng mục trong
 - **Chậm là do gọi nhiều lần, không phải do code chậm.** Đo 25/8/2026: mỗi lần
   gọi API tới Singapore ~85ms, app không cache → mỗi lần chuyển màn trả giá lại
   từ đầu. Giữ màn bằng `<KeepAlive>` + làm mới ngầm cắt 58% thời gian chờ.
+- **Deep-link vào màn đang `<KeepAlive>` phải đồng bộ lại `route.query`.** Chỉ đọc
+  query lúc setup làm lần bấm nhân viên thứ hai vẫn giữ bộ lọc người trước; khởi
+  tạo từ query cho lần đầu và watch `route.fullPath` cho các lần quay lại.
 - **`include` của Prisma kéo về TOÀN BỘ cột.** Danh sách đơn từng chở 73 cột/đơn
   (ghi chú, lý do huỷ, ảnh giao hàng) — đổi sang `select` giảm 37% dữ liệu.
 - **`nulls last` trong orderBy làm Postgres bỏ index.** Cùng truy vấn: 36,7ms quét
