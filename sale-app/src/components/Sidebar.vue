@@ -2,13 +2,16 @@
 import { computed, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import { useDashboardStore } from '../stores/dashboard';
 import { api } from '../api/client';
 import { formatVND } from '../composables/useFormat';
 import BrandLogo from './BrandLogo.vue';
+import dayjs from 'dayjs';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const dashboardStore = useDashboardStore();
 
 const userName = computed(() => auth.user?.fullName || auth.user?.email || 'Sale');
 const userRole = computed(() => {
@@ -32,6 +35,7 @@ async function loadDebt() {
 onMounted(loadDebt);
 
 const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+const dashboardSidebar = computed(() => route.path === '/' ? dashboardStore.sidebar : null);
 
 const navItems = computed(() => [
   { name: 'home', label: 'Tổng quan', to: '/', icon: 'home' },
@@ -61,7 +65,8 @@ function go(item) {
 
 <template>
   <aside
-    class="hidden lg:flex w-[260px] shrink-0 text-white flex-col sticky top-0"
+    class="hidden shrink-0 flex-col sticky top-0 text-white lg:flex"
+    :class="route.path === '/' ? 'w-[232px]' : 'w-[260px]'"
     style="height: 100dvh; background: linear-gradient(180deg, #0A2540 0%, #08213A 100%)"
   >
     <!-- Brand (88px area) -->
@@ -122,12 +127,41 @@ function go(item) {
         </svg>
       </button>
 
-      <!-- Total debt card -->
-      <button
-        type="button"
-        @click="router.push('/debt')"
-        class="w-full text-left px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition"
-      >
+      <template v-if="dashboardSidebar">
+        <div class="rounded-xl bg-white/5 px-3 py-2.5">
+          <div class="text-[10px] text-slate-400">Doanh số tháng</div>
+          <div class="mt-1 flex items-baseline gap-1 text-sm font-bold tabular-nums">
+            <span>{{ formatVND(dashboardSidebar.revenue) }}</span>
+            <span v-if="dashboardSidebar.target" class="text-[9px] font-normal text-slate-400">/ {{ formatVND(dashboardSidebar.target) }}</span>
+          </div>
+          <div v-if="dashboardSidebar.target" class="mt-2 flex items-center gap-2">
+            <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10"><div class="h-full rounded-full bg-blue-400" :style="{ width: `${Math.min(100, dashboardSidebar.targetPercent || 0)}%` }" /></div>
+            <span class="text-[9px] font-semibold">{{ Math.round(dashboardSidebar.targetPercent || 0) }}%</span>
+          </div>
+        </div>
+        <div class="rounded-xl bg-white/5 px-3 py-2.5">
+          <div class="text-[10px] text-slate-400">Dự kiến cuối tháng</div>
+          <div class="mt-1 text-base font-bold tabular-nums">{{ formatVND(dashboardSidebar.forecast) }}</div>
+          <div v-if="dashboardSidebar.forecastGap" class="mt-1 text-[10px] font-semibold text-red-300">Thiếu {{ formatVND(dashboardSidebar.forecastGap) }}</div>
+          <div v-else class="mt-1 text-[10px] font-semibold text-emerald-300">Đang đạt nhịp mục tiêu</div>
+        </div>
+        <div class="rounded-xl bg-white/5 px-3 py-2.5">
+          <div class="text-[10px] text-slate-400">Doanh thu / 1 giờ bán hàng</div>
+          <div class="mt-1 text-base font-bold text-slate-300">—/giờ</div>
+          <div class="mt-1 text-[9px] text-slate-500">Chưa có dữ liệu giờ làm việc</div>
+        </div>
+        <div class="flex items-center justify-between px-2 text-[9px] text-slate-500">
+          <span>Cập nhật: {{ dayjs(dashboardSidebar.generatedAt).format('DD/MM/YYYY HH:mm') }}</span><span>↻</span>
+        </div>
+      </template>
+
+      <template v-else>
+        <!-- Total debt card -->
+        <button
+          type="button"
+          @click="router.push('/debt')"
+          class="w-full text-left px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition"
+        >
         <div class="flex items-center justify-between">
           <div class="text-[11px] text-slate-400">Công nợ tổng</div>
           <span v-if="debtSummary?.overdue_total > 0" class="text-[9px] font-bold uppercase bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded">
@@ -141,10 +175,10 @@ function go(item) {
           {{ debtSummary.order_count }} đơn · {{ debtSummary.contact_count }} KH
         </div>
         <div v-else-if="debtSummary" class="text-[10px] text-slate-500 mt-0.5">Không có công nợ</div>
-      </button>
+        </button>
 
-      <!-- Support card -->
-      <div class="px-3 py-2.5 rounded-xl bg-white/5">
+        <!-- Support card -->
+        <div class="px-3 py-2.5 rounded-xl bg-white/5">
         <div class="flex items-center gap-2 mb-1">
           <svg class="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h.01M12 12h.01M15 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
@@ -153,7 +187,8 @@ function go(item) {
         </div>
         <a href="tel:1900636925" class="text-sm font-bold text-amber-500 hover:underline">1900 636 925</a>
         <div class="text-[10px] text-slate-500 mt-0.5">8:00 – 17:30 (T2 – T7)</div>
-      </div>
+        </div>
+      </template>
     </div>
   </aside>
 </template>

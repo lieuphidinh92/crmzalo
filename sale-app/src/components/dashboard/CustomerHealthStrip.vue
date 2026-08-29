@@ -1,0 +1,84 @@
+<script setup>
+import { computed, ref } from 'vue';
+import dayjs from 'dayjs';
+import { formatVND } from '../../composables/useFormat';
+
+const props = defineProps({ data: { type: Object, required: true } });
+const rows = [
+  { key: 'active', label: 'Active', icon: '♙', color: 'text-emerald-600', bg: 'bg-emerald-50', bar: 'bg-emerald-500' },
+  { key: 'attention', label: 'Need Attention', icon: '◷', color: 'text-orange-600', bg: 'bg-orange-50', bar: 'bg-orange-500' },
+  { key: 'at_risk', label: 'At Risk', icon: '△', color: 'text-red-600', bg: 'bg-red-50', bar: 'bg-red-500' },
+  { key: 'lost', label: 'Lost', icon: '⊗', color: 'text-slate-600', bg: 'bg-slate-100', bar: 'bg-slate-400' },
+  { key: 'reactivated', label: 'Reactivated this month', icon: '↻', color: 'text-blue-600', bg: 'bg-blue-50', bar: 'bg-blue-500' },
+];
+const selectedKey = ref(null);
+const selectedMeta = computed(() => rows.find((row) => row.key === selectedKey.value));
+const healthTotal = computed(() => rows.reduce((sum, row) => sum + Number(props.data[row.key] || 0), 0));
+const percent = (key) => healthTotal.value ? Math.round((Number(props.data[key] || 0) / healthTotal.value) * 100) : 0;
+const filteredCustomers = computed(() => {
+  const details = props.data.details || [];
+  if (selectedKey.value === 'reactivated') return details.filter((customer) => customer.reactivated);
+  return details.filter((customer) => customer.health === selectedKey.value);
+});
+
+function call(customer) {
+  if (customer.phone) window.location.href = `tel:${customer.phone}`;
+}
+</script>
+
+<template>
+  <section class="rounded-card border border-line-200 bg-white p-4 shadow-card">
+    <div class="flex items-center justify-between gap-2">
+      <div>
+        <h2 class="text-sm font-bold text-ink-primary">SỨC KHỎE TỆP KHÁCH HÀNG</h2>
+        <p class="mt-0.5 text-[9px] text-ink-secondary">Bấm vào nhóm để xem khách phụ trách</p>
+      </div>
+      <button class="text-[10px] font-semibold text-royal-700" @click="selectedKey = 'active'">Xem tất cả</button>
+    </div>
+    <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <button v-for="row in rows" :key="row.key" class="min-w-0 rounded-lg border border-line-200 p-2 text-center transition hover:border-royal-200 hover:bg-royal-50/30" :aria-label="`Xem ${data[row.key]} khách ${row.label}`" @click="selectedKey = row.key">
+        <span class="mx-auto flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold" :class="[row.bg, row.color]">{{ row.icon }}</span>
+        <div class="mt-2 text-[9px] font-semibold text-ink-primary" :title="row.label">{{ row.label }}</div>
+        <div class="mt-1 text-xl font-bold tabular-nums text-ink-primary">{{ data[row.key] }}</div>
+      </button>
+    </div>
+    <div class="mt-4 flex h-1.5 gap-1 overflow-hidden rounded-full bg-surface-soft">
+      <div v-for="row in rows" :key="row.key" :class="row.bar" :style="{ flexGrow: Math.max(0.2, data[row.key]) }"></div>
+    </div>
+    <div class="mt-1.5 grid grid-cols-5 gap-1 text-center text-[8px] font-semibold text-ink-secondary">
+      <span v-for="row in rows" :key="row.key">{{ percent(row.key) }}%</span>
+    </div>
+  </section>
+
+  <Teleport to="body">
+    <div v-if="selectedKey" class="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/40 sm:items-center sm:p-5" @click.self="selectedKey = null" @keydown.esc.window="selectedKey = null">
+      <section class="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-pop sm:rounded-2xl" role="dialog" aria-modal="true" aria-label="Danh sách sức khỏe khách hàng">
+        <header class="flex items-start justify-between gap-4 border-b border-line-200 px-4 py-4 sm:px-5">
+          <div>
+            <h3 class="text-base font-bold text-ink-primary">Khách hàng · {{ selectedMeta?.label }}</h3>
+            <p class="mt-1 text-xs text-ink-secondary">{{ filteredCustomers.length }} khách do bạn phụ trách</p>
+          </div>
+          <button class="flex h-8 w-8 items-center justify-center rounded-lg border border-line-200 text-ink-secondary" aria-label="Đóng" @click="selectedKey = null">×</button>
+        </header>
+        <div v-if="!filteredCustomers.length" class="p-10 text-center text-sm text-ink-secondary">Không có khách hàng trong nhóm này.</div>
+        <div v-else class="overflow-auto divide-y divide-line-200">
+          <article v-for="customer in filteredCustomers" :key="customer.contactId" class="grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:items-center sm:px-5">
+            <div class="min-w-0">
+              <div class="truncate text-xs font-semibold text-ink-primary">{{ customer.name }}</div>
+              <div class="mt-1 text-[10px] text-ink-secondary">{{ customer.phone || 'Chưa có số điện thoại' }}</div>
+            </div>
+            <div class="text-[10px] text-ink-secondary">
+              Đơn gần nhất
+              <div class="mt-1 font-semibold text-ink-primary">{{ customer.lastOrderAt ? dayjs(customer.lastOrderAt).format('DD/MM/YYYY') : 'Chưa có' }}</div>
+            </div>
+            <div class="text-[10px] text-ink-secondary">
+              {{ customer.daysSinceLastOrder }} ngày chưa mua · chu kỳ {{ customer.reorderCycleDays }} ngày
+              <div class="mt-1 font-semibold text-ink-primary">Tiềm năng {{ formatVND(customer.potentialRevenue) }}</div>
+            </div>
+            <button :disabled="!customer.phone" class="h-9 rounded-lg border border-royal-100 px-3 text-[10px] font-semibold text-royal-700 disabled:opacity-40" @click="call(customer)">Gọi</button>
+          </article>
+        </div>
+      </section>
+    </div>
+  </Teleport>
+</template>
