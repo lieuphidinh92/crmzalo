@@ -1,7 +1,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { formatVND } from '../composables/useFormat';
+import { useAuthStore } from '../stores/auth';
+
+const router = useRouter();
+const auth = useAuthStore();
 
 const period = ref('month');
 const loading = ref(true);
@@ -16,7 +21,9 @@ const periods = [
 // Hiện tối đa top 10 cho gọn; dòng "Hạng của bạn" hiện riêng nếu ngoài top 10.
 const TOP_N = 10;
 
-const rows = computed(() => data.value?.rows ?? []);
+// Phòng trường hợp frontend mới chạy cùng backend cũ: vẫn ẩn nhân viên 0 đơn
+// ngay trên giao diện. Backend cũng lọc để thứ hạng trả về luôn liên tục.
+const rows = computed(() => (data.value?.rows ?? []).filter((r) => r.order_count > 0));
 const topRows = computed(() => rows.value.slice(0, TOP_N));
 const meRank = computed(() => data.value?.me_rank ?? null);
 const meOutsideTop = computed(() => meRank.value != null && meRank.value > TOP_N);
@@ -48,6 +55,44 @@ function setPeriod(p) {
   if (period.value === p) return;
   period.value = p;
   load();
+}
+
+function ymdVN(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function canOpenOrders(row) {
+  const user = auth.user;
+  return row.is_me
+    || ['owner', 'admin'].includes(user?.role)
+    || user?.canViewAllOrders === true;
+}
+
+function openOrders(row) {
+  if (!canOpenOrders(row)) return;
+
+  const now = new Date();
+  const from = new Date(now);
+  from.setHours(0, 0, 0, 0);
+  if (period.value === 'week') {
+    const day = from.getDay();
+    from.setDate(from.getDate() + (day === 0 ? -6 : 1 - day));
+  } else {
+    from.setDate(1);
+  }
+
+  router.push({
+    name: 'orders',
+    query: {
+      source: 'leaderboard',
+      saleId: row.sale_id,
+      saleName: row.name,
+      from: ymdVN(from),
+      to: ymdVN(now),
+      period: period.value,
+    },
+  });
 }
 
 onMounted(load);
@@ -104,7 +149,16 @@ onMounted(load);
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">
-              <span class="text-sm font-medium text-ink-primary truncate">{{ r.name }}</span>
+              <button
+                type="button"
+                :disabled="!canOpenOrders(r)"
+                :title="canOpenOrders(r) ? `Xem đơn hàng của ${r.name} trong ${period === 'week' ? 'tuần' : 'tháng'}` : 'Bạn không có quyền xem đơn của nhân viên này'"
+                class="text-sm font-medium text-ink-primary truncate text-left rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal-700"
+                :class="canOpenOrders(r) ? 'hover:text-royal-700 hover:underline cursor-pointer' : 'cursor-default'"
+                @click="openOrders(r)"
+              >
+                {{ r.name }}
+              </button>
               <span
                 v-if="r.is_me"
                 class="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-royal-700 text-white shrink-0"
@@ -130,7 +184,14 @@ onMounted(load);
         </div>
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5">
-            <span class="text-sm font-medium text-ink-primary truncate">{{ meRow.name }}</span>
+            <button
+              type="button"
+              class="text-sm font-medium text-ink-primary truncate text-left rounded hover:text-royal-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-royal-700"
+              :title="`Xem đơn hàng của ${meRow.name} trong ${period === 'week' ? 'tuần' : 'tháng'}`"
+              @click="openOrders(meRow)"
+            >
+              {{ meRow.name }}
+            </button>
             <span class="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-royal-700 text-white shrink-0">
               Bạn
             </span>

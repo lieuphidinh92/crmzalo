@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, watch, onMounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
 import { useAuthStore } from '../stores/auth';
@@ -27,8 +27,22 @@ import VatViewDialog from '../components/VatViewDialog.vue';
 import { useScreenCache } from '../composables/use-screen-cache';
 
 const router = useRouter();
+const route = useRoute();
 const pos = usePOSStore();
 const auth = useAuthStore();
+
+function routeString(key) {
+  const value = route.query[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function validYmd(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+}
+
+const initialSaleId = routeString('source') === 'leaderboard' ? routeString('saleId') : '';
+const initialFrom = routeString('source') === 'leaderboard' ? validYmd(routeString('from')) : '';
+const initialTo = routeString('source') === 'leaderboard' ? validYmd(routeString('to')) : '';
 
 const reorderingId = ref(null);
 
@@ -41,7 +55,7 @@ const errorMsg = ref('');
 
 const q = ref('');
 const status = ref('');
-const range = ref('30'); // 7 | 30 | 90 | all
+const range = ref(initialFrom || initialTo ? 'custom' : '30'); // 7 | 30 | 90 | custom | all
 
 let debounceTimer = null;
 
@@ -73,21 +87,27 @@ function tabCount(key) {
 
 // Bộ lọc nâng cao (nút "Bộ lọc"): khoảng ngày tự chọn + lọc theo nhân viên sale.
 // Mở sẵn khi đang dùng khoảng ngày tự chọn để anh thấy ngay mình đang lọc gì.
-const showFilters = ref(false);
-const saleFilter = ref('');
+const showFilters = ref(Boolean(initialSaleId || initialFrom || initialTo));
+const saleFilter = ref(initialSaleId);
 const staffList = ref([]);
+const staffLoaded = ref(false);
+
+async function loadStaff() {
+  if (!canReconcile.value || staffLoaded.value) return;
+  try {
+    const { data } = await api.get('/sale-app/staff');
+    staffList.value = data.staff || [];
+    staffLoaded.value = true;
+  } catch {
+    staffList.value = [];
+  }
+}
+
 async function toggleFilters() {
   showFilters.value = !showFilters.value;
   // Danh sách nhân viên chỉ tải khi thực sự mở panel, và chỉ với người xem
   // được đơn cả công ty (member chỉ có đơn của mình, lọc theo sale là vô nghĩa).
-  if (showFilters.value && canReconcile.value && !staffList.value.length) {
-    try {
-      const { data } = await api.get('/sale-app/staff');
-      staffList.value = data.staff || [];
-    } catch {
-      staffList.value = [];
-    }
-  }
+  if (showFilters.value) loadStaff();
 }
 // Số bộ lọc nâng cao đang bật → hiện chấm số trên nút cho khỏi quên đang lọc.
 const advancedCount = computed(
@@ -121,8 +141,8 @@ const daysAgo = (n) => {
 };
 
 // Khoảng ngày tự chọn — mặc định 30 ngày gần nhất để bấm vào là có số ngay.
-const customFrom = ref(daysAgo(30));
-const customTo = ref(today);
+const customFrom = ref(initialFrom || daysAgo(30));
+const customTo = ref(initialTo || today);
 
 // ── ĐỐI SOÁT CHỨNG TỪ (Mai Hiền phụ trách — anh Philip giao 4/8/2026) ──
 // Chỉ người xem được full đơn mới thấy ô tick: owner/admin, hoặc member được cấp
@@ -346,6 +366,28 @@ watch(limit, () => {
 watch([range, customFrom, customTo], loadCounts);
 
 watch(page, load);
+
+// Orders được KeepAlive: khi bấm một nhân viên khác từ Tổng quan, component cũ
+// được dùng lại. Đồng bộ query mới để danh sách không giữ bộ lọc của lần trước.
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.name !== 'orders' || routeString('source') !== 'leaderboard') return;
+    const nextSaleId = routeString('saleId');
+    const nextFrom = validYmd(routeString('from'));
+    const nextTo = validYmd(routeString('to'));
+    saleFilter.value = nextSaleId;
+    if (nextFrom) customFrom.value = nextFrom;
+    if (nextTo) customTo.value = nextTo;
+    range.value = 'custom';
+    showFilters.value = true;
+    loadStaff();
+  },
+);
+
+onMounted(() => {
+  if (initialSaleId) loadStaff();
+});
 
 // Quay lại màn: giữ nguyên danh sách + bộ lọc + vị trí cuộn, chỉ làm mới ngầm
 // nếu rời màn quá 45 giây (đơn mới vào liên tục trong giờ làm).

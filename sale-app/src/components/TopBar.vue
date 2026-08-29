@@ -1,7 +1,8 @@
 <script setup>
 import { bgTasks } from '../composables/use-screen-cache';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import dayjs from 'dayjs';
 import { useAuthStore } from '../stores/auth';
 import { usePOSStore } from '../stores/pos';
 import { api } from '../api/client';
@@ -12,6 +13,7 @@ import BrandLogo from './BrandLogo.vue';
 const auth = useAuthStore();
 const pos = usePOSStore();
 const router = useRouter();
+const route = useRoute();
 
 const searchQuery = ref('');
 const showSearchPanel = ref(false);
@@ -20,9 +22,23 @@ const notifCount = ref(0);
 const searchInputRef = ref(null);
 const searchWrapperRef = ref(null);
 const panelRef = ref(null);
+const dashboardToolsRef = ref(null);
+const showDashboardMonth = ref(false);
+const showDashboardFilter = ref(false);
 
 const userName = computed(() => auth.user?.fullName || auth.user?.email || 'Sale');
+const dashboardFirstName = computed(() => {
+  const name = String(auth.user?.fullName || auth.user?.email || 'Sale').trim();
+  return name.split(/\s+/).filter(Boolean).at(-1) || 'Sale';
+});
 const cartCount = computed(() => pos.itemCount);
+const isDashboard = computed(() => route.path === '/');
+const dashboardDate = computed(() => {
+  const date = dayjs();
+  const weekday = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][date.day()];
+  return `${weekday}, ${date.format('DD/MM/YYYY')}`;
+});
+const currentMonth = computed(() => dayjs().format('MM/YYYY'));
 
 function handleLogout() {
   if (confirm('Đăng xuất?')) auth.logout();
@@ -65,9 +81,12 @@ function handleSelect() {
 }
 
 function handleClickOutside(e) {
-  if (!searchWrapperRef.value) return;
-  if (!searchWrapperRef.value.contains(e.target)) {
+  if (searchWrapperRef.value && !searchWrapperRef.value.contains(e.target)) {
     showSearchPanel.value = false;
+  }
+  if (dashboardToolsRef.value && !dashboardToolsRef.value.contains(e.target)) {
+    showDashboardMonth.value = false;
+    showDashboardFilter.value = false;
   }
 }
 
@@ -161,8 +180,39 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- Dashboard toolbar follows the approved Sale OS mockup. -->
+    <div v-if="isDashboard" class="hidden h-[72px] items-center gap-4 px-5 lg:flex 2xl:px-6">
+      <div class="min-w-0">
+        <h1 class="truncate text-[22px] font-bold leading-7 tracking-[-0.01em] text-ink-primary">Chào buổi sáng, {{ dashboardFirstName }}! 👋</h1>
+        <p class="mt-1 text-[13px] leading-4 text-ink-secondary">Hôm nay là {{ dashboardDate }}</p>
+      </div>
+      <div ref="dashboardToolsRef" class="relative ml-auto flex items-center gap-2">
+        <button class="flex h-10 items-center gap-2 rounded-btn border border-line-200 bg-white px-3 text-xs font-semibold text-ink-primary shadow-card hover:border-royal-200" @click="showDashboardMonth = !showDashboardMonth; showDashboardFilter = false">
+          <svg class="h-4 w-4 text-royal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>
+          Tháng {{ currentMonth }}
+          <span class="text-ink-disabled">⌄</span>
+        </button>
+        <button class="relative flex h-10 w-10 items-center justify-center rounded-btn border border-line-200 bg-white text-royal-700 shadow-card hover:border-royal-200" aria-label="Thông báo" @click="showNotifDrawer = true">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          <span v-if="notifCount > 0" class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{{ notifCount }}</span>
+        </button>
+        <button class="flex h-10 items-center gap-2 rounded-btn border border-line-200 bg-white px-3 text-xs font-semibold text-ink-primary shadow-card hover:border-royal-200" @click="showDashboardFilter = !showDashboardFilter; showDashboardMonth = false">
+          <svg class="h-4 w-4 text-royal-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M7 12h10M10 19h4"/></svg>
+          Bộ lọc của tôi
+        </button>
+        <div v-if="showDashboardMonth" class="absolute right-28 top-12 z-50 w-64 rounded-xl border border-line-200 bg-white p-3 text-xs shadow-pop">
+          <div class="font-semibold text-ink-primary">Tháng {{ currentMonth }}</div>
+          <p class="mt-1 leading-5 text-ink-secondary">Today Action và KPI đang dùng tháng hiện tại. Chưa bật xem lịch sử để tránh trộn dữ liệu hành động hôm nay.</p>
+        </div>
+        <div v-if="showDashboardFilter" class="absolute right-0 top-12 z-50 w-72 rounded-xl border border-line-200 bg-white p-3 text-xs shadow-pop">
+          <div class="font-semibold text-ink-primary">Phạm vi dashboard</div>
+          <ul class="mt-2 space-y-2 text-ink-secondary"><li>✓ Khách hàng do bạn phụ trách</li><li>✓ Đơn hàng hợp lệ trong tháng</li><li>✓ Cơ hội chưa xử lý hoặc chưa đến hạn hoãn</li></ul>
+        </div>
+      </div>
+    </div>
+
     <!-- Desktop header (72px per spec) -->
-    <div class="hidden lg:flex h-[72px] px-6 items-center gap-4">
+    <div v-else class="hidden lg:flex h-[72px] px-6 items-center gap-4">
       <div ref="searchWrapperRef" class="relative flex-1 max-w-[520px]">
         <input
           ref="searchInputRef"
