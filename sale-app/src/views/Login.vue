@@ -10,6 +10,7 @@ const route = useRoute();
 
 const email = ref('');
 const password = ref('');
+const rememberMe = ref(true);
 const loading = ref(false);
 const errorMsg = ref('');
 
@@ -21,7 +22,7 @@ async function submit() {
   loading.value = true;
   errorMsg.value = '';
   try {
-    await auth.login(email.value.trim(), password.value);
+    await auth.login(email.value.trim(), password.value, rememberMe.value);
     const redirect = route.query.redirect || '/';
     router.replace(redirect);
   } catch (err) {
@@ -108,6 +109,19 @@ async function submit() {
               :disabled="loading"
             />
           </div>
+
+          <label class="flex items-start gap-2.5 cursor-pointer select-none">
+            <input
+              v-model="rememberMe"
+              type="checkbox"
+              class="mt-0.5 h-4 w-4 rounded border-line-300 text-royal-700 focus:ring-2 focus:ring-royal-200"
+              :disabled="loading"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-medium text-ink-primary">Ghi nhớ đăng nhập trên máy này</span>
+              <span class="block text-xs text-ink-secondary mt-0.5">Duy trì đăng nhập tối đa 30 ngày trên trình duyệt này.</span>
+            </span>
+          </label>
 
           <div v-if="errorMsg" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {{ errorMsg }}
