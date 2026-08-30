@@ -37,14 +37,16 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /api/v1/auth/login — verify credentials, return JWT
   app.post<{
-    Body: { email: string; password: string };
+    Body: { email: string; password: string; rememberMe?: boolean };
   }>('/api/v1/auth/login', async (request, reply) => {
-    const { email, password } = request.body;
+    const { email, password, rememberMe = false } = request.body;
     if (!email || !password) {
       return reply.status(400).send({ error: 'Missing email or password' });
     }
     const payload = await login(email, password);
-    const token = app.jwt.sign(payload, { expiresIn: '7d' });
+    // Phiên thường chỉ dùng trong phiên trình duyệt; "ghi nhớ" được giữ tối đa 30 ngày.
+    // Client quyết định localStorage/sessionStorage, server vẫn phải giới hạn tuổi JWT.
+    const token = app.jwt.sign(payload, { expiresIn: rememberMe ? '30d' : '12h' });
     return { token, user: payload };
   });
 
