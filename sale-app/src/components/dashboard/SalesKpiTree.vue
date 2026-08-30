@@ -12,31 +12,31 @@ const signed = (value, suffix = '') => `${Number(value) > 0 ? '+' : ''}${decimal
 </script>
 
 <template>
-  <section class="bg-white border border-line-200 rounded-card shadow-card p-4">
-    <h2 class="text-sm font-bold text-ink-primary">KPI TREE – HIỂU VẤN ĐỀ ĐỂ TĂNG DOANH SỐ</h2>
-    <div class="mt-4 grid grid-cols-2 items-stretch gap-2 sm:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] sm:gap-1.5">
-      <div class="rounded-lg border border-royal-100 bg-royal-50/50 p-2 text-center">
+  <section class="rounded-card border border-line-200 bg-white p-4 shadow-card">
+    <h2 class="text-[14px] font-bold leading-5 tracking-[-0.01em] text-ink-primary">KPI TREE – HIỂU VẤN ĐỀ ĐỂ TĂNG DOANH SỐ</h2>
+    <div class="mt-4 grid grid-cols-2 items-stretch gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:gap-2">
+      <div class="metric-card border-royal-100 bg-royal-50/50">
         <div class="text-[9px] uppercase font-bold text-royal-700">Doanh thu</div>
         <div class="mt-1 text-[9px] text-ink-secondary">Mục tiêu</div>
-        <div class="mt-1 text-sm font-bold text-ink-primary">{{ data.revenueTarget ? moneyMetric(data.revenueTarget) : formatVND(data.revenue) }}</div>
+        <div class="mt-1 whitespace-nowrap text-[13px] font-bold tabular-nums text-ink-primary">{{ data.revenueTarget ? moneyMetric(data.revenueTarget) : formatVND(data.revenue) }}</div>
       </div>
       <div class="hidden self-center text-ink-secondary sm:block">=</div>
-      <div class="rounded-lg border p-2 text-center" :class="data.largestGap === 'activeCustomers' ? 'border-red-200 bg-red-50/60' : 'border-line-200'">
+      <div class="metric-card" :class="data.largestGap === 'activeCustomers' ? 'border-red-200 bg-red-50/60' : 'border-line-200'">
         <div class="text-[9px] uppercase font-bold text-royal-700">Active</div>
-        <div class="mt-2 text-base font-bold" :class="data.largestGap === 'activeCustomers' ? 'text-red-600' : 'text-ink-primary'">{{ data.activeCustomers }}<span v-if="data.activeTarget"> / {{ data.activeTarget }}</span></div>
+        <div class="mt-2 text-base font-bold tabular-nums" :class="data.activeTarget && data.activeCustomers < data.activeTarget ? 'text-red-600' : 'text-ink-primary'">{{ data.activeCustomers }}<span v-if="data.activeTarget"> / {{ data.activeTarget }}</span></div>
         <div v-if="data.activeTarget" class="mt-1 text-[9px] font-semibold" :class="data.activeCustomers < data.activeTarget ? 'text-red-600' : 'text-emerald-600'">{{ data.activeCustomers < data.activeTarget ? `-${data.activeTarget - data.activeCustomers} khách` : 'Đạt mục tiêu' }}</div>
       </div>
       <div class="hidden self-center text-ink-secondary sm:block">×</div>
-      <div class="rounded-lg border p-2 text-center" :class="data.largestGap === 'orderFrequency' ? 'border-red-200 bg-red-50/60' : 'border-line-200'">
+      <div class="metric-card" :class="data.largestGap === 'orderFrequency' ? 'border-red-200 bg-red-50/60' : 'border-line-200'">
         <div class="text-[9px] uppercase font-bold text-emerald-700">Order frequency</div>
-        <div class="mt-2 text-base font-bold" :class="data.largestGap === 'orderFrequency' ? 'text-red-600' : 'text-ink-primary'">{{ decimal(data.orderFrequency) }}<span v-if="data.orderFrequencyTarget"> / {{ decimal(data.orderFrequencyTarget) }}</span></div>
+        <div class="mt-2 text-base font-bold tabular-nums" :class="data.orderFrequencyTarget ? 'text-orange-600' : 'text-ink-primary'">{{ decimal(data.orderFrequency) }}<span v-if="data.orderFrequencyTarget"> / {{ decimal(data.orderFrequencyTarget) }}</span></div>
         <div v-if="data.orderFrequencyTarget" class="mt-1 text-[9px] font-semibold" :class="data.orderFrequency >= data.orderFrequencyTarget ? 'text-emerald-600' : 'text-orange-600'">{{ signed(data.orderFrequency - data.orderFrequencyTarget, ' lần') }}</div>
         <div v-else class="mt-1 text-[9px] text-ink-secondary">lần/tháng</div>
       </div>
       <div class="hidden self-center text-ink-secondary sm:block">×</div>
-      <div class="rounded-lg border p-2 text-center" :class="data.largestGap === 'averageOrderValue' ? 'border-red-200 bg-red-50/60' : 'border-line-200'">
+      <div class="metric-card" :class="data.largestGap === 'averageOrderValue' ? 'border-red-200 bg-red-50/60' : 'border-line-200'">
         <div class="text-[9px] uppercase font-bold text-emerald-700">Average order value</div>
-        <div class="mt-2 text-sm font-bold" :class="data.largestGap === 'averageOrderValue' ? 'text-red-600' : 'text-ink-primary'">{{ moneyMetric(data.averageOrderValue) }}<span v-if="data.averageOrderValueTarget"> / {{ moneyMetric(data.averageOrderValueTarget) }}</span></div>
+        <div class="mt-2 whitespace-nowrap text-sm font-bold tabular-nums" :class="data.averageOrderValueTarget ? 'text-emerald-600' : 'text-ink-primary'">{{ moneyMetric(data.averageOrderValue) }}<span v-if="data.averageOrderValueTarget"> / {{ moneyMetric(data.averageOrderValueTarget) }}</span></div>
         <div v-if="data.averageOrderValueTarget" class="mt-1 text-[9px] font-semibold" :class="data.averageOrderValue >= data.averageOrderValueTarget ? 'text-emerald-600' : 'text-emerald-700'">{{ signed((data.averageOrderValue - data.averageOrderValueTarget) / 1_000_000, 'M') }}</div>
         <div v-else class="mt-1 text-[9px] text-ink-secondary">giá trị đơn TB</div>
       </div>
@@ -51,3 +51,18 @@ const signed = (value, suffix = '') => `${Number(value) > 0 ? '+' : ''}${decimal
     </div>
   </section>
 </template>
+
+<style scoped>
+.metric-card {
+  display: flex;
+  min-height: 105px;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-width: 1px;
+  border-radius: 10px;
+  padding: 8px;
+  text-align: center;
+}
+</style>

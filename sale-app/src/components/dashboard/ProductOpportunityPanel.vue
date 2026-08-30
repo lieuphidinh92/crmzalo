@@ -6,6 +6,11 @@ import { formatVND } from '../../composables/useFormat';
 defineProps({ rows: { type: Array, default: () => [] } });
 const router = useRouter();
 const selected = ref(null);
+const failedImages = ref({});
+
+function failImage(url) {
+  if (url) failedImages.value[url] = true;
+}
 
 function call(customer) {
   if (customer.phone) window.location.href = `tel:${customer.phone}`;
@@ -18,33 +23,29 @@ function createOrder() {
 </script>
 
 <template>
-  <section class="overflow-hidden rounded-card border border-line-200 bg-white shadow-card">
-    <header class="flex items-center justify-between gap-2 border-b border-line-200 px-4 py-3">
+  <section class="h-full overflow-hidden rounded-card border border-line-200 bg-white shadow-card">
+    <header class="flex h-[52px] items-center justify-between gap-2 border-b border-line-200 px-4">
       <div>
-        <h2 class="text-sm font-bold text-ink-primary">SẢN PHẨM NÊN BÁN HÔM NAY</h2>
+        <h2 class="text-[14px] font-bold tracking-[-0.01em] text-ink-primary">SẢN PHẨM NÊN BÁN HÔM NAY</h2>
         <p class="mt-0.5 text-[9px] text-ink-secondary">Gợi ý từ hành vi mua 12 tháng</p>
       </div>
       <button class="text-[10px] font-semibold text-royal-700" @click="router.push('/products')">Xem tất cả</button>
     </header>
     <div v-if="!rows.length" class="p-8 text-center text-xs text-ink-secondary">Chưa có cặp sản phẩm đủ độ tin cậy để gợi ý.</div>
     <div v-else class="divide-y divide-line-200">
-      <article v-for="row in rows" :key="row.productId" class="flex gap-3 p-2">
-        <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line-200 bg-surface-soft">
-          <img v-if="row.imageUrl" :src="row.imageUrl" :alt="row.name" class="h-full w-full object-cover" />
-          <span v-else class="text-[9px] text-ink-disabled">{{ row.sku }}</span>
+      <article v-for="row in rows" :key="row.productId" class="flex min-h-[104px] gap-3 px-3 py-3">
+        <div class="flex h-[66px] w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line-200 bg-white">
+          <img v-if="row.imageUrl && !failedImages[row.imageUrl]" :src="row.imageUrl" :alt="row.name" class="h-full w-full object-contain p-0.5" loading="lazy" @error="failImage(row.imageUrl)" />
+          <span v-else class="px-1 text-center text-[8px] font-medium leading-3 text-ink-disabled">{{ row.sku }}</span>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="truncate text-xs font-bold text-ink-primary">{{ row.name }}</div>
-          <p class="mt-1 line-clamp-2 text-[10px] text-ink-secondary">{{ row.reason }}</p>
-          <div class="mt-1.5 flex flex-wrap gap-1.5 text-[9px]">
-            <span class="rounded bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">Tin cậy {{ row.confidencePercent }}%</span>
-            <span class="rounded bg-surface-soft px-1.5 py-0.5 text-ink-secondary">Mẫu {{ row.supportCustomers }} khách</span>
-          </div>
+          <div class="line-clamp-2 text-[11px] font-bold leading-4 text-ink-primary" :title="row.name">{{ row.name }}</div>
+          <p class="mt-1 line-clamp-2 text-[9px] leading-4 text-ink-secondary">{{ row.reason }}</p>
         </div>
-        <div class="shrink-0 text-right">
-          <div class="text-xs font-bold text-ink-primary">{{ row.customerCount }} khách</div>
-          <div class="mt-0.5 text-[9px] text-ink-secondary">{{ formatVND(row.potentialRevenue) }}</div>
-          <button class="mt-2 h-7 rounded-lg border border-royal-100 px-2 text-[9px] font-semibold text-royal-700 hover:bg-royal-50" @click="selected = row">Xem danh sách</button>
+        <div class="flex w-[92px] shrink-0 flex-col items-end text-right">
+          <div class="flex items-center gap-1 text-[11px] font-bold text-ink-primary"><span>{{ row.customerCount }} khách</span><svg class="h-3.5 w-3.5 text-ink-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3" /><path d="M3.5 19v-1a5.5 5.5 0 0 1 11 0v1M16 5.5a3 3 0 0 1 0 5.8M16.5 14a4.5 4.5 0 0 1 4 4.5V19" /></svg></div>
+          <div class="mt-0.5 text-[8px] text-ink-secondary">{{ formatVND(row.potentialRevenue) }}</div>
+          <button class="mt-auto h-7 rounded-lg border border-royal-100 px-2 text-[9px] font-semibold text-royal-700 hover:bg-royal-50" @click="selected = row">Xem danh sách</button>
         </div>
       </article>
     </div>

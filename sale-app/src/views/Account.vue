@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import { formatVND, formatVNDShort } from '../composables/useFormat';
 import {
@@ -31,12 +31,23 @@ const {
 const showEdit = ref(false);
 const showLogoutConfirm = ref(false);
 const toast = ref('');
+const avatarBroken = ref(false);
 
 const user = computed(() => auth.user ?? {});
-const canEditProfile = computed(() => ['owner', 'admin'].includes(user.value.role));
+const canEditProfile = computed(() => Boolean(user.value.id));
 const initials = computed(() => initialsOf(user.value.fullName));
 const role = computed(() => roleLabel(user.value.role));
 const orgName = computed(() => user.value.org?.name ?? null);
+const formattedBirthDate = computed(() => {
+  const raw = user.value.birthDate;
+  if (!raw) return 'Chưa cập nhật';
+  const [year, month, day] = String(raw).slice(0, 10).split('-');
+  return year && month && day ? `${day}/${month}/${year}` : 'Chưa cập nhật';
+});
+
+watch(() => user.value.avatarUrl, () => {
+  avatarBroken.value = false;
+});
 
 const prefs = ref({
   vibrate: getPref('sale_app_notif_vibrate'),
@@ -50,6 +61,7 @@ function togglePref(key, storageKey) {
 }
 
 function onProfileSaved() {
+  avatarBroken.value = false;
   toast.value = 'Đã cập nhật hồ sơ';
   setTimeout(() => (toast.value = ''), 2500);
 }
@@ -77,8 +89,15 @@ onMounted(loadAll);
       <!-- 1. Profile card -->
       <section class="bg-white border border-line-200 rounded-card shadow-card p-5">
         <div class="flex items-start gap-4">
-          <div class="w-14 h-14 rounded-full bg-royal-700 text-white flex items-center justify-center text-xl font-bold shrink-0">
-            {{ initials }}
+          <div class="w-16 h-16 rounded-full bg-royal-700 text-white flex items-center justify-center text-xl font-bold shrink-0 overflow-hidden ring-4 ring-royal-50">
+            <img
+              v-if="user.avatarUrl && !avatarBroken"
+              :src="user.avatarUrl"
+              :alt="`Ảnh đại diện ${user.fullName || ''}`"
+              class="w-full h-full object-cover"
+              @error="avatarBroken = true"
+            />
+            <span v-else>{{ initials }}</span>
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-3">
@@ -91,7 +110,7 @@ onMounted(loadAll);
               </span>
             </div>
 
-            <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <div class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
               <div v-if="orgName">
                 <div class="text-xs uppercase tracking-wide text-ink-secondary mb-0.5">Tổ chức</div>
                 <div class="font-medium text-ink-primary truncate">{{ orgName }}</div>
@@ -101,6 +120,10 @@ onMounted(loadAll);
                 <div class="font-medium" :class="user.isActive === false ? 'text-red-600' : 'text-green-600'">
                   {{ user.isActive === false ? 'Đã khoá' : 'Đang hoạt động' }}
                 </div>
+              </div>
+              <div>
+                <div class="text-xs uppercase tracking-wide text-ink-secondary mb-0.5">Ngày sinh</div>
+                <div class="font-medium text-ink-primary">{{ formattedBirthDate }}</div>
               </div>
             </div>
 

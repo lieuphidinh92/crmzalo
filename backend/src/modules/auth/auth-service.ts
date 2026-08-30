@@ -89,6 +89,8 @@ export async function getProfile(userId: string) {
       id: true,
       email: true,
       fullName: true,
+      avatarUrl: true,
+      birthDate: true,
       role: true,
       orgId: true,
       teamId: true,

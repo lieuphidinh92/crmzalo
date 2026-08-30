@@ -105,15 +105,15 @@ function stockMeta(row) {
       </div>
       <DashboardKpiStrip :data="dashboard.monthlyKpi" />
 
-      <section class="grid items-start gap-4 2xl:grid-cols-12">
-        <TodayActionCenter class="2xl:col-span-8" :data="dashboard.todayAction" @action-changed="load(true)" />
-        <div class="grid gap-4 lg:grid-cols-2 2xl:col-span-4 2xl:grid-cols-1">
+      <section class="dashboard-focus-grid grid min-w-0 items-stretch gap-4">
+        <TodayActionCenter class="min-w-0" :data="dashboard.todayAction" @action-changed="load(true)" />
+        <div class="grid min-w-0 gap-4 lg:grid-cols-2 2xl:h-full 2xl:grid-cols-1 2xl:grid-rows-[auto_minmax(0,1fr)]">
           <SalesKpiTree :data="dashboard.kpiTree" />
           <CustomerHealthStrip :data="dashboard.customerHealth" />
         </div>
       </section>
 
-      <section class="grid items-start gap-4 lg:grid-cols-2 min-[1600px]:grid-cols-[1.3fr_.9fr_.9fr]">
+      <section class="grid items-stretch gap-4 lg:grid-cols-2 min-[1600px]:grid-cols-[1.3fr_.9fr_.9fr]">
         <SalesPipelinePanel :data="dashboard.pipeline" :processing-orders="dashboard.utilities.processingOrders" />
         <ProductOpportunityPanel :rows="dashboard.productOpportunities" />
         <div class="lg:col-span-2 min-[1600px]:col-span-1">
@@ -174,3 +174,11 @@ function stockMeta(row) {
     </div>
   </main>
 </template>
+
+<style scoped>
+@media (min-width: 1536px) {
+  .dashboard-focus-grid {
+    grid-template-columns: minmax(0, 7fr) minmax(500px, 5fr);
+  }
+}
+</style>
