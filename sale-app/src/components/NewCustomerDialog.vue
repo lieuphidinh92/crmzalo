@@ -36,7 +36,8 @@ const form = ref({
   invoiceAddress: '',
   address: '',
   policyTier: 'thung_1',
-  creditLimitText: '',
+  creditLimitText: '0',
+  creditTermDays: 0,
   assignedUserId: null,
 });
 // Địa chỉ nhận hàng mặc định TRÙNG địa chỉ trên hoá đơn — nhà thuốc/hộ kinh doanh
@@ -109,7 +110,7 @@ const creditLimitValue = computed(
 );
 function formatCreditLimit() {
   const n = creditLimitValue.value;
-  form.value.creditLimitText = n ? n.toLocaleString('vi-VN') : '';
+  form.value.creditLimitText = n.toLocaleString('vi-VN');
 }
 
 async function submit() {
@@ -140,7 +141,8 @@ async function submit() {
       invoiceAddress: invoiceAddress || null,
       address: sameShippingAddress.value ? invoiceAddress : form.value.address.trim() || null,
       policyTier: form.value.policyTier,
-      creditLimit: creditLimitValue.value || null,
+      creditLimit: isManager.value ? creditLimitValue.value : 0,
+      creditTermDays: isManager.value ? Math.max(0, Math.trunc(Number(form.value.creditTermDays) || 0)) : 0,
       assignedUserId: isManager.value ? form.value.assignedUserId || null : null,
     });
     emit('created', data.customer);
@@ -306,16 +308,22 @@ async function submit() {
           </select>
         </div>
 
-        <div>
+        <div v-if="isManager">
           <label :class="labelCls">Hạn mức công nợ (đ)</label>
           <input
             v-model="form.creditLimitText"
             @blur="formatCreditLimit"
             type="text"
             inputmode="numeric"
-            placeholder="Để trống nếu không giới hạn"
+            placeholder="0 = không cho nợ"
             :class="inputCls"
           />
+        </div>
+
+        <div v-if="isManager">
+          <label :class="labelCls">Số ngày công nợ tối đa</label>
+          <input v-model.number="form.creditTermDays" type="number" min="0" step="1" :class="inputCls" />
+          <p class="mt-1 text-[11px] text-ink-secondary">0 ngày = không cho nợ. Chỉ mở cho khách được ưu tiên.</p>
         </div>
 
         <div>

@@ -204,6 +204,7 @@ model Contact {
   policyTier             String?   @map("policy_tier") // ctv | dai_ly_cap_1 | dai_ly_cap_2
   debtAmount             Decimal?  @map("debt_amount") @db.Decimal(15, 2)
   creditLimit            Decimal?  @map("credit_limit") @db.Decimal(15, 2) // hạn mức công nợ
+  creditTermDays         Int       @default(0) @map("credit_term_days") // số ngày công nợ tối đa; 0 = không cho nợ
   lastOrderDate          DateTime? @map("last_order_date")
   nextContactDate        DateTime? @map("next_contact_date")
   internalNote           String?   @map("internal_note")

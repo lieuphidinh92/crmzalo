@@ -36,6 +36,8 @@ import { logger } from '../../shared/utils/logger.js';
 import {
   generateOrderCode,
   recomputeOrderTotals,
+  assertCustomerCreditPolicy,
+  CreditPolicyError,
   toNumber,
   reqUser,
 } from '../orders/order-service.js';
@@ -755,6 +757,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           assignedUser: { select: { id: true, fullName: true } },
           rewardPoints: true,
           creditLimit: true,
+          creditTermDays: true,
           // Hồ sơ xuất HĐ mặc định → frontend tự điền sẵn khi chọn KH.
           invoiceBuyerType: true,
           invoiceBuyerName: true,
@@ -831,6 +834,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         invoiceAddress?: string | null;
         policyTier?: string;
         creditLimit?: number | string | null;
+        creditTermDays?: number | string | null;
         assignedUserId?: string | null;
       };
 
@@ -922,10 +926,13 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
               : 'cong_ty'
             : null,
           policyTier: body.policyTier?.trim() || null,
-          creditLimit:
-            body.creditLimit == null || body.creditLimit === ''
-              ? null
-              : Math.max(0, Math.round(Number(body.creditLimit))),
+          // Chỉ quản lý cấp công nợ; khách mới mặc định 0đ / 0 ngày.
+          creditLimit: user.role === 'owner' || user.role === 'admin'
+            ? Math.max(0, Math.round(Number(body.creditLimit) || 0))
+            : 0,
+          creditTermDays: user.role === 'owner' || user.role === 'admin'
+            ? Math.max(0, Math.trunc(Number(body.creditTermDays) || 0))
+            : 0,
           assignedUserId,
           source: 'sale_app',
           stage: 'tiep_can',
@@ -1432,6 +1439,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           internalNote: true,
           rewardPoints: true,
           creditLimit: true,
+          creditTermDays: true,
           lastOrderDate: true,
           nextContactDate: true,
           createdAt: true,
@@ -1510,6 +1518,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           next_contact_date: c.nextContactDate,
           created_at: c.createdAt,
           credit_limit: c.creditLimit == null ? null : toNumber(c.creditLimit),
+          credit_term_days: c.creditTermDays,
           assigned_user: c.assignedUser
             ? { id: c.assignedUser.id, name: c.assignedUser.fullName }
             : null,
@@ -1557,6 +1566,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         notes?: string;
         internalNote?: string;
         creditLimit?: number | string | null;
+        creditTermDays?: number | string | null;
         assignedUserId?: string | null;
       };
 
@@ -1581,11 +1591,16 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       if (body.policyTier !== undefined) data.policyTier = body.policyTier?.trim() || null;
       if (body.notes !== undefined) data.notes = body.notes?.trim() || null;
       if (body.internalNote !== undefined) data.internalNote = body.internalNote?.trim() || null;
-      if (body.creditLimit !== undefined) {
-        data.creditLimit =
-          body.creditLimit == null || body.creditLimit === ''
-            ? null
-            : Math.max(0, Math.round(Number(body.creditLimit)));
+      if (body.creditLimit !== undefined || body.creditTermDays !== undefined) {
+        if (user.role !== 'owner' && user.role !== 'admin') {
+          return reply.status(403).send({ error: 'Chỉ chủ/quản lý mới được cấp chính sách công nợ.' });
+        }
+        if (body.creditLimit !== undefined) {
+          data.creditLimit = Math.max(0, Math.round(Number(body.creditLimit) || 0));
+        }
+        if (body.creditTermDays !== undefined) {
+          data.creditTermDays = Math.max(0, Math.trunc(Number(body.creditTermDays) || 0));
+        }
       }
 
       // Đổi SALE PHỤ TRÁCH — chỉ chủ/quản lý (anh Philip chốt 25/8/2026).
@@ -1627,6 +1642,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           notes: true,
           internalNote: true,
           creditLimit: true,
+          creditTermDays: true,
           // Trả về NV phụ trách mới để màn Khách hàng đổi nhãn ngay, khỏi tải lại.
           assignedUserId: true,
           assignedUser: { select: { id: true, fullName: true } },
@@ -1646,6 +1662,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           notes: updated.notes,
           internal_note: updated.internalNote,
           credit_limit: updated.creditLimit == null ? null : toNumber(updated.creditLimit),
+          credit_term_days: updated.creditTermDays,
           // Cùng hình dạng với GET chi tiết (`assigned_user: {id, name}`) để màn
           // Khách hàng đổi nhãn NV phụ trách ngay sau khi lưu.
           assigned_user_id: updated.assignedUserId,
@@ -2483,6 +2500,8 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           id: true,
           assignedUserId: true,
           address: true,
+          creditLimit: true,
+          creditTermDays: true,
           assignedUser: { select: { fullName: true } },
         },
       });
@@ -2636,6 +2655,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
 
         await markProductsHasSales(body.items!.map((it: any) => it.productId), tx);
         await recomputeOrderTotals(order.id, tx);
+        if (orderStatus === 'confirmed') await assertCustomerCreditPolicy(order.id, tx);
         return order;
       });
 
@@ -2675,6 +2695,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       });
     } catch (err) {
       logger.error('[sale-app] orders create error:', err);
+      if (err instanceof CreditPolicyError) {
+        return reply.status(err.statusCode).send({ error: err.message });
+      }
       return reply.status(500).send({ error: 'Lỗi tạo đơn hàng' });
     }
   });

@@ -199,6 +199,79 @@ export async function recomputeOrderTotals(orderId: string, tx: Prisma.Transacti
   });
 }
 
+export class CreditPolicyError extends Error {
+  statusCode = 400;
+}
+
+/**
+ * Chặn đơn công nợ theo chính sách của khách tại thời điểm chốt đơn.
+ * Đơn nháp không tính vào nợ hiện hữu; đơn đang kiểm tra được cộng riêng để
+ * không đếm hai lần. Null/0 đều được hiểu là chưa được cấp công nợ.
+ */
+export async function assertCustomerCreditPolicy(
+  orderId: string,
+  tx: Prisma.TransactionClient = prisma,
+): Promise<void> {
+  const order = await tx.order.findUniqueOrThrow({
+    where: { id: orderId },
+    select: {
+      id: true,
+      orgId: true,
+      contactId: true,
+      paymentMethod: true,
+      debtAmountValue: true,
+      orderDate: true,
+      debtDueDate: true,
+    },
+  });
+  const orderDebt = Math.max(0, toNumber(order.debtAmountValue));
+  if (order.paymentMethod !== 'credit' || orderDebt <= 0) return;
+
+  const contact = await tx.contact.findUniqueOrThrow({
+    where: { id: order.contactId },
+    select: { creditLimit: true, creditTermDays: true },
+  });
+  const creditLimit = Math.max(0, toNumber(contact.creditLimit));
+  const creditTermDays = Math.max(0, Math.trunc(contact.creditTermDays || 0));
+  if (creditLimit <= 0 || creditTermDays <= 0) {
+    throw new CreditPolicyError(
+      'Khách hàng chưa được cấp công nợ. Quản lý cần đặt hạn mức tiền và số ngày công nợ trước khi chốt đơn.',
+    );
+  }
+  if (!order.debtDueDate) {
+    throw new CreditPolicyError('Đơn công nợ chưa có hạn thanh toán.');
+  }
+
+  const orderDate = order.orderDate ?? new Date();
+  const requestedDays = Math.max(
+    0,
+    Math.ceil((order.debtDueDate.getTime() - orderDate.getTime()) / 86_400_000),
+  );
+  if (requestedDays <= 0 || requestedDays > creditTermDays) {
+    throw new CreditPolicyError(
+      `Khách chỉ được nợ tối đa ${creditTermDays} ngày; đơn đang chọn ${requestedDays} ngày.`,
+    );
+  }
+
+  const existingDebt = await tx.order.aggregate({
+    where: {
+      orgId: order.orgId,
+      contactId: order.contactId,
+      id: { not: order.id },
+      status: { notIn: ['draft', 'cancelled', 'returned'] },
+      debtAmountValue: { gt: 0 },
+    },
+    _sum: { debtAmountValue: true },
+  });
+  const projectedDebt = Math.round(toNumber(existingDebt._sum.debtAmountValue) + orderDebt);
+  if (projectedDebt > creditLimit) {
+    const format = (value: number) => `${Math.round(value).toLocaleString('vi-VN')}đ`;
+    throw new CreditPolicyError(
+      `Công nợ sau đơn sẽ là ${format(projectedDebt)}, vượt hạn mức ${format(creditLimit)}.`,
+    );
+  }
+}
+
 /**
  * Common include shape for "give me an order with everything the UI
  * needs". Strip cost-related fields server-side based on role before
