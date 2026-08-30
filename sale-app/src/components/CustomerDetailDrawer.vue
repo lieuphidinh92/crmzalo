@@ -132,7 +132,8 @@ function startEdit() {
     policyTier: c.policy_tier || '',
     notes: c.notes || '',
     internalNote: c.internal_note || '',
-    creditLimitText: c.credit_limit ? Number(c.credit_limit).toLocaleString('vi-VN') : '',
+    creditLimitText: Number(c.credit_limit || 0).toLocaleString('vi-VN'),
+    creditTermDays: Number(c.credit_term_days || 0),
   };
   saveError.value = '';
   editing.value = true;
@@ -145,7 +146,7 @@ const creditLimitValue = computed(
 );
 function formatCreditLimit() {
   const n = creditLimitValue.value;
-  form.value.creditLimitText = n ? n.toLocaleString('vi-VN') : '';
+  form.value.creditLimitText = n.toLocaleString('vi-VN');
 }
 
 async function saveEdit() {
@@ -160,11 +161,15 @@ async function saveEdit() {
   saving.value = true;
   saveError.value = '';
   try {
-    const payload = { ...form.value, creditLimit: creditLimitValue.value || null };
+    const payload = { ...form.value, creditLimit: creditLimitValue.value };
     delete payload.creditLimitText;
     // Member KHÔNG gửi trường này (backend chặn 403) — tránh lỗi khi sale tự sửa
     // thông tin khách của mình.
-    if (!isManager.value) delete payload.assignedUserId;
+    if (!isManager.value) {
+      delete payload.assignedUserId;
+      delete payload.creditLimit;
+      delete payload.creditTermDays;
+    }
     const { data } = await api.put(`/sale-app/customers/${customer.value.id}`, payload);
     editing.value = false;
     emit('updated', data.customer);
@@ -343,9 +348,13 @@ function createOrder() {
                       <option v-for="o in TIER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
                     </select>
                   </div>
-                  <div>
+                  <div v-if="isManager">
                     <label class="block text-xs font-medium text-ink-primary mb-1">Hạn mức công nợ (đ)</label>
-                    <input v-model="form.creditLimitText" @blur="formatCreditLimit" type="text" inputmode="numeric" placeholder="Trống = không giới hạn" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                    <input v-model="form.creditLimitText" @blur="formatCreditLimit" type="text" inputmode="numeric" placeholder="0 = không cho nợ" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
+                  </div>
+                  <div v-if="isManager">
+                    <label class="block text-xs font-medium text-ink-primary mb-1">Số ngày công nợ tối đa</label>
+                    <input v-model.number="form.creditTermDays" type="number" min="0" step="1" class="w-full h-11 lg:h-10 px-3 rounded-input border border-line-300 focus:border-royal-700 outline-none text-sm" />
                   </div>
                   <div v-if="isManager" class="col-span-2">
                     <label class="block text-xs font-medium text-ink-primary mb-1">Sale phụ trách</label>
@@ -451,6 +460,10 @@ function createOrder() {
                           </span>
                         </template>
                       </span>
+                    </div>
+                    <div class="flex items-center justify-between px-4 py-2.5 rounded-card mb-3 bg-surface-soft text-sm">
+                      <span class="text-ink-secondary">Số ngày công nợ tối đa</span>
+                      <span class="font-semibold text-ink-primary">{{ customer.credit_term_days || 0 }} ngày</span>
                     </div>
                     <div v-if="!debtOrders.length" class="text-ink-secondary text-center py-6 text-sm">
                       Không có đơn nào còn nợ 🎉
