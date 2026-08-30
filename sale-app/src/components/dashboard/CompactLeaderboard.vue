@@ -124,14 +124,20 @@ async function saveTarget() {
         <div v-else-if="orderError" class="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{{ orderError }}</div>
         <div v-else-if="!selected.orders.length" class="p-10 text-center text-sm text-ink-secondary">Không có đơn hợp lệ trong tháng.</div>
         <div v-else class="overflow-auto">
-          <div class="hidden grid-cols-[120px_1fr_110px_140px] gap-3 bg-surface-50 px-5 py-2.5 text-[10px] font-semibold uppercase text-ink-secondary sm:grid">
-            <span>Mã đơn</span><span>Khách hàng</span><span>Ngày đơn</span><span class="text-right">Giá trị</span>
+          <div class="hidden grid-cols-[120px_1fr_110px_170px] gap-3 bg-surface-50 px-5 py-2.5 text-[10px] font-semibold uppercase text-ink-secondary sm:grid">
+            <span>Mã đơn</span><span>Khách hàng</span><span>Ngày đơn</span><span class="text-right">Giá trị / Trạng thái</span>
           </div>
-          <button v-for="order in selected.orders" :key="order.id" class="grid w-full grid-cols-[1fr_auto] gap-2 border-b border-line-200 px-4 py-3 text-left hover:bg-royal-50/40 sm:grid-cols-[120px_1fr_110px_140px] sm:px-5" @click="router.push(`/orders/${order.id}`); selected = null">
+          <button v-for="order in selected.orders" :key="order.id" class="grid w-full grid-cols-[1fr_auto] gap-2 border-b border-line-200 px-4 py-3 text-left hover:bg-royal-50/40 sm:grid-cols-[120px_1fr_110px_170px] sm:px-5" @click="router.push(`/orders/${order.id}`); selected = null">
             <span class="font-mono text-[11px] text-ink-secondary">{{ order.orderCode }}</span>
             <span class="min-w-0 truncate text-xs font-semibold text-ink-primary">{{ order.customerName }}</span>
             <span class="text-[11px] text-ink-secondary">{{ dayjs(order.orderDate).format('DD/MM/YYYY') }}</span>
-            <span class="text-right"><strong class="text-xs tabular-nums text-ink-primary">{{ formatVND(order.totalAmount) }}</strong><br><span class="mt-1 inline-block rounded px-1.5 py-0.5 text-[9px]" :class="statusColor(order.status)">{{ statusLabel(order.status) }}</span></span>
+            <span class="min-w-0 text-right">
+              <span class="flex items-center justify-end gap-2 whitespace-nowrap">
+                <strong class="text-xs tabular-nums text-ink-primary">{{ formatVND(order.totalAmount) }}</strong>
+                <span class="inline-flex whitespace-nowrap rounded px-1.5 py-0.5 text-[9px]" :class="statusColor(order.status)">{{ statusLabel(order.status) }}</span>
+              </span>
+              <span v-if="Number(order.debtAmount || 0) > 0" class="mt-1 block text-[11px] font-semibold tabular-nums text-red-600">Còn nợ {{ formatVND(order.debtAmount) }}</span>
+            </span>
           </button>
         </div>
       </section>

@@ -766,6 +766,7 @@ export async function getSaleMonthlyOrders(
       status: true,
       totalAmount: true,
       totalAmountValue: true,
+      debtAmountValue: true,
       contact: { select: { fullName: true, storeName: true } },
     },
     orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
@@ -778,6 +779,7 @@ export async function getSaleMonthlyOrders(
     status: order.status,
     customerName: order.contact?.storeName || order.contact?.fullName || 'Khách hàng',
     totalAmount: roundMoney(toNumber(order.totalAmountValue ?? order.totalAmount)),
+    debtAmount: roundMoney(toNumber(order.debtAmountValue)),
   }));
 
   return {
