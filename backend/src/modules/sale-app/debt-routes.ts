@@ -23,7 +23,12 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
-import { toNumber, reqUser } from '../orders/order-service.js';
+import {
+  toNumber,
+  reqUser,
+  effectiveDebtDueDate,
+  debtDaysOverdue,
+} from '../orders/order-service.js';
 import { requireRole } from '../auth/role-middleware.js';
 import { uploadToStorage, extForMime } from '../../shared/storage/supabase-storage.js';
 
@@ -88,6 +93,9 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           contactId: true,
           debtAmountValue: true,
           debtDueDate: true,
+          orderDate: true,
+          createdAt: true,
+          contact: { select: { creditTermDays: true } },
         },
       });
 
@@ -106,8 +114,13 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
       for (const o of orders) {
         if (!o.contactId) continue;
         const debt = toNumber(o.debtAmountValue);
-        const due = o.debtDueDate ? new Date(o.debtDueDate) : null;
-        const isOverdue = !!due && due < now;
+        const due = effectiveDebtDueDate({
+          orderDate: o.orderDate,
+          createdAt: o.createdAt,
+          debtDueDate: o.debtDueDate,
+          creditTermDays: o.contact.creditTermDays,
+        });
+        const isOverdue = debtDaysOverdue(due, now) > 0;
         let a = byContact.get(o.contactId);
         if (!a) {
           a = {
@@ -144,6 +157,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           province: true,
           policyTier: true,
           customerType: true,
+          creditTermDays: true,
         },
       });
       const cmap = new Map(contacts.map((c: any) => [c.id, c]));
@@ -162,6 +176,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             province: c.province,
             policy_tier: c.policyTier,
             customer_type: c.customerType,
+            credit_term_days: c.creditTermDays,
             debt: a.debt,
             overdue_debt: a.overdue_debt,
             order_count: a.order_count,
@@ -218,6 +233,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             zaloUid: true,
             province: true,
             policyTier: true,
+            creditTermDays: true,
           },
         });
         if (!contact) return reply.status(404).send({ error: 'Khách hàng không tồn tại' });
@@ -243,11 +259,14 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
         });
 
         const items = orders.map((o: any) => {
-          const due = o.debtDueDate ? new Date(o.debtDueDate) : null;
-          const isOverdue = !!due && due < now;
-          const daysOverdue = isOverdue
-            ? Math.floor((now.getTime() - due.getTime()) / 86400_000)
-            : 0;
+          const due = effectiveDebtDueDate({
+            orderDate: o.orderDate,
+            createdAt: o.createdAt,
+            debtDueDate: o.debtDueDate,
+            creditTermDays: contact.creditTermDays,
+          });
+          const daysOverdue = debtDaysOverdue(due, now);
+          const isOverdue = daysOverdue > 0;
           return {
             id: o.id,
             order_code: o.orderCode,
@@ -255,12 +274,17 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             total_amount: toNumber(o.totalAmountValue ?? o.totalAmount),
             paid_amount: toNumber(o.paidAmount),
             debt_amount: toNumber(o.debtAmountValue),
-            due_date: o.debtDueDate,
+            due_date: due,
             is_overdue: isOverdue,
             days_overdue: daysOverdue,
             order_date: o.orderDate,
             created_at: o.createdAt,
           };
+        });
+        items.sort((a, b) => {
+          if (a.days_overdue !== b.days_overdue) return b.days_overdue - a.days_overdue;
+          return new Date(a.order_date ?? a.created_at).getTime()
+            - new Date(b.order_date ?? b.created_at).getTime();
         });
 
         let totalDebt = 0;
@@ -279,6 +303,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             zalo_uid: contact.zaloUid,
             province: contact.province,
             policy_tier: contact.policyTier,
+            credit_term_days: contact.creditTermDays,
           },
           total_debt: totalDebt,
           overdue_debt: overdueDebt,

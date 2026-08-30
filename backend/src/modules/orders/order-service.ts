@@ -204,6 +204,36 @@ export class CreditPolicyError extends Error {
 }
 
 /**
+ * Hạn nợ hiệu lực dùng cho màn đối soát. Chính sách hiện tại của khách được ưu
+ * tiên hơn hạn đã ghi trên đơn cũ để khi quản lý đưa khách về 0 ngày, toàn bộ
+ * dư nợ cũ lập tức hiện tuổi nợ từ ngày đơn. Không ghi ngược vào Order.
+ */
+export function effectiveDebtDueDate(input: {
+  orderDate?: Date | null;
+  createdAt?: Date | null;
+  debtDueDate?: Date | null;
+  creditTermDays?: number | null;
+}): Date | null {
+  const base = input.orderDate ?? input.createdAt;
+  if (base && input.creditTermDays != null) {
+    const due = new Date(base);
+    due.setHours(0, 0, 0, 0);
+    due.setDate(due.getDate() + Math.max(0, Math.trunc(input.creditTermDays)));
+    return due;
+  }
+  return input.debtDueDate ? new Date(input.debtDueDate) : null;
+}
+
+export function debtDaysOverdue(dueDate: Date | null, now = new Date()): number {
+  if (!dueDate) return 0;
+  const due = new Date(dueDate);
+  const today = new Date(now);
+  due.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((today.getTime() - due.getTime()) / 86_400_000));
+}
+
+/**
  * Chặn đơn công nợ theo chính sách của khách tại thời điểm chốt đơn.
  * Đơn nháp không tính vào nợ hiện hữu; đơn đang kiểm tra được cộng riêng để
  * không đếm hai lần. Null/0 đều được hiểu là chưa được cấp công nợ.

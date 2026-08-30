@@ -38,6 +38,8 @@ import {
   recomputeOrderTotals,
   assertCustomerCreditPolicy,
   CreditPolicyError,
+  effectiveDebtDueDate,
+  debtDaysOverdue,
   toNumber,
   reqUser,
 } from '../orders/order-service.js';
@@ -366,7 +368,8 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
   // ── GET /api/v1/sale-app/debt-summary ─ outstanding receivables ───────
   // Member sees debt on their own contacts; admin/owner sees the whole org.
   // `total` = SUM(debt_amount_value) across orders with debt > 0 and not
-  // cancelled. `overdueTotal` further filters by past debt_due_date.
+  // cancelled. Quá hạn dùng chính sách số ngày HIỆN TẠI của khách; 0 ngày
+  // nghĩa là tính tuổi nợ từ ngày đơn, kể cả đơn cũ từng có hạn khác.
   app.get('/api/v1/sale-app/debt-summary', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = reqUser(request);
@@ -379,31 +382,43 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         baseWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
       }
       const now = new Date();
-
-      const [openAgg, overdueAgg, contactCount] = await Promise.all([
-        prisma.order.aggregate({
-          where: baseWhere,
-          _sum: { debtAmountValue: true },
-          _count: { id: true },
-        }),
-        prisma.order.aggregate({
-          where: { ...baseWhere, debtDueDate: { lt: now } },
-          _sum: { debtAmountValue: true },
-          _count: { id: true },
-        }),
-        prisma.order.findMany({
-          where: baseWhere,
-          select: { contactId: true },
-          distinct: ['contactId'],
-        }),
-      ]);
+      const orders = await prisma.order.findMany({
+        where: baseWhere,
+        select: {
+          contactId: true,
+          debtAmountValue: true,
+          debtDueDate: true,
+          orderDate: true,
+          createdAt: true,
+          contact: { select: { creditTermDays: true } },
+        },
+      });
+      let total = 0;
+      let overdueTotal = 0;
+      let overdueOrderCount = 0;
+      const contactIds = new Set<string>();
+      for (const order of orders) {
+        const debt = toNumber(order.debtAmountValue);
+        total += debt;
+        if (order.contactId) contactIds.add(order.contactId);
+        const due = effectiveDebtDueDate({
+          orderDate: order.orderDate,
+          createdAt: order.createdAt,
+          debtDueDate: order.debtDueDate,
+          creditTermDays: order.contact.creditTermDays,
+        });
+        if (debtDaysOverdue(due, now) > 0) {
+          overdueTotal += debt;
+          overdueOrderCount += 1;
+        }
+      }
 
       return {
-        total: toNumber(openAgg._sum.debtAmountValue),
-        order_count: openAgg._count.id,
-        overdue_total: toNumber(overdueAgg._sum.debtAmountValue),
-        overdue_order_count: overdueAgg._count.id,
-        contact_count: contactCount.length,
+        total,
+        order_count: orders.length,
+        overdue_total: overdueTotal,
+        overdue_order_count: overdueOrderCount,
+        contact_count: contactIds.size,
       };
     } catch (err) {
       logger.error('[sale-app] debt-summary error:', err);
