@@ -132,7 +132,17 @@ export async function getSaleDashboardV2(user: DashboardUser) {
       }),
       prisma.user.findMany({
         where: { orgId: user.orgId, isActive: true },
-        select: { id: true, fullName: true },
+        select: {
+          id: true,
+          fullName: true,
+          avatarUrl: true,
+          zaloAccounts: {
+            where: { avatarUrl: { not: null } },
+            select: { avatarUrl: true },
+            orderBy: { lastConnectedAt: 'desc' },
+            take: 1,
+          },
+        },
       }),
       prisma.order.findMany({
         where: {
@@ -542,6 +552,7 @@ export async function getSaleDashboardV2(user: DashboardUser) {
       return {
         saleId: sale.id,
         name: sale.fullName,
+        avatarUrl: sale.avatarUrl ?? sale.zaloAccounts?.[0]?.avatarUrl ?? null,
         revenue,
         orders: teamAgg.get(sale.id)?.orders ?? 0,
         isMe: sale.id === user.id,
@@ -710,6 +721,7 @@ export async function getSaleDashboardV2(user: DashboardUser) {
       rows: (openDeals as any[]).slice(0, 5).map((deal: any) => ({
         id: deal.id,
         name: deal.storeName || deal.fullName || 'Khách hàng',
+        phone: deal.phone,
         stage: deal.stage,
         stageLabel: labelStage(deal.stage),
         value: roundMoney(toNumber(deal.potentialValue)),

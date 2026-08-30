@@ -67,6 +67,8 @@ model User {
   email        String   @unique
   passwordHash String   @map("password_hash")
   fullName     String   @map("full_name")
+  avatarUrl    String?  @map("avatar_url")
+  birthDate    DateTime? @db.Date @map("birth_date")
   role         String   @default("member") // owner, admin, member
   // Nhân sự vận hành (giao hàng, đối soát chứng từ, kho) cần xem ĐƠN của cả công
   // ty nhưng KHÔNG được xem giá vốn/lãi gộp. Trước đây 2 việc này dùng chung

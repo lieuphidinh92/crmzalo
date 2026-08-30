@@ -22,6 +22,8 @@ export async function userRoutes(app: FastifyInstance) {
         id: true,
         email: true,
         fullName: true,
+        avatarUrl: true,
+        birthDate: true,
         role: true,
         isActive: true,
         teamId: true,
@@ -87,7 +89,7 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Không có quyền' });
     }
 
-    const { fullName, email, role, teamId, isActive } = request.body as any;
+    const { fullName, email, role, teamId, isActive, avatarUrl, birthDate } = request.body as any;
 
     if (id === currentUser.id && role && role !== currentUser.role) {
       return reply.status(400).send({ error: 'Không thể thay đổi role của chính mình' });
@@ -99,6 +101,29 @@ export async function userRoutes(app: FastifyInstance) {
     if (role !== undefined && currentUser.role === 'owner') updateData.role = role;
     if (teamId !== undefined) updateData.teamId = teamId || null;
     if (isActive !== undefined && currentUser.role === 'owner') updateData.isActive = isActive;
+    if (avatarUrl !== undefined) {
+      if (avatarUrl !== null && typeof avatarUrl !== 'string') {
+        return reply.status(400).send({ error: 'Đường dẫn ảnh đại diện không hợp lệ' });
+      }
+      updateData.avatarUrl = typeof avatarUrl === 'string' ? avatarUrl.trim() || null : null;
+    }
+    if (birthDate !== undefined) {
+      if (birthDate === null || birthDate === '') {
+        updateData.birthDate = null;
+      } else if (typeof birthDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+        return reply.status(400).send({ error: 'Ngày sinh phải có định dạng YYYY-MM-DD' });
+      } else {
+        const parsedBirthDate = new Date(`${birthDate}T00:00:00.000Z`);
+        const today = new Date();
+        const normalized = Number.isNaN(parsedBirthDate.getTime())
+          ? ''
+          : parsedBirthDate.toISOString().slice(0, 10);
+        if (normalized !== birthDate || birthDate < '1900-01-01' || parsedBirthDate > today) {
+          return reply.status(400).send({ error: 'Ngày sinh không hợp lệ' });
+        }
+        updateData.birthDate = parsedBirthDate;
+      }
+    }
 
     const user = await prisma.user.update({
       where: { id, orgId: currentUser.orgId },
@@ -107,6 +132,8 @@ export async function userRoutes(app: FastifyInstance) {
         id: true,
         email: true,
         fullName: true,
+        avatarUrl: true,
+        birthDate: true,
         role: true,
         isActive: true,
         teamId: true,

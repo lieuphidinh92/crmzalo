@@ -17,6 +17,11 @@ const orderError = ref('');
 const targetEditor = ref(null);
 const savingTarget = ref(false);
 const targetError = ref('');
+const avatarErrors = ref({});
+
+function avatarFailed(saleId) {
+  avatarErrors.value[saleId] = true;
+}
 
 async function openOrders(row) {
   if (!canOpenOrders(row)) return;
@@ -78,18 +83,21 @@ async function saveTarget() {
 </script>
 
 <template>
-  <section class="overflow-hidden rounded-card border border-line-200 bg-white shadow-card">
-    <header class="flex items-center justify-between px-4 py-3 border-b border-line-200">
-      <h2 class="text-sm font-bold text-ink-primary">LEADERBOARD (THÁNG NÀY)</h2>
+  <section class="flex h-full flex-col overflow-hidden rounded-card border border-line-200 bg-white shadow-card">
+    <header class="flex h-[52px] shrink-0 items-center justify-between border-b border-line-200 px-4">
+      <h2 class="text-[14px] font-bold tracking-[-0.01em] text-ink-primary">LEADERBOARD (THÁNG NÀY)</h2>
       <button class="text-[10px] font-semibold text-royal-700" @click="router.push('/reports')">Xem tất cả</button>
     </header>
     <div v-if="!rows.length" class="p-8 text-center text-xs text-ink-secondary">Chưa phát sinh doanh số tháng này.</div>
-    <div v-else class="divide-y divide-line-200">
-      <div class="grid grid-cols-[28px_1fr_1fr_82px] items-center gap-2 bg-surface-50 px-4 py-2 text-[9px] font-semibold uppercase text-ink-secondary"><span>#</span><span>Sale</span><span class="text-right">Doanh số</span><span class="text-right">% target</span></div>
-      <div v-for="row in rows" :key="row.saleId" class="grid grid-cols-[28px_1fr_1fr_82px] items-center gap-2 px-4 py-1.5" :class="row.isMe ? 'bg-royal-50/60' : ''">
+    <div v-else class="flex-1 divide-y divide-line-200">
+      <div class="grid h-8 grid-cols-[28px_1fr_1fr_82px] items-center gap-2 bg-surface-50 px-4 text-[8px] font-semibold uppercase tracking-[0.025em] text-ink-secondary"><span>#</span><span>Sale</span><span class="text-right">Doanh số</span><span class="text-right">% target</span></div>
+      <div v-for="row in rows" :key="row.saleId" class="grid min-h-[56px] grid-cols-[28px_1fr_1fr_82px] items-center gap-2 px-4 py-1.5" :class="row.isMe ? 'bg-royal-50/60' : ''">
         <div class="text-center text-sm">{{ medals[row.rank - 1] || row.rank }}</div>
         <div class="flex min-w-0 items-center gap-2">
-          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[9px] font-bold text-royal-700">{{ row.name.slice(0, 1) }}</span>
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line-200 bg-surface-soft text-[9px] font-bold text-royal-700">
+            <img v-if="row.avatarUrl && !avatarErrors[row.saleId]" :src="row.avatarUrl" :alt="row.name" class="h-full w-full object-cover" loading="lazy" @error="avatarFailed(row.saleId)" />
+            <span v-else>{{ row.name.slice(0, 1) }}</span>
+          </span>
           <div class="min-w-0">
             <div class="flex min-w-0 items-center gap-1">
               <button :disabled="!canOpenOrders(row)" :title="canOpenOrders(row) ? `Xem đơn hàng tháng của ${row.name}` : 'Bạn không có quyền xem đơn của nhân viên này'" class="min-w-0 truncate text-left text-[11px] font-semibold leading-4 text-ink-primary underline-offset-2 disabled:cursor-default enabled:hover:text-royal-700 enabled:hover:underline" @click="openOrders(row)">
