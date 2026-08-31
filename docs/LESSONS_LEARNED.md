@@ -113,6 +113,11 @@ bước) thì mở đúng mục trong
   bộ hội thoại. Xong 1 việc → `/clear`.
 - `main` và `feature/sale-app-nhom1` **đã DIVERGED**: backend + CRM → `feature`;
   sale-app → phải tới `main` (cherry-pick).
+- **“Push online” phải làm thẳng ở repo thật `~/dev/zalo-crm/CRM-Med-main`.**
+  Không deploy từ workspace Desktop không có `.git`; test 1 lần, push feature,
+  cherry-pick sale-app sang main, rồi verify đúng 1 chu kỳ Render/Vercel.
+  Nếu buộc clone tạm: tránh `--shared` hoặc đặt lại GitHub origin ngay; không
+  symlink `node_modules` cho Vite vì `.vite-temp` có thể lỗi EPERM.
 - Script sửa dữ liệu production: **dry-run trước · backup ra `scripts/backups/`
   · idempotent · verify sau khi ghi**. Lọc theo **ĐIỀU KIỆN**, đừng lọc theo
   prefix mã — script 3/8 lọc `KK20260803-*` nên bỏ sót 26 lô của kiểm kê 14/07.
