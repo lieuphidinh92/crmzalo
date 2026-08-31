@@ -71,10 +71,7 @@ function undoTaxFill() {
       <div v-if="pos.isCredit" class="grid grid-cols-2 gap-2">
         <div>
           <div :class="labelCls">Cho nợ (số ngày)</div>
-          <input v-model.number="pos.debtTermDays" type="number" min="1" :max="pos.customerDetail?.credit_term_days || undefined" inputmode="numeric" placeholder="VD: 10" :class="inputCls" />
-          <p class="mt-1 text-[10px]" :class="(pos.customerDetail?.credit_term_days || 0) > 0 ? 'text-ink-secondary' : 'text-amber-700'">
-            {{ (pos.customerDetail?.credit_term_days || 0) > 0 ? `Khuyến nghị tối đa ${pos.customerDetail.credit_term_days} ngày` : 'Cảnh báo: khách chưa được cấp công nợ — sale vẫn có thể lên đơn' }}
-          </p>
+          <input v-model.number="pos.debtTermDays" type="number" min="1" inputmode="numeric" placeholder="VD: 10" :class="inputCls" />
         </div>
         <div>
           <div :class="labelCls">Trả trước (nếu có)</div>
