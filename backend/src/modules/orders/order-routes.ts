@@ -28,6 +28,7 @@ import {
   orderScopeWhere,
   generateOrderCode,
   recomputeOrderTotals,
+  getCustomerCreditWarnings,
   ORDER_FULL_INCLUDE,
   stripCostFromOrder,
   reqUser,
@@ -326,9 +327,18 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       });
       if (!order) return reply.status(404).send({ error: 'Order not found' });
 
+      // Cảnh báo mềm: lỗi tính cảnh báo cũng không được làm sale mất quyền xử lý đơn.
+      let creditPolicyWarnings: string[] = [];
+      try {
+        creditPolicyWarnings = await getCustomerCreditWarnings(order.id);
+      } catch (warningError) {
+        logger.warn('[orders] Credit warning unavailable:', warningError);
+      }
+
       return {
         ...stripCostFromOrder(order, user.role),
         statusNormalized: normalizeStatus(order.status),
+        creditPolicyWarnings,
         // Mirror legacy total to the new field name when caller reads
         // a MISA row that hasn't been upgraded yet.
         totalAmountValue:

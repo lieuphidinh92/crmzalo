@@ -36,8 +36,6 @@ import { logger } from '../../shared/utils/logger.js';
 import {
   generateOrderCode,
   recomputeOrderTotals,
-  assertCustomerCreditPolicy,
-  CreditPolicyError,
   effectiveDebtDueDate,
   debtDaysOverdue,
   toNumber,
@@ -2670,7 +2668,6 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
 
         await markProductsHasSales(body.items!.map((it: any) => it.productId), tx);
         await recomputeOrderTotals(order.id, tx);
-        if (orderStatus === 'confirmed') await assertCustomerCreditPolicy(order.id, tx);
         return order;
       });
 
@@ -2710,9 +2707,6 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       });
     } catch (err) {
       logger.error('[sale-app] orders create error:', err);
-      if (err instanceof CreditPolicyError) {
-        return reply.status(err.statusCode).send({ error: err.message });
-      }
       return reply.status(500).send({ error: 'Lỗi tạo đơn hàng' });
     }
   });

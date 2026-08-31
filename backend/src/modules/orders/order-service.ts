@@ -199,10 +199,6 @@ export async function recomputeOrderTotals(orderId: string, tx: Prisma.Transacti
   });
 }
 
-export class CreditPolicyError extends Error {
-  statusCode = 400;
-}
-
 /**
  * Hạn nợ hiệu lực dùng cho màn đối soát. Chính sách hiện tại của khách được ưu
  * tiên hơn hạn đã ghi trên đơn cũ để khi quản lý đưa khách về 0 ngày, toàn bộ
@@ -234,14 +230,14 @@ export function debtDaysOverdue(dueDate: Date | null, now = new Date()): number 
 }
 
 /**
- * Chặn đơn công nợ theo chính sách của khách tại thời điểm chốt đơn.
+ * Trả về cảnh báo mềm theo chính sách công nợ tại thời điểm chốt đơn.
  * Đơn nháp không tính vào nợ hiện hữu; đơn đang kiểm tra được cộng riêng để
- * không đếm hai lần. Null/0 đều được hiểu là chưa được cấp công nợ.
+ * không đếm hai lần. Hàm này tuyệt đối không chặn tạo/chuyển trạng thái đơn.
  */
-export async function assertCustomerCreditPolicy(
+export async function getCustomerCreditWarnings(
   orderId: string,
   tx: Prisma.TransactionClient = prisma,
-): Promise<void> {
+): Promise<string[]> {
   const order = await tx.order.findUniqueOrThrow({
     where: { id: orderId },
     select: {
@@ -255,7 +251,7 @@ export async function assertCustomerCreditPolicy(
     },
   });
   const orderDebt = Math.max(0, toNumber(order.debtAmountValue));
-  if (order.paymentMethod !== 'credit' || orderDebt <= 0) return;
+  if (order.paymentMethod !== 'credit' || orderDebt <= 0) return [];
 
   const contact = await tx.contact.findUniqueOrThrow({
     where: { id: order.contactId },
@@ -263,43 +259,48 @@ export async function assertCustomerCreditPolicy(
   });
   const creditLimit = Math.max(0, toNumber(contact.creditLimit));
   const creditTermDays = Math.max(0, Math.trunc(contact.creditTermDays || 0));
+  const warnings: string[] = [];
   if (creditLimit <= 0 || creditTermDays <= 0) {
-    throw new CreditPolicyError(
-      'Khách hàng chưa được cấp công nợ. Quản lý cần đặt hạn mức tiền và số ngày công nợ trước khi chốt đơn.',
+    warnings.push(
+      'Khách hàng chưa được cấp công nợ. Quản lý nên đặt hạn mức tiền và số ngày công nợ.',
     );
   }
   if (!order.debtDueDate) {
-    throw new CreditPolicyError('Đơn công nợ chưa có hạn thanh toán.');
+    warnings.push('Đơn công nợ chưa có hạn thanh toán.');
+  } else if (creditTermDays > 0) {
+    const orderDate = order.orderDate ?? new Date();
+    const requestedDays = Math.max(
+      0,
+      Math.ceil((order.debtDueDate.getTime() - orderDate.getTime()) / 86_400_000),
+    );
+    if (requestedDays <= 0 || requestedDays > creditTermDays) {
+      warnings.push(
+        `Khách được khuyến nghị nợ tối đa ${creditTermDays} ngày; đơn đang chọn ${requestedDays} ngày.`,
+      );
+    }
   }
 
-  const orderDate = order.orderDate ?? new Date();
-  const requestedDays = Math.max(
-    0,
-    Math.ceil((order.debtDueDate.getTime() - orderDate.getTime()) / 86_400_000),
-  );
-  if (requestedDays <= 0 || requestedDays > creditTermDays) {
-    throw new CreditPolicyError(
-      `Khách chỉ được nợ tối đa ${creditTermDays} ngày; đơn đang chọn ${requestedDays} ngày.`,
-    );
+  if (creditLimit > 0) {
+    const existingDebt = await tx.order.aggregate({
+      where: {
+        orgId: order.orgId,
+        contactId: order.contactId,
+        id: { not: order.id },
+        status: { notIn: ['draft', 'cancelled', 'returned'] },
+        debtAmountValue: { gt: 0 },
+      },
+      _sum: { debtAmountValue: true },
+    });
+    const projectedDebt = Math.round(toNumber(existingDebt._sum.debtAmountValue) + orderDebt);
+    if (projectedDebt > creditLimit) {
+      const format = (value: number) => `${Math.round(value).toLocaleString('vi-VN')}đ`;
+      warnings.push(
+        `Công nợ sau đơn dự kiến là ${format(projectedDebt)}, vượt hạn mức ${format(creditLimit)}.`,
+      );
+    }
   }
 
-  const existingDebt = await tx.order.aggregate({
-    where: {
-      orgId: order.orgId,
-      contactId: order.contactId,
-      id: { not: order.id },
-      status: { notIn: ['draft', 'cancelled', 'returned'] },
-      debtAmountValue: { gt: 0 },
-    },
-    _sum: { debtAmountValue: true },
-  });
-  const projectedDebt = Math.round(toNumber(existingDebt._sum.debtAmountValue) + orderDebt);
-  if (projectedDebt > creditLimit) {
-    const format = (value: number) => `${Math.round(value).toLocaleString('vi-VN')}đ`;
-    throw new CreditPolicyError(
-      `Công nợ sau đơn sẽ là ${format(projectedDebt)}, vượt hạn mức ${format(creditLimit)}.`,
-    );
-  }
+  return warnings;
 }
 
 /**

@@ -30,8 +30,6 @@ import {
   stripCostFromOrder,
   reqUser,
   toNumber,
-  assertCustomerCreditPolicy,
-  CreditPolicyError,
 } from './order-service.js';
 import {
   processFIFO,
@@ -123,7 +121,6 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
         if (!order.assignedSaleId) {
           return reply.status(400).send({ error: 'Đơn cần có sale phụ trách trước khi xác nhận' });
         }
-        await assertCustomerCreditPolicy(order.id);
         stageData.confirmedAt = now;
       }
 
@@ -314,9 +311,6 @@ export async function orderTransitionRoutes(app: FastifyInstance): Promise<void>
       };
     } catch (err) {
       logger.error('[orders] Transition error:', err);
-      if (err instanceof CreditPolicyError) {
-        return reply.status(err.statusCode).send({ error: err.message });
-      }
       return reply.status(500).send({ error: (err as Error).message || 'Failed to transition order' });
     }
   });
