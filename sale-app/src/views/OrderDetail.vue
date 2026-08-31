@@ -225,6 +225,9 @@ const isPickup = computed(() => order.value?.shippingMethod === 'pickup_at_wareh
 const orderTotal = computed(() => Number(order.value?.totalAmountValue ?? order.value?.totalAmount ?? 0));
 const paid = computed(() => Number(order.value?.paidAmount ?? 0));
 const orderCode = computed(() => order.value?.orderCode || order.value?.order_code || '');
+const creditPolicyWarnings = computed(() =>
+  Array.isArray(order.value?.creditPolicyWarnings) ? order.value.creditPolicyWarnings : [],
+);
 
 // ── Trạng thái xuất VAT (quy trình anh Philip chốt 24/8/2026) ──────────
 const VAT_LABEL = {
@@ -1254,6 +1257,15 @@ async function saveStageDocs() {
         <!-- Ghi chú theo từng bước -->
         <div v-if="nextStep.to === 'confirmed'" class="text-sm text-ink-secondary mb-3">
           Xác nhận đơn <span class="font-mono font-semibold">{{ orderCode }}</span> đã đủ sản phẩm và có sale phụ trách.
+        </div>
+        <div
+          v-if="nextStep.to === 'confirmed' && creditPolicyWarnings.length"
+          class="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3"
+        >
+          <div v-for="warning in creditPolicyWarnings" :key="warning">
+            ⚠️ {{ warning }}
+          </div>
+          <div class="mt-1 font-semibold">Sale vẫn có thể xác nhận đơn.</div>
         </div>
         <div
           v-else-if="nextStep.to === 'packing'"
