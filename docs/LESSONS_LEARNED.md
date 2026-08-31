@@ -195,8 +195,8 @@ bước) thì mở đúng mục trong
 
 ## 📱 Điện thoại (sale-app)
 
-- **Chính sách công nợ là cảnh báo mềm, không phải cửa chặn đơn.** Sale vẫn được tạo và xác nhận đơn
-  khi khách chưa có hạn mức, vượt hạn mức hoặc vượt số ngày; chỉ thiếu hàng/thông tin vận hành mới chặn.
+- **Chính sách công nợ không tham gia luồng lên đơn.** Không cảnh báo và không chặn
+  theo hạn mức/số ngày; chỉ thiếu hàng hoặc thiếu thông tin vận hành mới chặn sale.
 
 - **iOS huỷ cú bấm ở thanh nav sát mép dưới.** 27/8 anh báo không ấn được tab Sản phẩm / Đơn hàng.
   3 thứ cộng lại: `<button>` + `@click` bị iOS huỷ khi ngón trượt nhẹ; không có `touch-action: manipulation`
