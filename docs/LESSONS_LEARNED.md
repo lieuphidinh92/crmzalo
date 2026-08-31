@@ -27,6 +27,9 @@ bước) thì mở đúng mục trong
   `import_cost IS NULL` · `import_cost <> round(import_cost)` ·
   `import_cost < 10% giá bán thấp nhất`.
 - **Doanh thu tính lãi gộp dùng số CÓ VAT** (registry đã gồm VAT đầu vào).
+- **SQL parameter không dùng chung cho cột khác kiểu.** Một `$n` gán đồng thời
+  vào `numeric` và `double precision` gây PostgreSQL `42P08`; tách placeholder
+  hoặc cast tường minh, và luôn bọc script sửa production trong transaction.
 
 ## 📦 Tồn kho
 
