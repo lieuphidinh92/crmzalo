@@ -7,6 +7,7 @@
  * - Cadence progress (per-week aggregates by category) for dashboard
  */
 import { prisma } from '../../shared/database/prisma-client.js';
+import { Prisma } from '@prisma/client';
 
 export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'skipped';
 export type TaskSource = 'auto' | 'recurring' | 'manual';
@@ -284,7 +285,9 @@ export async function markDone(
       completionNote: completionNote ?? null,
       metadata: metadataPatch
         ? ({ ...(task.metadata as object), ...metadataPatch } as object)
-        : task.metadata,
+        : task.metadata === null
+          ? Prisma.JsonNull
+          : task.metadata,
     },
     include: { category: true, contact: true },
   });

@@ -112,6 +112,9 @@ bước) thì mở đúng mục trong
 
 ## ⚙️ Quy trình
 
+- **AMIS Kế toán khác meInvoice:** token AMISKT dùng ClientID của đúng sản phẩm
+  AMIS Kế toán + access_code lấy trong Actapp + org_company_code. MISA có thể
+  nhúng lại access_code sai vào ErrorMessage → luôn che secret trước khi log/trả lỗi.
 - **1 việc / 1 phiên.** Phiên dài làm mọi lượt sau chậm dần vì phải nạp lại toàn
   bộ hội thoại. Xong 1 việc → `/clear`.
 - `main` và `feature/sale-app-nhom1` **đã DIVERGED**: backend + CRM → `feature`;

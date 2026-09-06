@@ -27,6 +27,16 @@ import {
   toNumber,
 } from './order-service.js';
 import { uploadToStorage, extForMime, storageConfigured } from '../../shared/storage/supabase-storage.js';
+import {
+  amisAccountingConfigState,
+  getAmisAccountingCompanyInfo,
+} from './amis-accounting-client.js';
+import {
+  createMissingAmisVatCatalogs,
+  getAmisVatPreflight,
+  submitAmisVatExport,
+} from './amis-vat-service.js';
+import { config } from '../../config/index.js';
 
 /**
  * Quyền LÀM HOÁ ĐƠN VAT (anh Philip chốt 24/8/2026).
@@ -107,6 +117,101 @@ async function recomputeVat(tx: Prisma.TransactionClient, orderId: string): Prom
 
 export async function vatRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
+
+  // ── AMIS Kế toán / Actapp ───────────────────────────────────────────────
+  // Tách rõ kiểm tra kết nối, preflight và tạo danh mục; chưa endpoint nào ở
+  // đây được phép tự đánh dấu Order là “đã xuất”.
+  app.get('/api/v1/vat/amis/config', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = reqUser(request);
+    if (!canIssueVatInvoice(user)) {
+      return reply.status(403).send({ error: 'Bạn không có quyền làm hóa đơn.' });
+    }
+    return amisAccountingConfigState();
+  });
+
+  app.post('/api/v1/vat/amis/test-connection', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      if (!canIssueVatInvoice(user)) {
+        return reply.status(403).send({ error: 'Bạn không có quyền làm hóa đơn.' });
+      }
+      const company = await getAmisAccountingCompanyInfo();
+      return { connected: true, company };
+    } catch (err: any) {
+      logger.error('[vat:amis] Connection test failed:', err?.message || err);
+      return reply.status(err?.statusCode || 502).send({
+        error: err?.message || 'Không kết nối được AMIS Kế toán.',
+        code: err?.code || 'AMISKT_CONNECTION_ERROR',
+      });
+    }
+  });
+
+  // Kiểm tra đúng PHÁP NHÂN trên yêu cầu VAT (không dùng mã MISA ở Contact vì
+  // một khách CRM có thể xuất qua nhiều MST), SKU + tên hàng + đơn vị Actapp.
+  app.get('/api/v1/orders/:id/vat/amis/preflight', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      if (!canIssueVatInvoice(user)) {
+        return reply.status(403).send({ error: 'Bạn không có quyền làm hóa đơn.' });
+      }
+      const { id } = request.params as { id: string };
+      return await getAmisVatPreflight(id, orderScopeWhere(user));
+    } catch (err: any) {
+      logger.error('[vat:amis] Preflight failed:', err?.message || err);
+      return reply.status(err?.statusCode || 502).send({
+        error: err?.message || 'Không đối chiếu được danh mục Actapp.',
+        code: err?.code || 'AMISKT_PREFLIGHT_ERROR',
+      });
+    }
+  });
+
+  // Chỉ gọi sau khi kế toán bấm “Có, tạo trên MISA”. API MISA chạy bất đồng bộ;
+  // response này chỉ là đã nhận vào hàng đợi, TUYỆT ĐỐI chưa đánh dấu đã xuất.
+  app.post('/api/v1/orders/:id/vat/amis/create-missing', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      if (!canIssueVatInvoice(user)) {
+        return reply.status(403).send({ error: 'Bạn không có quyền tạo danh mục MISA.' });
+      }
+      const { id } = request.params as { id: string };
+      const result = await createMissingAmisVatCatalogs(id, orderScopeWhere(user));
+      return reply.status(202).send({
+        ...result,
+        message: 'MISA đã nhận yêu cầu tạo danh mục. Chưa thể xuất cho tới khi đối chiếu lại thấy đủ.',
+      });
+    } catch (err: any) {
+      logger.error('[vat:amis] Create missing catalogs failed:', err?.message || err);
+      return reply.status(err?.statusCode || 502).send({
+        error: err?.message || 'Không gửi được yêu cầu tạo danh mục lên MISA.',
+        code: err?.code || 'AMISKT_CREATE_CATALOG_ERROR',
+      });
+    }
+  });
+
+  // Gửi chứng từ bán hàng vào hàng đợi Actapp. Thành công ở đây KHÔNG đồng
+  // nghĩa đã ghi sổ: callback riêng mới được phép tạo VatInvoice.
+  app.post('/api/v1/orders/:id/vat/amis/export', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = reqUser(request);
+      if (!canIssueVatInvoice(user)) return reply.status(403).send({ error: 'Bạn không có quyền làm hóa đơn.' });
+      if (!config.amisAccountingCallbackSecret) {
+        return reply.status(503).send({ error: 'Chưa cấu hình AMISKT_CALLBACK_SECRET nên chưa thể nhận kết quả từ Actapp.' });
+      }
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as { lines?: Array<{ itemId?: string; vatRate?: number }> };
+      const lines = Array.isArray(body.lines)
+        ? body.lines.map((line) => ({ itemId: String(line.itemId || ''), vatRate: Number(line.vatRate) }))
+        : [];
+      const result = await submitAmisVatExport(id, orderScopeWhere(user), user.id, lines);
+      return reply.status(202).send({ ...result, message: 'Đã gửi sang Actapp, đang chờ MISA xác nhận.' });
+    } catch (err: any) {
+      logger.error('[vat:amis] Export failed:', err?.message || err);
+      return reply.status(err?.statusCode || 502).send({
+        error: err?.message || 'Không gửi được chứng từ sang Actapp.',
+        code: err?.code || 'AMISKT_EXPORT_ERROR',
+      });
+    }
+  });
 
   // ── GET /api/v1/vat/summary — 4 thẻ tổng hợp đầu màn "Xuất VAT" ─────────
   // Chờ xuất · Xuất một phần · Đã xuất đủ · Không xuất (số đơn + tổng tiền).
@@ -207,6 +312,11 @@ export async function vatRoutes(app: FastifyInstance): Promise<void> {
             invoiceBuyerName: true, invoiceTaxCode: true, invoiceEmail: true,
             contact: { select: { id: true, fullName: true, storeName: true, phone: true } },
             assignedSale: { select: { id: true, fullName: true } },
+            amisVatExports: {
+              where: { status: { in: ['submitting', 'pending'] } },
+              orderBy: { createdAt: 'desc' }, take: 1,
+              select: { id: true, status: true, createdAt: true },
+            },
           },
           orderBy: [{ vatRequestedAt: 'asc' }, { orderDate: 'desc' }],
           skip: (page - 1) * limit,
@@ -222,6 +332,8 @@ export async function vatRoutes(app: FastifyInstance): Promise<void> {
           totalValue,
           // Tiền CẦN xuất còn lại — cột "TIỀN CẦN XUẤT" trên bảng của kế toán.
           remainingAmount: Math.max(0, totalValue - (o.vatIssuedAmount ?? 0)),
+          amisSyncStatus: o.amisVatExports?.[0]?.status || null,
+          amisVatExports: undefined,
         };
       });
       return { orders, total, page, limit };
@@ -301,6 +413,11 @@ export async function vatRoutes(app: FastifyInstance): Promise<void> {
       // (vừa xin vừa tự duyệt) — khác hẳn endpoint gửi yêu cầu.
       if (!canIssueVatInvoice(user)) {
         return reply.status(403).send({ error: 'Chỉ kế toán/quản lý mới xác nhận đã xuất hoá đơn.' });
+      }
+      if (amisAccountingConfigState().configured) {
+        return reply.status(409).send({
+          error: 'Đã bật Actapp: không được xác nhận tay. Hãy dùng nút “Xuất trên MISA” và chờ callback thành công.',
+        });
       }
       const { id } = request.params as { id: string };
       const body = (request.body ?? {}) as {

@@ -62,3 +62,12 @@ services:
         value: https://sale.halo.com.vn
       - key: NOTIFY_ENABLED                 # đặt 'false' để tắt mọi thông báo ra ngoài
         value: 'true'
+      # ── MISA AMIS Kế toán Open API / Actapp ─────────────────────────────
+      - key: AMISKT_CLIENT_ID
+        sync: false
+      - key: AMISKT_ACCESS_CODE             # lấy trong AMIS Kế toán bằng tài khoản quản trị
+        sync: false
+      - key: AMISKT_ORG_COMPANY_CODE        # mã ổn định do HaloVN tự đặt cho kết nối
+        sync: false
+      - key: AMISKT_CALLBACK_SECRET         # chuỗi ngẫu nhiên riêng để bảo vệ URL callback
+        sync: false

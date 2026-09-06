@@ -9,6 +9,7 @@ import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { logger } from '../../shared/utils/logger.js';
+import { logCompliance } from '../../shared/utils/compliance-logger.js';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 

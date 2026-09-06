@@ -299,7 +299,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // Aggregate quantity per productId within scope.
-      const grouped: any[] = await prisma.orderItem.groupBy({
+      const grouped = await prisma.orderItem.groupBy({
         by: ['productId'],
         where: { order: orderWhere, productId: { not: null } },
         _sum: { quantity: true, lineTotal: true },
@@ -1017,7 +1017,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         if (user.role === 'member') {
           orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
         }
-        const grouped: any[] = await prisma.order.groupBy({
+        const grouped = await prisma.order.groupBy({
           by: ['contactId'],
           where: orderWhere,
           _sum: { debtAmountValue: true },
@@ -1089,7 +1089,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           contactId: { in: pageIds },
           status: { in: COUNTABLE_STATUSES },
         };
-        const grouped: any[] = await prisma.order.groupBy({
+        const grouped = await prisma.order.groupBy({
           by: ['contactId'],
           where: revWhere,
           _sum: { totalAmountValue: true },
@@ -1106,7 +1106,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         }
         // PR4 — revenue 60 ngày (cùng status + cutoff order_date)
         const cutoff60d = new Date(Date.now() - 60 * 86400_000);
-        const grouped60d: any[] = await prisma.order.groupBy({
+        const grouped60d = await prisma.order.groupBy({
           by: ['contactId'],
           where: { ...revWhere, orderDate: { gte: cutoff60d } },
           _sum: { totalAmountValue: true },
@@ -1126,7 +1126,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
             debtAmountValue: { gt: 0 },
             status: { notIn: ['cancelled', 'returned'] },
           };
-          const debtGrouped: any[] = await prisma.order.groupBy({
+          const debtGrouped = await prisma.order.groupBy({
             by: ['contactId'],
             where: debtWhere,
             _sum: { debtAmountValue: true },
@@ -1233,7 +1233,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         if (user.role === 'member') {
           orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
         }
-        const grouped: any[] = await prisma.order.groupBy({
+        const grouped = await prisma.order.groupBy({
           by: ['contactId'],
           where: orderWhere,
           _sum: { debtAmountValue: true },
@@ -1283,7 +1283,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           contactId: { in: pageIds },
           status: { in: COUNTABLE_STATUSES },
         };
-        const grouped: any[] = await prisma.order.groupBy({
+        const grouped = await prisma.order.groupBy({
           by: ['contactId'],
           where: revWhere,
           _sum: { totalAmountValue: true },
@@ -1299,7 +1299,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           }
         }
         const cutoff60d = new Date(Date.now() - 60 * 86400_000);
-        const grouped60d: any[] = await prisma.order.groupBy({
+        const grouped60d = await prisma.order.groupBy({
           by: ['contactId'],
           where: { ...revWhere, orderDate: { gte: cutoff60d } },
           _sum: { totalAmountValue: true },
@@ -1317,7 +1317,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
           debtAmountValue: { gt: 0 },
           status: { notIn: ['cancelled', 'returned'] },
         };
-        const debtGrouped: any[] = await prisma.order.groupBy({
+        const debtGrouped = await prisma.order.groupBy({
           by: ['contactId'],
           where: debtWhere,
           _sum: { debtAmountValue: true },
@@ -1855,7 +1855,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         if (user.role === 'member') {
           orderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
         }
-        const grouped: any[] = await prisma.orderItem.groupBy({
+        const grouped = await prisma.orderItem.groupBy({
           by: ['productId'],
           where: { order: orderWhere, productId: { not: null } },
           _sum: { quantity: true },
@@ -1991,7 +1991,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         if (user.role === 'member') {
           salesOrderWhere.OR = [{ assignedSaleId: user.id }, { createdByUserId: user.id }];
         }
-        const salesGrouped: any[] = await prisma.orderItem.groupBy({
+        const salesGrouped = await prisma.orderItem.groupBy({
           by: ['productId'],
           where: { order: salesOrderWhere, productId: { in: pageProductIds } },
           _sum: { lineTotal: true, quantity: true },
@@ -2321,7 +2321,7 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
       const { from, to } = periodRange(period);
 
       const baseWhere = scopedOrderWhere(user);
-      const grouped: any[] = await prisma.order.groupBy({
+      const grouped = await prisma.order.groupBy({
         by: ['contactId'],
         where: { ...baseWhere, orderDate: { gte: from, lt: to } },
         _sum: { totalAmount: true },

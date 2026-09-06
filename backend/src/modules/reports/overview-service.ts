@@ -15,6 +15,7 @@
  * table yet per Session-1 plan.
  */
 import { prisma } from '../../shared/database/prisma-client.js';
+import type { Prisma } from '@prisma/client';
 
 export interface OverviewFilters {
   from: Date;
@@ -53,14 +54,14 @@ export function brandFromSku(sku: string): 'Manhae' | 'Bioisland' | 'Neubria' | 
 
 /** Order date filter: prefer orderDate, fall back to createdAt. Also
  * gates by status so draft/cancelled never inflate revenue numbers. */
-function orderInWindowWhere(from: Date, to: Date) {
+function orderInWindowWhere(from: Date, to: Date): Prisma.OrderWhereInput {
   return {
     status: { in: [...COUNTABLE_ORDER_STATUSES] },
     OR: [
       { orderDate: { gte: from, lt: to } },
       { orderDate: null, createdAt: { gte: from, lt: to } },
     ],
-  } as const;
+  };
 }
 
 /** Apply optional saleId scope through `order.assignedSaleId` — i.e. who
@@ -68,12 +69,12 @@ function orderInWindowWhere(from: Date, to: Date) {
  * contact is decoupled because the same contact can be served by
  * multiple sales over time, and MISA-imported contacts default-own to
  * Admin while orders carry the real sale_id.) */
-function withSaleScope<T extends Record<string, unknown>>(
-  where: T,
+function withSaleScope(
+  where: Prisma.OrderWhereInput,
   saleId?: string | null,
-): T {
+): Prisma.OrderWhereInput {
   if (!saleId) return where;
-  return { ...where, assignedSaleId: saleId } as T;
+  return { ...where, assignedSaleId: saleId };
 }
 
 /** Day-resolution diff in the Vietnam timezone, regardless of how the
@@ -684,7 +685,7 @@ export async function getTopCustomers(
     // Cutoff anchors on `today` (not filters.to) — "at risk" is a real-time
     // health check on the customer base, decoupled from the date filter
     // pill. (See getAtRiskCustomers for the same convention.)
-    const groups = (await prisma.order.groupBy({
+    const rawGroups = await prisma.order.groupBy({
       by: ['contactId'],
       where: {
         orgId,
@@ -694,7 +695,8 @@ export async function getTopCustomers(
       _sum: { totalAmount: true },
       _max: { orderDate: true, createdAt: true },
       having: { totalAmount: { _sum: { gte: AT_RISK_LIFETIME_VND } } },
-    })) as Array<{
+    });
+    const groups = rawGroups as Array<{
       contactId: string;
       _sum: { totalAmount: number | null };
       _max: { orderDate: Date | null; createdAt: Date | null };
@@ -755,20 +757,23 @@ export async function getTopCustomers(
   }
 
   // revenue | resale | profit — all rank by orders inside [from, to).
-  const orders = await prisma.order.findMany({
-    where: withSaleScope({ orgId, ...orderInWindowWhere(from, to) }, saleId),
-    select: {
-      contactId: true,
-      totalAmount: true,
-      contact: {
-        select: { fullName: true, phone: true, province: true, createdAt: true },
-      },
-      items:
-        type === 'profit'
-          ? { select: { lineTotal: true, lineCost: true } }
-          : false,
+  const orderWhere = withSaleScope({ orgId, ...orderInWindowWhere(from, to) }, saleId);
+  const baseSelect = {
+    contactId: true,
+    totalAmount: true,
+    contact: {
+      select: { fullName: true, phone: true, province: true, createdAt: true },
     },
-  });
+  } as const;
+  // Chỉ tải dòng hàng khi thực sự tính lợi nhuận. Nhánh doanh thu/đại lý cũ
+  // có thể có hàng nghìn đơn; lấy items ở đó làm báo cáo nặng lên vô ích.
+  const orders = type === 'profit'
+    ? await prisma.order.findMany({
+      where: orderWhere,
+      select: { ...baseSelect, items: { select: { lineTotal: true, lineCost: true } } },
+    })
+    : (await prisma.order.findMany({ where: orderWhere, select: baseSelect }))
+      .map((order) => ({ ...order, items: [] as Array<{ lineTotal: number; lineCost: unknown }> }));
 
   type Row = {
     contactId: string;
@@ -895,7 +900,7 @@ export async function getAtRiskCustomers(
 
   // Aggregate lifetime revenue + last order per contact, scoped to org
   // (and to assigned sale for non-admin callers).
-  const groups = (await prisma.order.groupBy({
+  const rawGroups = await prisma.order.groupBy({
     by: ['contactId'],
     where: {
       orgId,
@@ -904,7 +909,8 @@ export async function getAtRiskCustomers(
     },
     _sum: { totalAmount: true },
     _max: { orderDate: true, createdAt: true },
-  })) as Array<{
+  });
+  const groups = rawGroups as Array<{
     contactId: string;
     _sum: { totalAmount: number | null };
     _max: { orderDate: Date | null; createdAt: Date | null };

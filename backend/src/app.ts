@@ -58,6 +58,7 @@ import { searchRoutes } from './modules/search/search-routes.js';
 import { orderRoutes } from './modules/orders/order-routes.js';
 import { orderTransitionRoutes } from './modules/orders/order-transitions.js';
 import { vatRoutes } from './modules/orders/vat-routes.js';
+import { amisCallbackRoutes } from './modules/orders/amis-callback-routes.js';
 import { taxLookupRoutes } from './modules/orders/tax-lookup-routes.js';
 import { orderItemsRoutes } from './modules/orders/order-items-routes.js';
 import { orderGiftsRoutes } from './modules/orders/order-gifts-routes.js';
@@ -185,6 +186,8 @@ async function bootstrap() {
   await app.register(searchRoutes);
   await app.register(orderRoutes);
   await app.register(orderTransitionRoutes);
+  // Callback public phải đăng ký ngoài plugin vatRoutes có JWT preHandler.
+  await app.register(amisCallbackRoutes);
   await app.register(vatRoutes);
   await app.register(taxLookupRoutes);
   await app.register(orderItemsRoutes);

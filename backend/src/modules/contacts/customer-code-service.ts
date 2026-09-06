@@ -7,8 +7,7 @@
  * (làm sau khi backfill xong), Prisma sẽ là chốt cuối — đụng unique thì retry.
  */
 
-import pkg from '@prisma/client';
-const { Prisma } = pkg;
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../shared/database/prisma-client.js';
 
 const PREFIX = 'KH';
@@ -38,7 +37,7 @@ export function formatCustomerCode(n: number): string {
  */
 export async function getNextCustomerCode(
   orgId: string,
-  tx?: any,
+  tx?: Prisma.TransactionClient,
 ): Promise<string> {
   const client = tx ?? prisma;
   // Lấy mã max hiện có trong org. Cast text → int khi match `KH\d+` để sort

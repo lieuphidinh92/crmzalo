@@ -25,6 +25,7 @@ model Organization {
   settings            AppSetting[]
   orders              Order[]
   vatInvoices         VatInvoice[]
+  amisVatExports      AmisVatExportAttempt[]
   quickReplyTemplates QuickReplyTemplate[]
   tasks               Task[]
   recurringTaskRules  RecurringTaskRule[]
@@ -61,46 +62,47 @@ model Team {
 
 // CRM user with role-based access
 model User {
-  id           String   @id @default(uuid())
-  orgId        String   @map("org_id")
-  teamId       String?  @map("team_id")
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  fullName     String   @map("full_name")
-  avatarUrl    String?  @map("avatar_url")
-  birthDate    DateTime? @db.Date @map("birth_date")
-  role         String   @default("member") // owner, admin, member
+  id               String    @id @default(uuid())
+  orgId            String    @map("org_id")
+  teamId           String?   @map("team_id")
+  email            String    @unique
+  passwordHash     String    @map("password_hash")
+  fullName         String    @map("full_name")
+  avatarUrl        String?   @map("avatar_url")
+  birthDate        DateTime? @map("birth_date") @db.Date
+  role             String    @default("member") // owner, admin, member
   // Nhân sự vận hành (giao hàng, đối soát chứng từ, kho) cần xem ĐƠN của cả công
   // ty nhưng KHÔNG được xem giá vốn/lãi gộp. Trước đây 2 việc này dùng chung
   // điều kiện role=owner|admin nên muốn cho xem full đơn là buộc phải cấp admin
   // → lộ lãi. Cờ này tách riêng: chỉ mở PHẠM VI đơn, tiền vẫn khoá theo role.
   // Anh Philip chốt 4/8/2026 cho Thạch Quang Huy (giao hàng) + Mai Hiền (đối soát).
-  canViewAllOrders Boolean @default(false) @map("can_view_all_orders")
+  canViewAllOrders Boolean   @default(false) @map("can_view_all_orders")
   // Quyền LÀM HOÁ ĐƠN VAT — tách riêng khỏi canViewAllOrders (anh Philip chốt
   // 24/8/2026). Lý do: Huy giao hàng có canViewAllOrders để xem đơn đi giao,
   // KHÔNG phải để xác nhận hoá đơn. Cùng tinh thần "tách quyền phạm vi khỏi
   // quyền nghiệp vụ". owner/admin luôn có; member phải bật cờ này (chị Mai Hiền).
-  canIssueVat      Boolean @default(false) @map("can_issue_vat")
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  canIssueVat      Boolean   @default(false) @map("can_issue_vat")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  org              Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  team             Team?               @relation(fields: [teamId], references: [id])
+  org              Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  team             Team?                  @relation(fields: [teamId], references: [id])
   zaloAccounts     ZaloAccount[]
   zaloAccess       ZaloAccountAccess[]
-  assignedContacts Contact[]           @relation("AssignedContacts")
+  assignedContacts Contact[]              @relation("AssignedContacts")
   appointments     Appointment[]
-  repliedMessages  Message[]           @relation("RepliedMessages")
+  repliedMessages  Message[]              @relation("RepliedMessages")
   activityLogs     ActivityLog[]
-  vatInvoices      VatInvoice[]        @relation("IssuedVatInvoices")
-  createdOrders    Order[]             @relation("CreatedOrders")
-  saleOrders       Order[]             @relation("AssignedSaleOrders")
-  mktOrders        Order[]             @relation("MktOwnerOrders")
-  assignedTasks    Task[]              @relation("AssignedTasks")
+  vatInvoices      VatInvoice[]           @relation("IssuedVatInvoices")
+  amisVatExports   AmisVatExportAttempt[] @relation("RequestedAmisVatExports")
+  createdOrders    Order[]                @relation("CreatedOrders")
+  saleOrders       Order[]                @relation("AssignedSaleOrders")
+  mktOrders        Order[]                @relation("MktOwnerOrders")
+  assignedTasks    Task[]                 @relation("AssignedTasks")
   learningProgress LearningProgress[]
-  careLogs         ContactCareLog[]    @relation("CareLogsCreated")
-  apiKeys          ApiKey[]            @relation("ApiKeyOwner")
+  careLogs         ContactCareLog[]       @relation("CareLogsCreated")
+  apiKeys          ApiKey[]               @relation("ApiKeyOwner")
 
   @@map("users")
 }
@@ -221,16 +223,20 @@ model Contact {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  org           Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  assignedUser  User?             @relation("AssignedContacts", fields: [assignedUserId], references: [id])
-  conversations Conversation[]
-  appointments  Appointment[]
-  orders        Order[]
-  stageHistory  StageHistory[]
-  tasks         Task[]
-  careLogs      ContactCareLog[]
+  org              Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignedUser     User?             @relation("AssignedContacts", fields: [assignedUserId], references: [id])
+  conversations    Conversation[]
+  appointments     Appointment[]
+  orders           Order[]
+  stageHistory     StageHistory[]
+  tasks            Task[]
+  careLogs         ContactCareLog[]
   customerPayments CustomerPayment[]
 
+  // Chặn trùng SĐT trong cùng org. NULL được phép nhiều (KH chưa xin SĐT)
+  // — PostgreSQL unique cho phép multiple NULLs by default. Áp sau khi
+  // backfill: dedup (merge nhóm trùng) + normalize (chuẩn 10 số bắt đầu 0).
+  @@unique([orgId, phone], map: "contacts_org_id_phone_unique")
   @@index([orgId, customerType])
   @@index([orgId, stage])
   @@index([orgId, province])
@@ -239,10 +245,6 @@ model Contact {
   @@index([orgId, customerCode])
   @@index([orgId, customerRank])
   @@index([orgId, birthday])
-  // Chặn trùng SĐT trong cùng org. NULL được phép nhiều (KH chưa xin SĐT)
-  // — PostgreSQL unique cho phép multiple NULLs by default. Áp sau khi
-  // backfill: dedup (merge nhóm trùng) + normalize (chuẩn 10 số bắt đầu 0).
-  @@unique([orgId, phone], map: "contacts_org_id_phone_unique")
   @@map("contacts")
 }
 
@@ -328,14 +330,14 @@ model SaleScoreConfig {
 // `enableBackfill` is a safety flag; the backfill endpoint refuses to
 // touch the DB unless an admin has flipped this to true at least once.
 model SaleAppPricingConfig {
-  id              String   @id @default(uuid())
-  orgId           String   @unique @map("org_id")
-  costMarkupPct   Decimal  @default(25) @map("cost_markup_pct") @db.Decimal(6, 2)
-  tierDelta       Decimal  @default(5000) @map("tier_delta") @db.Decimal(15, 2)
-  enableBackfill  Boolean  @default(false) @map("enable_backfill")
-  lastBackfillAt  DateTime? @map("last_backfill_at")
-  updatedBy       String?  @map("updated_by")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id             String    @id @default(uuid())
+  orgId          String    @unique @map("org_id")
+  costMarkupPct  Decimal   @default(25) @map("cost_markup_pct") @db.Decimal(6, 2)
+  tierDelta      Decimal   @default(5000) @map("tier_delta") @db.Decimal(15, 2)
+  enableBackfill Boolean   @default(false) @map("enable_backfill")
+  lastBackfillAt DateTime? @map("last_backfill_at")
+  updatedBy      String?   @map("updated_by")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@map("sale_app_pricing_config")
 }
@@ -664,10 +666,11 @@ model Order {
   vatSkippedAt         DateTime? @map("vat_skipped_at")
   vatSkippedById       String?   @map("vat_skipped_by")
 
-  vatInvoices          VatInvoice[]
+  vatInvoices    VatInvoice[]
+  amisVatExports AmisVatExportAttempt[]
 
   // Người giới thiệu đơn/khách (free text — có thể là đại lý, CTV, hoặc tên ngoài).
-  referrerName     String? @map("referrer_name")
+  referrerName String? @map("referrer_name")
 
   // Stage timestamps
   confirmedAt DateTime? @map("confirmed_at")
@@ -685,12 +688,12 @@ model Order {
   legacyCost Boolean @default(false) @map("legacy_cost")
   // ──────────────────────────────────────────────────────────────────
 
-  org          Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  contact      Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  createdBy    User                @relation("CreatedOrders", fields: [createdByUserId], references: [id])
-  assignedSale User?               @relation("AssignedSaleOrders", fields: [assignedSaleId], references: [id])
-  mktOwner     User?               @relation("MktOwnerOrders", fields: [mktOwnerId], references: [id])
-  conversation Conversation?       @relation(fields: [conversationId], references: [id])
+  org          Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy    User          @relation("CreatedOrders", fields: [createdByUserId], references: [id])
+  assignedSale User?         @relation("AssignedSaleOrders", fields: [assignedSaleId], references: [id])
+  mktOwner     User?         @relation("MktOwnerOrders", fields: [mktOwnerId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
   items        OrderItem[]
   gifts        OrderGift[]
 
@@ -724,8 +727,8 @@ model Order {
 ///   not_issued (chưa ai yêu cầu) → requested (chờ kế toán xuất)
 ///   → partial (xuất chưa đủ tiền) → issued (đủ) · hoặc skipped (không xuất).
 model VatInvoice {
-  id     String @id @default(uuid())
-  orgId  String @map("org_id")
+  id      String @id @default(uuid())
+  orgId   String @map("org_id")
   orderId String @map("order_id")
 
   invoiceNumber String   @map("invoice_number") // số hoá đơn trên phần mềm hoá đơn
@@ -749,6 +752,36 @@ model VatInvoice {
   @@index([orgId, orderId])
   @@index([orgId, createdAt])
   @@map("vat_invoices")
+}
+
+/// Một lần CRM gửi chứng từ bán hàng sang AMIS Kế toán. API AMIS nhận bất đồng
+/// bộ nên phải lưu trạng thái bền vững: response 202 chỉ là đã vào hàng đợi;
+/// callback thành công mới được tạo VatInvoice và chuyển Order sang `issued`.
+model AmisVatExportAttempt {
+  id               String    @id @default(uuid())
+  orgId            String    @map("org_id")
+  orderId          String    @map("order_id")
+  orgRefId         String    @unique @map("org_refid")
+  orgRefNo         String    @map("org_refno")
+  status           String    @default("submitting") // submitting | pending | processing | succeeded | failed
+  expectedAmount   Int       @map("expected_amount")
+  payloadHash      String    @map("payload_hash")
+  expectedSnapshot Json      @map("expected_snapshot")
+  misaRefId        String?   @map("misa_refid")
+  misaRefNo        String?   @map("misa_refno")
+  errorMessage     String?   @map("error_message")
+  requestedById    String?   @map("requested_by")
+  completedAt      DateTime? @map("completed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  requestedBy User?        @relation("RequestedAmisVatExports", fields: [requestedById], references: [id])
+
+  @@index([orgId, orderId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("amis_vat_export_attempts")
 }
 
 model OrderItem {
@@ -847,15 +880,15 @@ model InventoryBatch {
   importOrderId   String?   @map("import_order_id")
   supplierId      String?   @map("supplier_id")
 
-  org         Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  product     Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
-  warehouse   Warehouse           @relation(fields: [warehouseId], references: [id])
-  orderItems  OrderItem[]
-  orderGifts  OrderGift[]
-  movements   InventoryMovement[]
-  importOrder ImportOrder?        @relation(fields: [importOrderId], references: [id])
-  supplier    Supplier?           @relation(fields: [supplierId], references: [id])
-  fifoUsages  OrderItemBatch[]
+  org            Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  product        Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse      Warehouse           @relation(fields: [warehouseId], references: [id])
+  orderItems     OrderItem[]
+  orderGifts     OrderGift[]
+  movements      InventoryMovement[]
+  importOrder    ImportOrder?        @relation(fields: [importOrderId], references: [id])
+  supplier       Supplier?           @relation(fields: [supplierId], references: [id])
+  fifoUsages     OrderItemBatch[]
   stocktakeItems StocktakeItem[]
 
   @@unique([orgId, productId, batchCode])
@@ -1127,19 +1160,19 @@ model Supplier {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // ── Công nợ NCC — thông tin thanh toán & liên hệ ──────────────────
-  paymentTermDays Int       @default(30) @map("payment_term_days")  // hạn TT mặc định (ngày)
-  bankName        String?   @map("bank_name")
-  bankAccount     String?   @map("bank_account")
-  bankHolder      String?   @map("bank_holder")
-  taxCode         String?   @map("tax_code")
-  email           String?
-  phone           String?
-  address         String?
-  notes           String?
+  paymentTermDays     Int     @default(30) @map("payment_term_days") // hạn TT mặc định (ngày)
+  bankName            String? @map("bank_name")
+  bankAccount         String? @map("bank_account")
+  bankHolder          String? @map("bank_holder")
+  taxCode             String? @map("tax_code")
+  email               String?
+  phone               String?
+  address             String?
+  notes               String?
   // Thông tin công ty / người đại diện (dùng cho hợp đồng & công nợ NCC)
-  companyName         String? @map("company_name")          // tên công ty đầy đủ (name = tên gợi nhớ)
-  representative      String? @map("representative")         // người đại diện
-  representativeTitle String? @map("representative_title")   // chức vụ người đại diện
+  companyName         String? @map("company_name") // tên công ty đầy đủ (name = tên gợi nhớ)
+  representative      String? @map("representative") // người đại diện
+  representativeTitle String? @map("representative_title") // chức vụ người đại diện
   // ──────────────────────────────────────────────────────────────────
 
   org              Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -1176,22 +1209,22 @@ model ImportOrder {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   // ── Công nợ NCC tracking (Session Supplier Debt) ──────────────────
-  paymentStatus  String    @default("unpaid") @map("payment_status")    // unpaid | partial | paid
+  paymentStatus  String    @default("unpaid") @map("payment_status") // unpaid | partial | paid
   paidAmount     Decimal   @default(0) @map("paid_amount") @db.Decimal(15, 2)
   debtAmount     Decimal   @default(0) @map("debt_amount") @db.Decimal(15, 2)
   paymentDueDate DateTime? @map("payment_due_date") @db.Date
   // ──────────────────────────────────────────────────────────────────
 
   // ── Phiếu nhập kiểu POS (warehouse + phí/chiết khấu/VAT/cọc) ───────
-  warehouseId    String?  @map("warehouse_id")                            // kho nhập (null = kho mặc định)
-  shippingFee    Decimal  @default(0) @map("shipping_fee") @db.Decimal(15, 2)
-  discountType   String   @default("amount") @map("discount_type")        // amount | percent
-  discountValue  Decimal  @default(0) @map("discount_value") @db.Decimal(15, 2) // % hoặc VND tuỳ type
-  discountAmount Decimal  @default(0) @map("discount_amount") @db.Decimal(15, 2) // VND đã quy đổi
-  vatRate        Int      @default(0) @map("vat_rate")                     // % VAT (0/5/8/10...)
-  vatAmount      Decimal  @default(0) @map("vat_amount") @db.Decimal(15, 2)
-  grandTotal     Decimal  @default(0) @map("grand_total") @db.Decimal(15, 2) // cần thanh toán
-  depositAmount  Decimal  @default(0) @map("deposit_amount") @db.Decimal(15, 2) // đặt cọc khi nhập
+  warehouseId    String? @map("warehouse_id") // kho nhập (null = kho mặc định)
+  shippingFee    Decimal @default(0) @map("shipping_fee") @db.Decimal(15, 2)
+  discountType   String  @default("amount") @map("discount_type") // amount | percent
+  discountValue  Decimal @default(0) @map("discount_value") @db.Decimal(15, 2) // % hoặc VND tuỳ type
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(15, 2) // VND đã quy đổi
+  vatRate        Int     @default(0) @map("vat_rate") // % VAT (0/5/8/10...)
+  vatAmount      Decimal @default(0) @map("vat_amount") @db.Decimal(15, 2)
+  grandTotal     Decimal @default(0) @map("grand_total") @db.Decimal(15, 2) // cần thanh toán
+  depositAmount  Decimal @default(0) @map("deposit_amount") @db.Decimal(15, 2) // đặt cọc khi nhập
   // ──────────────────────────────────────────────────────────────────
 
   org       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -1241,17 +1274,17 @@ model ImportOrderItem {
 // recorded, the parent ImportOrder's paidAmount/debtAmount/paymentStatus
 // are re-synced atomically.
 model SupplierPayment {
-  id             String   @id @default(uuid())
-  orgId          String   @map("org_id")
-  importOrderId  String   @map("import_order_id")
-  supplierId     String   @map("supplier_id")
-  amount         Decimal  @db.Decimal(15, 2)
-  paymentMethod  String?  @map("payment_method")  // bank_transfer | cash | other
-  paymentDate    DateTime @map("payment_date") @db.Date
-  reference      String?  // số UNC / số séc / mã giao dịch
-  note           String?
-  createdById    String?  @map("created_by")
-  createdAt      DateTime @default(now()) @map("created_at")
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  importOrderId String   @map("import_order_id")
+  supplierId    String   @map("supplier_id")
+  amount        Decimal  @db.Decimal(15, 2)
+  paymentMethod String?  @map("payment_method") // bank_transfer | cash | other
+  paymentDate   DateTime @map("payment_date") @db.Date
+  reference     String? // số UNC / số séc / mã giao dịch
+  note          String?
+  createdById   String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   importOrder ImportOrder  @relation(fields: [importOrderId], references: [id], onDelete: Cascade)
@@ -1465,11 +1498,9 @@ model ApiKey {
 
 /**
  * Nhật ký gửi thông báo ra NGOÀI hệ thống (Lark, email, sau này Zalo OA...).
- *
  * MỖI DÒNG = 1 LẦN GỬI TỚI 1 KÊNH (không phải 1 "notification" chung). Cố ý
  * gộp notification + delivery vào 1 bảng cho V1: 2 tin/ngày, tách 2 bảng chỉ
  * thêm join mà không trả lời thêm được câu hỏi nào.
- *
  * `dedupeKey` + @@unique là CÁCH DUY NHẤT chống gửi trùng — không dùng biến
  * trong RAM. Chặn được cả 3 ca thật: cron lỡ chạy 2 lần · Render deploy chồng
  * 2 instance vài chục giây lúc rolling update · người bấm nút "gửi thử" lại.
@@ -1477,16 +1508,16 @@ model ApiKey {
  * qua), gửi xong mới UPDATE status='sent'.
  */
 model NotificationLog {
-  id       String @id @default(uuid())
-  orgId    String @map("org_id")
+  id        String @id @default(uuid())
+  orgId     String @map("org_id")
   // Sự kiện nghiệp vụ, vd 'VAT_PENDING'. Module nghiệp vụ chỉ phát ra tên này,
   // KHÔNG biết gì về Lark/email.
-  event    String
+  event     String
   // Nhóm người nhận, vd 'ACCOUNTING'. Ai nhận / kênh nào do notification-config
   // quyết định, không hardcode trong module nghiệp vụ.
-  audience String
+  audience  String
   // 'lark' | 'email' | 'log' (và các kênh thêm sau).
-  channel  String
+  channel   String
   // Khoá chống trùng, vd 'vat_pending:2026-08-27:10h'. Ngày giờ trong khoá
   // PHẢI tính theo giờ VN bằng Intl — toISOString() lấy giờ UTC, trước 07:00
   // sáng VN sẽ ra ngày hôm trước và gửi trùng (đúng bẫy đã dính 4 lần).

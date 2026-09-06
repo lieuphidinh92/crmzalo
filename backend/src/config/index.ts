@@ -44,4 +44,14 @@ export const config = {
   // Gốc link trong thông báo. Màn "Xuất VAT" của kế toán nằm ở SALE-APP
   // (sale.halo.com.vn/vat/requested), KHÔNG phải CRM.
   saleAppUrl: (process.env.SALE_APP_URL || 'https://sale.halo.com.vn').replace(/\/+$/, ''),
+
+  // MISA AMIS Kế toán Open API (Actapp). access_code là thông tin nhạy cảm,
+  // chỉ đọc từ env và không bao giờ trả về frontend/log.
+  amisAccountingBaseUrl: (process.env.AMISKT_BASE_URL || 'https://developer.misa.vn/apis').replace(/\/+$/, ''),
+  amisAccountingClientId: process.env.AMISKT_CLIENT_ID || '',
+  amisAccountingAccessCode: process.env.AMISKT_ACCESS_CODE || '',
+  amisAccountingOrgCompanyCode: process.env.AMISKT_ORG_COMPANY_CODE || '',
+  // Bí mật riêng của URL callback. Không dùng Client ID/access code làm secret
+  // vì URL có thể xuất hiện trong log của MISA hoặc reverse proxy.
+  amisAccountingCallbackSecret: process.env.AMISKT_CALLBACK_SECRET || '',
 };

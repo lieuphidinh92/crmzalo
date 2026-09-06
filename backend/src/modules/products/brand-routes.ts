@@ -241,9 +241,10 @@ export async function brandRoutes(app: FastifyInstance): Promise<void> {
 
         const created = await prisma.supplier.create({
           data: {
+            ...data,
             orgId: user.orgId,
             active: true,
-            ...data,
+            name: String(data.name),
           },
           include: { _count: { select: { brands: true } } },
         });

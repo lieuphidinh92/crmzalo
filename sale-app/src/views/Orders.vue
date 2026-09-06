@@ -22,7 +22,7 @@ import {
 } from '../composables/useOrderRow';
 import MobileOrderCard from '../components/MobileOrderCard.vue';
 import VatRequestDrawer from '../components/VatRequestDrawer.vue';
-import VatConfirmDialog from '../components/VatConfirmDialog.vue';
+import MisaExportDialog from '../components/MisaExportDialog.vue';
 import VatViewDialog from '../components/VatViewDialog.vue';
 import { useScreenCache } from '../composables/use-screen-cache';
 
@@ -218,13 +218,13 @@ const vatOptions = [
 // (../composables/useOrderRow.js) để 2 nơi không lệch nhau.
 // Đơn đang mở popup xem hoá đơn đã ký (null = đóng).
 const vatViewOrder = ref(null);
-// Đơn kế toán đang xác nhận đã xuất (null = đóng popup).
-const vatConfirmOrder = ref(null);
+// Đơn kế toán đang gửi sang MISA Actapp (null = đóng popup).
+const misaOrder = ref(null);
 
 /**
  * Bấm vào nhãn VAT trên dòng đơn:
  *  - Kế toán/quản lý + đơn đang chờ xuất (hoặc mới xuất một phần) → mở thẳng
- *    popup "Xác nhận đã xuất" của chính đơn đó (anh Philip chốt 24/8/2026),
+ *    popup "Xuất trên MISA" của chính đơn đó,
  *    khỏi phải sang màn Quản lý Xuất VAT tìm lại.
  *  - Còn lại (sale, hoặc đơn đã xong) → mở form yêu cầu để xem/sửa.
  */
@@ -232,7 +232,7 @@ function onVatClick(o) {
   const st = o.vatInvoiceStatus;
   if (isVatDesk.value && (st === 'requested' || st === 'partial')) {
     const total = Number(totalOf(o)) || 0;
-    vatConfirmOrder.value = {
+    misaOrder.value = {
       id: o.id,
       orderCode: o.orderCode,
       // Popup cần biết còn phải xuất bao nhiêu; danh sách đơn không có sẵn cột
@@ -865,11 +865,11 @@ const pageNumbers = computed(() => {
     <!-- Popup xem hoá đơn đã ký + tải về gửi khách -->
     <VatViewDialog :order="vatViewOrder" @close="vatViewOrder = null" />
 
-    <!-- Popup "Xác nhận đã xuất VAT" (kế toán bấm thẳng từ dòng đơn) -->
-    <VatConfirmDialog
-      :order="vatConfirmOrder"
-      @close="vatConfirmOrder = null"
-      @saved="onVatSaved"
+    <!-- Popup xuất VAT qua MISA Actapp (kế toán bấm thẳng từ dòng đơn) -->
+    <MisaExportDialog
+      :order="misaOrder"
+      @close="misaOrder = null"
+      @queued="onVatSaved"
     />
   </div>
 </template>

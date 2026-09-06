@@ -77,7 +77,7 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
 
   // ── GET /api/v1/supplier-debt/suppliers/:id/balance ───────────────────
   // Công nợ hiện tại của 1 NCC (nhẹ — cho form nhập hàng hiển thị nhanh).
-  app.get(
+  app.get<{ Params: { id: string } }>(
     '/api/v1/supplier-debt/suppliers/:id/balance',
     { preHandler: requireRole('owner', 'admin') },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -257,10 +257,10 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
 
   // ── GET /api/v1/supplier-debt/suppliers/:id ───────────────────────────
   // Chi tiết 1 NCC: thông tin NCC + các đơn nhập còn nợ + lịch sử TT
-  app.get(
+  app.get<{ Params: { id: string } }>(
     '/api/v1/supplier-debt/suppliers/:id',
     { preHandler: requireRole('owner', 'admin') },
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    async (request, reply) => {
       try {
         const { orgId } = reqUser(request);
         const supplierId = request.params.id;
@@ -438,22 +438,19 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
   //   paymentDate?: string (YYYY-MM-DD, default today)
   //   reference?: string
   //   note?: string
-  app.post(
+  app.post<{
+    Body: {
+      importOrderId: string;
+      amount: number;
+      paymentMethod?: string;
+      paymentDate?: string;
+      reference?: string;
+      note?: string;
+    };
+  }>(
     '/api/v1/supplier-debt/payments',
     { preHandler: requireRole('owner', 'admin') },
-    async (
-      request: FastifyRequest<{
-        Body: {
-          importOrderId: string;
-          amount: number;
-          paymentMethod?: string;
-          paymentDate?: string;
-          reference?: string;
-          note?: string;
-        };
-      }>,
-      reply: FastifyReply,
-    ) => {
+    async (request, reply) => {
       try {
         const user = reqUser(request);
         const { importOrderId, amount, paymentMethod, paymentDate, reference, note } =
@@ -528,15 +525,12 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
   //   from?: string (YYYY-MM-DD)
   //   to?: string (YYYY-MM-DD)
   //   limit?: number (default 50)
-  app.get(
+  app.get<{
+    Querystring: { supplierId?: string; from?: string; to?: string; limit?: string };
+  }>(
     '/api/v1/supplier-debt/payments',
     { preHandler: requireRole('owner', 'admin') },
-    async (
-      request: FastifyRequest<{
-        Querystring: { supplierId?: string; from?: string; to?: string; limit?: string };
-      }>,
-      reply: FastifyReply,
-    ) => {
+    async (request, reply) => {
       try {
         const { orgId } = reqUser(request);
         const { supplierId, from, to, limit } = request.query;
@@ -593,10 +587,10 @@ export async function supplierDebtRoutes(app: FastifyInstance): Promise<void> {
 
   // ── DELETE /api/v1/supplier-debt/payments/:id ─────────────────────────
   // Xóa 1 bản ghi thanh toán (correction). Re-syncs import order debt.
-  app.delete(
+  app.delete<{ Params: { id: string } }>(
     '/api/v1/supplier-debt/payments/:id',
     { preHandler: requireRole('owner', 'admin') },
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    async (request, reply) => {
       try {
         const { orgId } = reqUser(request);
         const paymentId = request.params.id;

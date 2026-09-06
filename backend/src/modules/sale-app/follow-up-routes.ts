@@ -99,7 +99,7 @@ export async function followUpRoutes(app: FastifyInstance): Promise<void> {
 
         // Tổng đã mua (doanh thu lifetime, chỉ đơn countable) cho các KH này.
         const ids = contacts.map((c: any) => c.id);
-        const grouped: any[] = await prisma.order.groupBy({
+        const grouped = await prisma.order.groupBy({
           by: ['contactId'],
           where: {
             orgId: user.orgId,
