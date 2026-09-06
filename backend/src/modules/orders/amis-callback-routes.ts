@@ -8,6 +8,25 @@ import { toNumber } from './order-service.js';
 
 type Row = Record<string, any>;
 
+type MisaCallbackResponse = {
+  Success: boolean;
+  ErrorMessage: string;
+  ErrorCode?: 'InvalidParam' | 'Exception';
+};
+
+/** MISA chỉ coi callback đã nhận khi response đúng contract PascalCase này. */
+export function misaCallbackResponse(
+  success: boolean,
+  errorMessage = '',
+  errorCode?: MisaCallbackResponse['ErrorCode'],
+): MisaCallbackResponse {
+  return {
+    Success: success,
+    ...(errorCode ? { ErrorCode: errorCode } : {}),
+    ErrorMessage: errorMessage,
+  };
+}
+
 function sameSecret(received: string): boolean {
   const expected = config.amisAccountingCallbackSecret;
   if (!expected || received.length !== expected.length) return false;
@@ -139,13 +158,16 @@ export async function amisCallbackRoutes(app: FastifyInstance): Promise<void> {
     if (!sameSecret(secret)) return reply.status(404).send({ error: 'Not found' });
     try {
       const rows = callbackRows(request.body);
-      if (!rows.length) return reply.status(400).send({ error: 'Callback không có dữ liệu.' });
-      const results = await Promise.all(rows.map(handleCallback));
-      return { received: true, succeeded: results.filter((v) => v === 'succeeded').length,
-        failed: results.filter((v) => v === 'failed').length, ignored: results.filter((v) => v === 'ignored').length };
+      if (!rows.length) {
+        return reply.send(misaCallbackResponse(false, 'Callback không có dữ liệu.', 'InvalidParam'));
+      }
+      await Promise.all(rows.map(handleCallback));
+      return reply.send(misaCallbackResponse(true));
     } catch (err) {
       logger.error('[vat:amis] Callback failed:', err);
-      return reply.status(500).send({ error: 'Không xử lý được callback AMIS.' });
+      return reply.status(500).send(
+        misaCallbackResponse(false, 'Không xử lý được callback AMIS.', 'Exception'),
+      );
     }
   });
 }
