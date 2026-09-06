@@ -15,6 +15,7 @@ import { api } from '../api/client';
 import { useAuthStore } from '../stores/auth';
 import { formatVND, formatDateTimeVN, formatDateVN } from '../composables/useFormat';
 import MisaExportDialog from '../components/MisaExportDialog.vue';
+import VatConfirmDialog from '../components/VatConfirmDialog.vue';
 import { useScreenCache } from '../composables/use-screen-cache';
 
 const route = useRoute();
@@ -46,6 +47,7 @@ const saleId = ref('');
 const search = ref('');
 const dateFilter = ref(''); // '' | today | 7 | 30
 const misaOrder = ref(null);
+const confirmOrder = ref(null);
 
 // Đơn đang mở hộp "không xuất" (nhập lý do) — null = đóng.
 const skipOrder = ref(null);
@@ -302,15 +304,24 @@ const statusLabelVat = {
                 </div>
               </td>
               <td class="px-3 py-2.5 whitespace-nowrap text-right">
-                <button
-                  v-if="o.vatInvoiceStatus === 'requested' || o.vatInvoiceStatus === 'partial'"
-                  @click="misaOrder = o"
-                  :disabled="Boolean(o.amisSyncStatus)"
-                  class="h-8 px-3 rounded-lg border border-royal-700 text-royal-700 text-[12px] font-semibold hover:bg-royal-50 transition"
-                  :class="o.amisSyncStatus ? 'opacity-60 cursor-not-allowed' : ''"
-                >
-                  {{ o.amisSyncStatus ? 'Đang đồng bộ' : 'Xuất trên MISA' }}
-                </button>
+                <template v-if="o.vatInvoiceStatus === 'requested' || o.vatInvoiceStatus === 'partial'">
+                  <button
+                    @click="misaOrder = o"
+                    :disabled="Boolean(o.amisSyncStatus)"
+                    class="h-8 px-3 rounded-lg border border-royal-700 text-royal-700 text-[12px] font-semibold hover:bg-royal-50 transition"
+                    :class="o.amisSyncStatus ? 'opacity-60 cursor-not-allowed' : ''"
+                  >
+                    {{ o.amisSyncStatus ? 'Đang đồng bộ' : 'Xuất trên MISA' }}
+                  </button>
+                  <button
+                    @click="confirmOrder = o"
+                    :disabled="Boolean(o.amisSyncStatus)"
+                    class="ml-1.5 h-8 px-3 rounded-lg border border-line-300 text-ink-secondary text-[12px] font-semibold hover:border-royal-700 hover:text-royal-700 transition"
+                    :class="o.amisSyncStatus ? 'opacity-60 cursor-not-allowed' : ''"
+                  >
+                    Xác nhận đã xuất
+                  </button>
+                </template>
                 <button
                   v-else-if="o.vatInvoiceStatus === 'skipped'"
                   @click="undoSkip(o)"
@@ -351,6 +362,7 @@ const statusLabelVat = {
     </div>
 
     <MisaExportDialog :order="misaOrder" @close="misaOrder = null" @queued="onSaved" />
+    <VatConfirmDialog :order="confirmOrder" @close="confirmOrder = null" @saved="onSaved" />
 
     <!-- Hộp nhập lý do "Không xuất" — bắt buộc có lý do để sau còn truy được -->
     <transition name="fade">
