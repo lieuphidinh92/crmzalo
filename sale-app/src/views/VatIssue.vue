@@ -14,7 +14,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api/client';
 import { useAuthStore } from '../stores/auth';
 import { formatVND, formatDateTimeVN, formatDateVN } from '../composables/useFormat';
-import VatConfirmDialog from '../components/VatConfirmDialog.vue';
+import MisaExportDialog from '../components/MisaExportDialog.vue';
 import { useScreenCache } from '../composables/use-screen-cache';
 
 const route = useRoute();
@@ -45,7 +45,7 @@ const staff = ref([]);
 const saleId = ref('');
 const search = ref('');
 const dateFilter = ref(''); // '' | today | 7 | 30
-const confirmOrder = ref(null);
+const misaOrder = ref(null);
 
 // Đơn đang mở hộp "không xuất" (nhập lý do) — null = đóng.
 const skipOrder = ref(null);
@@ -195,7 +195,7 @@ const statusLabelVat = {
     <div>
       <h1 class="text-xl font-bold text-ink-primary">Xuất VAT – Danh sách chờ xử lý</h1>
       <p class="text-[13px] text-ink-secondary mt-0.5">
-        Sale gửi yêu cầu → kế toán xuất hoá đơn trên phần mềm hoá đơn → quay lại đây xác nhận.
+        Sale gửi yêu cầu → kế toán kiểm tra thuế → CRM gửi sang MISA Actapp → tự xác nhận khi đồng bộ thành công.
       </p>
     </div>
 
@@ -304,10 +304,12 @@ const statusLabelVat = {
               <td class="px-3 py-2.5 whitespace-nowrap text-right">
                 <button
                   v-if="o.vatInvoiceStatus === 'requested' || o.vatInvoiceStatus === 'partial'"
-                  @click="confirmOrder = o"
+                  @click="misaOrder = o"
+                  :disabled="Boolean(o.amisSyncStatus)"
                   class="h-8 px-3 rounded-lg border border-royal-700 text-royal-700 text-[12px] font-semibold hover:bg-royal-50 transition"
+                  :class="o.amisSyncStatus ? 'opacity-60 cursor-not-allowed' : ''"
                 >
-                  Xác nhận đã xuất
+                  {{ o.amisSyncStatus ? 'Đang đồng bộ' : 'Xuất trên MISA' }}
                 </button>
                 <button
                   v-else-if="o.vatInvoiceStatus === 'skipped'"
@@ -348,7 +350,7 @@ const statusLabelVat = {
       </div>
     </div>
 
-    <VatConfirmDialog :order="confirmOrder" @close="confirmOrder = null" @saved="onSaved" />
+    <MisaExportDialog :order="misaOrder" @close="misaOrder = null" @queued="onSaved" />
 
     <!-- Hộp nhập lý do "Không xuất" — bắt buộc có lý do để sau còn truy được -->
     <transition name="fade">
