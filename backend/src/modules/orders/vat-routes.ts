@@ -414,11 +414,6 @@ export async function vatRoutes(app: FastifyInstance): Promise<void> {
       if (!canIssueVatInvoice(user)) {
         return reply.status(403).send({ error: 'Chỉ kế toán/quản lý mới xác nhận đã xuất hoá đơn.' });
       }
-      if (amisAccountingConfigState().configured) {
-        return reply.status(409).send({
-          error: 'Đã bật Actapp: không được xác nhận tay. Hãy dùng nút “Xuất trên MISA” và chờ callback thành công.',
-        });
-      }
       const { id } = request.params as { id: string };
       const body = (request.body ?? {}) as {
         invoiceNumber?: string; invoiceDate?: string; amount?: number | string;
@@ -435,6 +430,16 @@ export async function vatRoutes(app: FastifyInstance): Promise<void> {
       if (!order) return reply.status(404).send({ error: 'Order not found' });
       if (order.vatSkippedAt) {
         return reply.status(400).send({ error: 'Đơn đang ở nhóm "Không xuất" — bỏ đánh dấu trước đã.' });
+      }
+
+      // Manual confirmation remains available while the MISA workflow is paused.
+      // Do not race an export that is still waiting for its callback.
+      const pendingExport = await prisma.amisVatExportAttempt.findFirst({
+        where: { orderId: order.id, status: { in: ['submitting', 'pending', 'processing'] } },
+        select: { id: true },
+      });
+      if (pendingExport) {
+        return reply.status(409).send({ error: 'Đơn đang chờ MISA xử lý. Cần đối chiếu kết quả trước khi xác nhận thủ công để tránh ghi nhận trùng.' });
       }
 
       const invoiceNumber = body.invoiceNumber?.trim();
