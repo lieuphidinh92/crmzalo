@@ -121,3 +121,10 @@ Nền thông báo dùng chung + việc đầu tiên: nhắc kế toán xuất VA
   → phải cherry-pick sang nhánh **`main`**, không chỉ push `feature/sale-app-nhom1`.
 - ⏳ **Chưa xảy ra lần nào với dữ liệu THẬT:** 1070 đơn đều `not_issued`, chưa sale nào bấm "Yêu cầu
   xuất VAT". Lần đầu có đơn thật, 10:00 hoặc 16:00 sẽ tự bắn.
+
+## Session 16/09/2026 — đã hoàn tất
+
+- VAT đang dùng luồng thủ công; nút xuất MISA đã ẩn và backend cho phép xác nhận kèm file. Đã deploy cả hai nhánh đúng dịch vụ.
+- Đã bàn giao 56 khách cho nhân viên mới, đối chiếu 1.231 đơn không đổi doanh số lịch sử.
+- Đã đối soát một khách theo xác nhận chủ doanh nghiệp: đảo 4 phiếu nhập thừa, sửa liên kết phiếu thu; công nợ và sổ chi tiết bằng 0.
+- Các thay đổi dữ liệu đã thực hiện trên production, không chạy lại khi deploy. Chi tiết không chứa dữ liệu nhạy cảm: [SESSION_2026-09-16](archive/SESSION_2026-09-16.md).

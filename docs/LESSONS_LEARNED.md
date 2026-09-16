@@ -236,3 +236,9 @@ bước) thì mở đúng mục trong
   chặn `/api/*` trả dữ liệu giả, đo `scrollWidth > clientWidth` (tràn ngang) và `getBoundingClientRect`
   của mọi `<button>` (< 44px). Nhớ **profile riêng mỗi lần** — service worker PWA cache `/api` làm lần sau
   nhận dữ liệu cũ.
+
+## Đối soát và bàn giao — 16/09/2026
+
+- Bàn giao khách chỉ đổi `contacts.assigned_user_id`; kiểm đơn thiếu `assigned_sale_id` trước vì một số báo cáo suy người bán từ chủ khách. Đối chiếu đơn trước–sau để giữ doanh số lịch sử.
+- Sổ công nợ âm có thể đồng thời do phiếu trùng, phân bổ trỏ tới đơn đã mất và phiếu thu của đơn đã huỷ. Đảo có audit, kiểm từng liên kết; không ép số dư về 0 khi chưa xác minh khoản thu.
+- Cấu hình MISA không được tự khoá luồng xác nhận thủ công đã được chủ doanh nghiệp cho phép; chỉ chặn đơn đang có lượt đồng bộ chưa kết thúc.
