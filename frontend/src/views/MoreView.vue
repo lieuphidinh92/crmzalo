@@ -59,6 +59,7 @@ const groups: { label: string; items: MoreItem[] }[] = [
     label: 'Kết nối & vận hành',
     items: [
       { title: 'Tài khoản Zalo', icon: 'mdi-cellphone-link', path: '/zalo-accounts' },
+      { title: 'Doanh số nhân viên', icon: 'mdi-account-cash-outline', path: '/reports/order-sales' },
       { title: 'Báo cáo', icon: 'mdi-chart-arc', path: '/reports' },
       { title: 'Báo cáo Resale', icon: 'mdi-trending-up', path: '/reports/resale' },
       { title: 'Pipeline cơ hội', icon: 'mdi-pipe', path: '/reports/pipeline' },

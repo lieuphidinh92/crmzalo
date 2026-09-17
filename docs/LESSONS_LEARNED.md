@@ -242,3 +242,8 @@ bước) thì mở đúng mục trong
 - Bàn giao khách chỉ đổi `contacts.assigned_user_id`; kiểm đơn thiếu `assigned_sale_id` trước vì một số báo cáo suy người bán từ chủ khách. Đối chiếu đơn trước–sau để giữ doanh số lịch sử.
 - Sổ công nợ âm có thể đồng thời do phiếu trùng, phân bổ trỏ tới đơn đã mất và phiếu thu của đơn đã huỷ. Đảo có audit, kiểm từng liên kết; không ép số dư về 0 khi chưa xác minh khoản thu.
 - Cấu hình MISA không được tự khoá luồng xác nhận thủ công đã được chủ doanh nghiệp cho phép; chỉ chặn đơn đang có lượt đồng bộ chưa kết thúc.
+
+## Báo cáo doanh số nhân viên — 17/09/2026
+
+- Tổng báo cáo và bảng nhân viên phải tính trên toàn bộ bộ lọc, không chỉ trang đơn đang xem; dùng cùng snapshot và phạm vi `orderScopeWhere`.
+- Doanh số theo ngày đặt đơn (fallback ngày tạo), mốc VN với đầu cuối exclusive; đã thu/còn nợ là trạng thái hiện tại của đơn trong kỳ, không phải dòng tiền thu trong kỳ.

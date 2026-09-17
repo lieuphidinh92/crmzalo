@@ -31,6 +31,7 @@ import { startCustomerRankCron } from './modules/contacts/customer-rank-cron.js'
 import { startAppointmentReminder } from './modules/contacts/appointment-reminder.js';
 import { dashboardRoutes } from './modules/dashboard/dashboard-routes.js';
 import { reportRoutes } from './modules/dashboard/report-routes.js';
+import { orderSalesRoutes } from './modules/reports/order-sales-routes.js';
 import { resaleReportRoutes } from './modules/reports/resale-routes.js';
 import { pipelineRoutes } from './modules/reports/pipeline-routes.js';
 import { ceoDashboardRoutes } from './modules/dashboard/ceo-routes.js';
@@ -163,6 +164,7 @@ async function bootstrap() {
   await app.register(dashboardRoutes);
   await app.register(reportRoutes);
   await app.register(resaleReportRoutes);
+  await app.register(orderSalesRoutes);
   await app.register(pipelineRoutes);
   await app.register(ceoDashboardRoutes);
   await app.register(salePerformanceRoutes);

@@ -19,6 +19,8 @@
       </button>
     </header>
 
+    <v-btn to="/reports/order-sales" prepend-icon="mdi-account-cash-outline" variant="tonal" class="mb-4">Doanh số nhân viên &amp; chi tiết đơn</v-btn>
+
     <!-- Filter pills (horizontal scroll on mobile) -->
     <div class="filter-bar">
       <div class="filter-pills">
