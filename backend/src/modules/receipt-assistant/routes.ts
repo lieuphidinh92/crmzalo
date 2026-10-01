@@ -96,6 +96,7 @@ async function buildPreview(db: any, u: any, d: any, input: any) {
         if (!target)
             fail('Phiếu thu không thuộc khách hoặc đã đảo');
         warnings.push('Chỉ bổ sung ảnh; giữ nguyên số tiền, ngày thu và công nợ của phiếu.');
+        if (amount > num(target.amount)) warnings.push('Tổng tiền trên bill bổ sung lớn hơn số tiền phiếu đang chọn. Kiểm tra lại để tránh gắn nhầm chứng từ.');
     }
     const canConfirm = !dup.some((x: any) => input.action !== 'attach' || x.paymentId !== target?.id) && (input.action !== 'collect' || amount <= s.debt);
     if (input.action === 'collect' && amount > s.debt)

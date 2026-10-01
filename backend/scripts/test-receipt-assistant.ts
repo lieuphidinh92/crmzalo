@@ -52,6 +52,9 @@ try {
     assert.equal((await call('/preview',{...malformed,bills:[null]})).status,400);
     const restored=(await call('/drafts/'+input.draftId)).data;
     assert.equal(restored.status,'confirmed');assert.equal(restored.contactId,c.id);assert.equal(restored.bills[0].fields.amount,400);
+    const oversizedAttach=await call('/preview',{...await make(500),action:'attach',paymentId:confirmed.data.paymentId});
+    assert(oversizedAttach.data.warnings.some((w:string)=>w.includes('lớn hơn số tiền phiếu')));
+    assert.equal(oversizedAttach.data.canConfirm,true);
     const a = await make(100);
     a.action = 'attach';
     const ap = await call('/preview', { ...a, paymentId: confirmed.data.paymentId });
@@ -91,7 +94,35 @@ try {
     invalid.bills[0].paymentDate = '2026-02-30';
     assert.equal((await call('/preview', invalid)).status, 400);
     assert.throws(() => validateBillFields([{ amount: 1.2, paymentDate: '2026-09-25' }], 'collect'));
-    console.log('PASS: fresh authorization, org scope, FIFO collection, exact retry, duplicate ref/hash block, expired draft, malformed bill, draft restore, attach preserving money/URLs, advance separate, stale snapshot, overpayment, concurrent retry, strict dates/money');
+    // Exercise the original manual endpoint concurrently with assistant confirmation.
+    const crossContact=await prisma.contact.create({data:{orgId:org.id,fullName:'Cross-path QA'}});
+    const crossOrder=await prisma.order.create({data:{orgId:org.id,contactId:crossContact.id,createdByUserId:user.id,orderCode:'QA-'+randomUUID(),totalAmount:1000,totalAmountValue:1000,debtAmountValue:1000,paidAmount:0,status:'completed'}});
+    const crossInput={...await make(300),contactId:crossContact.id};
+    const crossPreview=await call('/preview',crossInput);
+    const [assistantResponse,manualResponse]=await Promise.all([
+      call('/confirm',{draftId:crossInput.draftId,previewToken:crossPreview.data.previewToken}),
+      app.inject({method:'POST',url:'/api/v1/sale-app/debt/payments',headers,payload:{contactId:crossContact.id,amount:200,paymentMethod:'cash',paymentDate:'2026-09-25'}})
+    ]);
+    assert([200,409].includes(assistantResponse.status),JSON.stringify(assistantResponse));
+    assert([201,409].includes(manualResponse.statusCode),manualResponse.body);
+    assert(assistantResponse.status===200||manualResponse.statusCode===201);
+    const successfulAmount=(assistantResponse.status===200?300:0)+(manualResponse.statusCode===201?200:0);
+    const crossBalance=await prisma.order.findUniqueOrThrow({where:{id:crossOrder.id}});
+    assert.equal(Number(crossBalance.paidAmount),successfulAmount,'No cross-path lost paid amount');
+    assert.equal(Number(crossBalance.debtAmountValue),1000-successfulAmount,'Debt matches committed receipts');
+    const crossPayments=await prisma.customerPayment.findMany({where:{orgId:org.id,contactId:crossContact.id}});
+    assert.equal(crossPayments.reduce((n,p)=>n+Number(p.amount),0),successfulAmount);
+    const reverseTarget=crossPayments[0];
+    const reverse=()=>app.inject({method:'POST',url:'/api/v1/sale-app/debt/payments/'+reverseTarget.id+'/reverse',headers,payload:{}});
+    const reversals=await Promise.all([reverse(),reverse()]);
+    assert.equal(reversals.filter(r=>r.statusCode===200).length,1,'Exactly one reversal commits');
+    assert(reversals.every(r=>[200,400,409].includes(r.statusCode)),reversals.map(r=>r.body).join(' '));
+    const afterReverse=await prisma.order.findUniqueOrThrow({where:{id:crossOrder.id}});
+    assert.equal(Number(afterReverse.paidAmount),successfulAmount-Number(reverseTarget.amount));
+    assert.equal(Number(afterReverse.debtAmountValue),1000-successfulAmount+Number(reverseTarget.amount));
+    const reverseAgain=await reverse();assert.equal(reverseAgain.statusCode,400,'Already reversed stays 400');
+    const missingReverse=await app.inject({method:'POST',url:'/api/v1/sale-app/debt/payments/'+randomUUID()+'/reverse',headers,payload:{}});assert.equal(missingReverse.statusCode,404);
+    console.log('PASS: fresh authorization, org scope, FIFO collection, exact retry, duplicate ref/hash block, expired draft, malformed bill, draft restore, attach preserving money/URLs, advance separate, stale snapshot, overpayment, concurrent retry, legacy/assistant cross-path concurrency, double reversal protection, strict dates/money');
 }
 finally {
     await prisma.receiptAssistantEvidence.deleteMany({ where: { orgId: org.id } });

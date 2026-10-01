@@ -353,6 +353,8 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
         if (!contact) return reply.status(404).send({ error: 'Khách hàng không tồn tại' });
 
         const result = await prisma.$transaction(async (tx) => {
+          // Coordinate with assistant confirmation and manual reversals.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${user.orgId}), hashtext('receipt-assistant'))`;
           // Các đơn còn nợ, CŨ NHẤT trước (FIFO theo ngày đặt).
           const orders = await tx.order.findMany({
             where: {
@@ -404,7 +406,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             },
           });
           return { paymentId: payment.id, allocations, remainingDebt: totalDebt - amount };
-        });
+        }, { isolationLevel: 'Serializable', timeout: 20000 });
 
         return reply.status(201).send({
           payment_id: result.paymentId,
@@ -412,6 +414,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           remaining_debt: result.remainingDebt,
         });
       } catch (err: any) {
+        if (err?.code === 'P2034' || (err?.code === 'P2010' && /40001|40P01/.test(String(err.message)))) return reply.status(409).send({ error: 'Công nợ vừa được cập nhật. Vui lòng tải lại và thử lại.', code: 'STALE_DEBT' });
         if (err?.statusCode === 400) return reply.status(400).send({ error: err.message });
         logger.error('[sale-app] debt/payments create error:', err);
         return reply.status(500).send({ error: 'Lỗi ghi nhận thanh toán' });
@@ -428,17 +431,19 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
       try {
         const user = reqUser(request);
         const { id } = request.params as { id: string };
-        const pay = await prisma.customerPayment.findFirst({
-          where: { id, orgId: user.orgId },
-          select: { id: true, reversedAt: true, allocations: true },
-        });
-        if (!pay) return reply.status(404).send({ error: 'Không tìm thấy phiếu thu' });
-        if (pay.reversedAt) return reply.status(400).send({ error: 'Phiếu thu này đã được đảo trước đó' });
-
         await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${user.orgId}), hashtext('receipt-assistant'))`;
+          // Lock and re-read inside the transaction: simultaneous reversals cannot restore debt twice.
+          await tx.$queryRaw`SELECT id FROM customer_payments WHERE id = ${id} AND org_id = ${user.orgId} FOR UPDATE`;
+          const pay = await tx.customerPayment.findFirst({
+            where: { id, orgId: user.orgId },
+            select: { id: true, reversedAt: true, allocations: true },
+          });
+          if (!pay) throw Object.assign(new Error('Không tìm thấy phiếu thu'), { statusCode: 404 });
+          if (pay.reversedAt) throw Object.assign(new Error('Phiếu thu này đã được đảo trước đó'), { statusCode: 400 });
           for (const a of (pay.allocations as any[]) || []) {
-            const o = await tx.order.findUnique({
-              where: { id: a.orderId },
+            const o = await tx.order.findFirst({
+              where: { id: a.orderId, orgId: user.orgId },
               select: { paidAmount: true, debtAmountValue: true },
             });
             if (!o) continue;
@@ -457,10 +462,12 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             where: { id },
             data: { reversedAt: new Date(), reversedById: user.id },
           });
-        });
+        }, { isolationLevel: 'Serializable', timeout: 20000 });
 
         return { success: true };
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.code === 'P2034' || (err?.code === 'P2010' && /40001|40P01/.test(String(err.message)))) return reply.status(409).send({ error: 'Phiếu thu hoặc công nợ vừa thay đổi. Vui lòng tải lại và thử lại.', code: 'STALE_DEBT' });
+        if ([400, 404].includes(err?.statusCode)) return reply.status(err.statusCode).send({ error: err.message });
         logger.error('[sale-app] debt/payments reverse error:', err);
         return reply.status(500).send({ error: 'Lỗi đảo phiếu thu' });
       }

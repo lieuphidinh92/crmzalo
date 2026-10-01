@@ -30,3 +30,7 @@ Backend + CRM deploy từ `feature/sale-app-nhom1`. Sale-app commit riêng cherr
 - `scripts/test-receipt-upload.ts`: multipart thật, giới hạn ảnh, duplicate và manual fallback; lưu trữ mock, không gửi ảnh ra ngoài.
 - `scripts/test-receipt-extraction.ts`: kiểm định JSON mô hình, số nguyên VND, ngày; không gọi mô hình thật.
 - Trình duyệt: sale-app thu400.000đ từ nợ1.000.000đ ->600.000đ; CRM bổ sung ảnh vào phiếu374.000đ giữ nguyên tiền/nợ; dùng dữ liệu localhost riêng. Build ba app.
+
+## Trạng thái triển khai
+
+Schema bổ sung đã áp dụng và kiểm tra RLS trên production. Mã ứng dụng hiện chỉ commit local; tự động phê duyệt chặn push vì kho GitHub là public, đang chờ xác nhận rõ của chủ hệ thống. Chưa có cấu hình AI để kiểm thử đọc ảnh thật.
