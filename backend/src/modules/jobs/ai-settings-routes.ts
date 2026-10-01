@@ -51,9 +51,14 @@ export async function aiSettingsRoutes(app: FastifyInstance): Promise<void> {
       const { orgId } = req.user!;
       const body = req.body as Record<string, string>;
 
+      if (body.provider !== undefined && !['openai', 'claude', 'gemini', 'local'].includes(body.provider)) return reply.status(400).send({ error: 'Nhà cung cấp AI không hợp lệ' });
+      if (body.provider) {
+        const existing = await prisma.appSetting.findUnique({ where: { orgId_settingKey: { orgId, settingKey: 'ai_provider' } } });
+        if (existing?.valuePlain && existing.valuePlain !== body.provider && !body.apiKey?.trim()) return reply.status(400).send({ error: 'Khi đổi dịch vụ AI, vui lòng nhập khóa của dịch vụ mới.' });
+      }
       const updates: Array<Promise<void>> = [];
       if (body.provider !== undefined) updates.push(upsertSetting(orgId, 'ai_provider', body.provider));
-      if (body.apiKey !== undefined) updates.push(upsertSetting(orgId, 'ai_api_key', body.apiKey));
+      if (typeof body.apiKey === 'string' && body.apiKey.trim()) updates.push(upsertSetting(orgId, 'ai_api_key', body.apiKey.trim()));
       if (body.model !== undefined) updates.push(upsertSetting(orgId, 'ai_model', body.model));
       if (body.baseUrl !== undefined) updates.push(upsertSetting(orgId, 'ai_base_url', body.baseUrl));
 
@@ -83,8 +88,8 @@ export async function aiSettingsRoutes(app: FastifyInstance): Promise<void> {
         preview: response.content.slice(0, 200),
       };
     } catch (err) {
-      logger.error('[ai-settings] Test error:', err);
-      return reply.status(400).send({ error: String(err) });
+      logger.warn('[ai-settings] AI connection test failed');
+      return reply.status(400).send({ error: 'Không kết nối được AI. Kiểm tra dịch vụ, khóa API và tên mô hình đã lưu.' });
     }
   });
 }

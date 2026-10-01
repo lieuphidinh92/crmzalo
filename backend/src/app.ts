@@ -86,6 +86,7 @@ import { cadenceRoutes } from './modules/cadence/cadence-routes.js';
 import { pancakeWebhookRoutes } from './modules/webhooks/pancake-routes.js';
 import { overviewReportRoutes } from './modules/reports/overview-routes.js';
 import { saleAppRoutes } from './modules/sale-app/sale-app-routes.js';
+import { receiptAssistantRoutes } from './modules/receipt-assistant/routes.js';
 import { debtRoutes } from './modules/sale-app/debt-routes.js';
 import { followUpRoutes } from './modules/sale-app/follow-up-routes.js';
 import { productEditRoutes } from './modules/sale-app/product-edit-routes.js';
@@ -212,6 +213,7 @@ async function bootstrap() {
   await app.register(overviewReportRoutes);
   await app.register(saleAppRoutes);
   await app.register(debtRoutes);
+  await app.register(receiptAssistantRoutes);
   await app.register(followUpRoutes);
   await app.register(productEditRoutes);
   await app.register(dashboardV2Routes);

@@ -205,6 +205,7 @@ const allGroups: MenuGroup[] = [
     icon: 'mdi-shopping-outline',
     items: [
       { title: 'Sản phẩm', icon: 'mdi-package-variant-closed', path: '/products' },
+      { title: 'Trợ lý thu tiền', icon: 'mdi-receipt-text-check-outline', path: '/receipt-assistant', adminOnly: true },
       { title: 'Đơn hàng', icon: 'mdi-cart-outline', path: '/orders' },
       { title: 'Nhập hàng', icon: 'mdi-truck-delivery-outline', path: '/imports', importAccess: true },
       { title: 'Quản lý kho', icon: 'mdi-warehouse', path: '/inventory' },

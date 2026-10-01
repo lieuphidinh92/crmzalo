@@ -491,6 +491,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           payments: rows.map((r) => ({
             id: r.id,
             amount: toNumber(r.amount),
+            unallocated_amount: toNumber(r.unallocatedAmount),
             payment_method: r.paymentMethod,
             payment_date: r.paymentDate,
             reference: r.reference,
@@ -553,6 +554,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           select: {
             id: true,
             amount: true,
+            unallocatedAmount: true,
             paymentDate: true,
             paymentMethod: true,
             reference: true,
@@ -611,7 +613,8 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             sort: 1,
             type: 'payment',
             code: p.reference || 'Thu tiền',
-            description: 'Thu tiền công nợ',
+            description: toNumber(p.unallocatedAmount) > 0 ? 'Khách ứng trước (chưa phân bổ)' : 'Thu tiền công nợ',
+            unallocated_amount: toNumber(p.unallocatedAmount),
             method: p.paymentMethod,
             debit: 0,
             credit,
@@ -707,6 +710,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           select: {
             id: true,
             amount: true,
+            unallocatedAmount: true,
             paymentDate: true,
             paymentMethod: true,
             reference: true,
@@ -731,7 +735,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           date: Date | string; sort: number; type: string; code: string | null;
           orderId: string | null; description: string; customer: any;
           debit: number; credit: number; method: string | null;
-          proof_urls: string[]; balance?: number; vnDate?: string;
+          proof_urls: string[]; balance?: number; vnDate?: string; unallocated_amount?: number;
         };
         const events: Ev[] = [];
         for (const o of orders) {
@@ -765,7 +769,8 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             type: 'payment',
             code: p.reference || 'Thu tiền',
             orderId: null,
-            description: 'Thu tiền công nợ',
+            description: toNumber(p.unallocatedAmount) > 0 ? 'Khách ứng trước (chưa phân bổ)' : 'Thu tiền công nợ',
+            unallocated_amount: toNumber(p.unallocatedAmount),
             customer: c ? { id: c.id, name: c.fullName, phone: c.phone, store_name: c.storeName } : null,
             debit: 0,
             credit,
@@ -831,6 +836,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           method: e.method,
           balance: e.balance,
           proof_urls: e.proof_urls,
+          unallocated_amount: e.unallocated_amount || 0,
         }));
 
         return {

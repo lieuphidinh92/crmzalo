@@ -8,7 +8,7 @@ import { ref } from 'vue';
 import { api } from '@/api/index';
 
 export interface AiSettings {
-  provider: 'claude' | 'gemini' | 'local';
+  provider: 'claude' | 'gemini' | 'openai' | 'local';
   model: string;
   baseUrl: string;
 }
@@ -20,12 +20,14 @@ export interface AiSettingsPayload extends AiSettings {
 export const PROVIDER_OPTIONS = [
   { title: 'Claude (Anthropic)', value: 'claude' },
   { title: 'Gemini (Google)', value: 'gemini' },
+  { title: 'OpenAI', value: 'openai' },
   { title: 'Local LLM', value: 'local' },
 ];
 
 export const PROVIDER_DEFAULTS: Record<string, { model: string; baseUrl: string }> = {
   claude: { model: 'claude-sonnet-4-20250514', baseUrl: '' },
-  gemini: { model: 'gemini-2.0-flash', baseUrl: '' },
+  gemini: { model: '', baseUrl: '' },
+  openai: { model: '', baseUrl: '' },
   local: { model: 'qwen3-coder:latest', baseUrl: 'https://ai.ngay.top/v1' },
 };
 

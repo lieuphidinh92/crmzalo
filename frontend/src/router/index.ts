@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 
 const routes = [
+  { path: '/receipt-assistant', name: 'ReceiptAssistant', component: () => import('@/views/ReceiptAssistantView.vue'), meta: { requiresAuth: true, receiptAssistant: true } },
   {
     path: '/login',
     name: 'Login',
@@ -239,6 +240,7 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
+  if (to.meta.receiptAssistant && !authStore.isAdmin) return next('/');
   if (to.meta.importAccess && !authStore.canManageImports) return next('/');
   next();
 });

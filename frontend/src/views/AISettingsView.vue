@@ -21,6 +21,7 @@
       <v-window-item value="ai">
         <v-card variant="outlined" :loading="aiLoading">
           <v-card-text>
+            <v-alert type="info" variant="tonal" class="mb-4">Bill tải lên Trợ lý thu tiền sẽ được gửi đến dịch vụ AI đã cấu hình để đọc thông tin. Lưu cấu hình trước khi kiểm tra kết nối.</v-alert>
             <v-row dense>
               <v-col cols="12">
                 <v-select
@@ -44,7 +45,9 @@
               <v-col cols="12">
                 <v-text-field
                   v-model="form.model"
-                  label="Model"
+                  label="Tên mô hình AI"
+                  hint="Trợ lý thu tiền cần mô hình hỗ trợ đọc ảnh. Nhập đúng tên mô hình đang được cấp quyền sử dụng."
+                  persistent-hint
                   :placeholder="PROVIDER_DEFAULTS[form.provider]?.model"
                 />
               </v-col>

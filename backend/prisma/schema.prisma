@@ -1301,6 +1301,7 @@ model SupplierPayment {
 // gạt vào đơn nào (để truy vết + đảo). Sửa nhầm = đảo bút toán (reversedAt),
 // KHÔNG xoá cứng → luôn lần ra được. Chỉ owner/admin (kế toán) được ghi.
 model CustomerPayment {
+  unallocatedAmount Decimal @default(0) @map("unallocated_amount") @db.Decimal(15, 2)
   id            String    @id @default(uuid())
   orgId         String    @map("org_id")
   contactId     String    @map("contact_id")
@@ -1546,4 +1547,32 @@ model NotificationLog {
   @@index([orgId, status, nextRetryAt])
   @@index([orgId, event, createdAt])
   @@map("notification_logs")
+}
+
+
+// Server-owned receipt drafts and immutable links. No direct Data API policies.
+model ReceiptAssistantDraft {
+  id String @id @default(uuid())
+  orgId String @map("org_id")
+  createdById String @map("created_by")
+  bills Json
+  preview Json?
+  result Json?
+  status String @default("draft")
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+  @@index([orgId, createdById])
+  @@map("receipt_assistant_drafts")
+}
+model ReceiptAssistantEvidence {
+  id String @id @default(uuid())
+  orgId String @map("org_id")
+  paymentId String @map("payment_id")
+  hash String
+  transactionRef String? @map("transaction_ref")
+  url String
+  createdAt DateTime @default(now()) @map("created_at")
+  @@unique([orgId, hash])
+  @@index([orgId, transactionRef])
+  @@map("receipt_assistant_evidence")
 }

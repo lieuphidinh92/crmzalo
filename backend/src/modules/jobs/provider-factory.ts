@@ -31,6 +31,9 @@ export async function getAIProvider(orgId: string): Promise<AIProvider> {
     case 'gemini':
       if (!apiKey) throw new Error('Gemini API key not configured');
       return new GeminiProvider(apiKey, model);
+    case 'openai':
+      if (!apiKey || !model) throw new Error('OpenAI API key and model must be configured');
+      return new LocalProvider(apiKey, 'https://api.openai.com/v1', model);
     case 'local':
       return new LocalProvider(
         apiKey || 'no-key',

@@ -52,6 +52,7 @@ const groups: { label: string; items: MoreItem[] }[] = [
   {
     label: 'Vận hành',
     items: [
+      ...(authStore.isAdmin ? [{ title: 'Trợ lý thu tiền', icon: 'mdi-receipt-text-check-outline', path: '/receipt-assistant', subtitle: 'Đọc bill, đối chiếu khách và công nợ' }] : []),
       { title: 'Việc cần làm', icon: 'mdi-checkbox-marked-circle-outline', path: '/tasks' },
     ],
   },
