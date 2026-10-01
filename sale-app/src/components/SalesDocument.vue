@@ -197,7 +197,7 @@ async function downloadImage() {
                 <td class="c">{{ it.sku }}</td>
                 <td class="name l">{{ it.name }}</td>
                 <td class="c">{{ it.unit }}</td>
-                <td></td>
+                <td style="font-size: 8pt"><div v-for="line in it.batchLines || []" :key="line">{{ line }}</div><span v-if="!it.batchLines?.length">Chưa chọn lô / HSD</span></td>
                 <td class="c">{{ it.quantity }}</td>
                 <td class="r">{{ fmt.format(it.unitPrice) }}</td>
                 <td class="r">{{ fmt.format(it.lineTotal) }}</td>
@@ -250,7 +250,7 @@ async function downloadImage() {
                 <td class="c">{{ i + 1 }}</td>
                 <td class="name l">{{ it.name }}</td>
                 <td class="c">{{ it.unit }}</td>
-                <td></td>
+                <td style="font-size: 8pt"><div v-for="line in it.batchLines || []" :key="line">{{ line }}</div><span v-if="!it.batchLines?.length">Chưa chọn lô / HSD</span></td>
                 <td class="c">{{ it.quantity }}</td>
               </tr>
               <tr v-for="n in padRows" :key="'p' + n" class="empty">

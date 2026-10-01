@@ -6,7 +6,7 @@ import { useImports } from '../composables/useImports';
 
 const router = useRouter();
 const auth = useAuthStore();
-const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+const canManageImports = computed(() => auth.canManageImports);
 
 const {
   list,
@@ -33,7 +33,7 @@ const statusFilters = [
 let debounceTimer = null;
 
 async function reloadList() {
-  if (!isAdmin.value) return;
+  if (!canManageImports.value) return;
   await loadList({
     status: status.value,
     supplierId: supplierId.value,
@@ -48,7 +48,7 @@ watch([status, supplierId, from, to], () => {
 });
 
 onMounted(async () => {
-  if (!isAdmin.value) return;
+  if (!canManageImports.value) return;
   await Promise.all([loadSuppliers(), reloadList()]);
 });
 
@@ -93,7 +93,7 @@ function createNew() {
       </div>
       <!-- Nút tạo: 44px cho ngón tay ở mobile (h-11), desktop vẫn h-10 như trước -->
       <button
-        v-if="isAdmin"
+        v-if="canManageImports"
         @click="createNew"
         aria-label="Tạo phiếu nhập"
         class="tap shrink-0 h-11 lg:h-10 px-4 rounded-btn bg-royal-700 text-white text-sm font-semibold hover:bg-royal-800 transition flex items-center gap-1.5 whitespace-nowrap"
@@ -106,13 +106,13 @@ function createNew() {
 
     <!-- Member: không có quyền -->
     <div
-      v-if="!isAdmin"
+      v-if="!canManageImports"
       class="bg-white border border-line-200 rounded-card p-8 lg:p-12 text-center"
     >
       <div class="text-5xl mb-3">🔒</div>
-      <div class="font-semibold text-ink-primary">Chức năng dành cho quản lý</div>
+      <div class="font-semibold text-ink-primary">Bạn chưa được cấp quyền nhập kho</div>
       <p class="text-xs text-ink-secondary mt-1">
-        Chỉ chủ cửa hàng / quản lý mới xem và tạo được phiếu nhập kho.
+        Liên hệ quản lý để được cấp quyền nhập kho.
       </p>
     </div>
 

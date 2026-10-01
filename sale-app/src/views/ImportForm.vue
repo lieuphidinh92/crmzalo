@@ -26,7 +26,7 @@ import { useImports } from '../composables/useImports';
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
-const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+const canManageImports = computed(() => auth.canManageImports);
 
 const {
   detail,
@@ -210,7 +210,7 @@ watch(
   () => form.supplierId,
   async (id) => {
     supplierDebt.value = null;
-    if (!id) return;
+    if (!id || !auth.isAdmin) return;
     supplierDebt.value = await loadSupplierDebt(id);
   },
 );
@@ -268,7 +268,7 @@ async function submitNewSupplier() {
 
 // ── Load dữ liệu ─────────────────────────────────────────────────────
 onMounted(async () => {
-  if (!isAdmin.value) return;
+  if (!canManageImports.value) return;
   await Promise.all([loadWarehouses(), loadSuppliers()]);
 
   if (editing.value) {
@@ -453,13 +453,13 @@ const labelCls = 'text-[12px] lg:text-[11px] uppercase tracking-wide text-ink-se
 
     <!-- Member: không có quyền -->
     <div
-      v-if="!isAdmin"
+      v-if="!canManageImports"
       class="bg-white border border-line-200 rounded-card p-12 text-center"
     >
       <div class="text-5xl mb-3">🔒</div>
-      <div class="font-semibold text-ink-primary">Chức năng dành cho quản lý</div>
+      <div class="font-semibold text-ink-primary">Bạn chưa được cấp quyền nhập kho</div>
       <p class="text-xs text-ink-secondary mt-1">
-        Chỉ chủ cửa hàng / quản lý mới tạo và sửa được phiếu nhập kho.
+        Liên hệ quản lý để được cấp quyền nhập kho.
       </p>
     </div>
 
@@ -557,12 +557,13 @@ const labelCls = 'text-[12px] lg:text-[11px] uppercase tracking-wide text-ink-se
                       v-if="filteredSuppliers.length === 0"
                       class="px-3 py-2 text-xs text-ink-disabled"
                     >
-                      Không có NCC khớp — bấm ＋ để thêm mới
+                      Không có NCC khớp — liên hệ quản lý để thêm NCC
                     </div>
                   </div>
                 </div>
 
                 <button
+                  v-if="auth.isAdmin"
                   type="button"
                   @click="openAddSupplier"
                   title="Thêm NCC mới"
@@ -829,7 +830,7 @@ const labelCls = 'text-[12px] lg:text-[11px] uppercase tracking-wide text-ink-se
             </div>
 
             <!-- Đặt cọc -->
-            <div>
+            <div v-if="auth.isAdmin">
               <div :class="labelCls">
                 Đặt cọc (đ)
                 <span v-if="(Number(form.depositAmount) || 0) > 0 && !form.supplierId" class="text-rose-500 normal-case">· cần NCC</span>
@@ -888,7 +889,7 @@ const labelCls = 'text-[12px] lg:text-[11px] uppercase tracking-wide text-ink-se
 
   <!-- ══════════ THANH ĐÁY: Lưu nháp ══════════ -->
   <div
-    v-if="isAdmin && !loadingDetail && !loadError"
+    v-if="canManageImports && !loadingDetail && !loadError"
     class="save-bar fixed inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-line-200 px-4 py-3"
   >
     <div class="max-w-[900px] mx-auto flex items-center gap-2">

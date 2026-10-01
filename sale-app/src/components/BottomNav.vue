@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useAuthStore } from '../stores/auth';
+const auth = useAuthStore();
 
 const route = useRoute();
 const router = useRouter();
@@ -15,6 +17,7 @@ const sideTabs = [
 
 // Các chức năng còn thiếu trên mobile — gom vào bảng "Xem thêm" (khớp Sidebar desktop)
 const moreItems = computed(() => [
+  ...(auth.canManageImports ? [{ name: 'imports', label: 'Nhập kho', to: '/imports', icon: 'warehouse' }] : []),
   { name: 'customers', label: 'Khách hàng', to: '/customers', icon: 'users' },
   { name: 'debt', label: 'Công nợ', to: '/debt', icon: 'wallet' },
   { name: 'follow-up', label: 'Cần chăm sóc', to: '/follow-up', icon: 'heart' },

@@ -7,7 +7,7 @@ import { useImports } from '../composables/useImports';
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
-const isAdmin = computed(() => ['owner', 'admin'].includes(auth.user?.role));
+const canManageImports = computed(() => auth.canManageImports);
 
 const {
   detail,
@@ -87,7 +87,7 @@ function warningTitle(type) {
 async function load() {
   await loadDetail(id);
   // Cảnh báo chỉ có ý nghĩa khi còn nháp (admin còn sửa được) + chỉ admin xem.
-  if (isDraft.value && isAdmin.value) {
+  if (isDraft.value && canManageImports.value) {
     await loadWarnings(id);
   } else {
     warnings.value = [];
@@ -293,7 +293,7 @@ async function doConfirm() {
       </div>
 
       <!-- Cảnh báo (chỉ khi còn nháp + admin) -->
-      <div v-if="isDraft && isAdmin && warnings.length" class="space-y-2 mb-3">
+      <div v-if="isDraft && canManageImports && warnings.length" class="space-y-2 mb-3">
         <div
           v-for="(w, i) in warnings"
           :key="(w.productId || '') + (w.type || '') + i"
@@ -323,8 +323,8 @@ async function doConfirm() {
                 <th class="text-left font-semibold py-2 px-1">Sản phẩm</th>
                 <th class="text-left font-semibold py-2 px-1">Mã lô</th>
                 <th class="text-right font-semibold py-2 px-1">SL</th>
-                <th v-if="isAdmin" class="text-right font-semibold py-2 px-1">Giá vốn</th>
-                <th v-if="isAdmin" class="text-right font-semibold py-2 px-1">Thành tiền</th>
+                <th v-if="canManageImports" class="text-right font-semibold py-2 px-1">Giá vốn</th>
+                <th v-if="canManageImports" class="text-right font-semibold py-2 px-1">Thành tiền</th>
                 <th class="text-left font-semibold py-2 px-1 whitespace-nowrap">HSD</th>
               </tr>
             </thead>
@@ -346,10 +346,10 @@ async function doConfirm() {
                 <td class="py-2 px-1 text-right font-mono text-ink-primary">
                   {{ num(line.quantity) }}<span class="text-ink-secondary"> {{ line.product?.unit || '' }}</span>
                 </td>
-                <td v-if="isAdmin" class="py-2 px-1 text-right font-mono text-ink-primary whitespace-nowrap">
+                <td v-if="canManageImports" class="py-2 px-1 text-right font-mono text-ink-primary whitespace-nowrap">
                   {{ formatVND(line.unitCost) }}
                 </td>
-                <td v-if="isAdmin" class="py-2 px-1 text-right font-mono font-semibold text-royal-700 whitespace-nowrap">
+                <td v-if="canManageImports" class="py-2 px-1 text-right font-mono font-semibold text-royal-700 whitespace-nowrap">
                   {{ formatVND(line.lineTotal) }}
                 </td>
                 <td class="py-2 px-1 whitespace-nowrap">
@@ -369,7 +369,7 @@ async function doConfirm() {
       </div>
 
       <!-- Tổng tiền (chỉ admin) -->
-      <div v-if="isAdmin" class="bg-white border border-line-200 rounded-card p-5 shadow-card mb-3">
+      <div v-if="canManageImports" class="bg-white border border-line-200 rounded-card p-5 shadow-card mb-3">
         <div class="space-y-2 text-sm">
           <div class="flex justify-between">
             <span class="text-ink-secondary">Giá trị hàng</span>
@@ -473,6 +473,7 @@ async function doConfirm() {
             Sửa
           </button>
           <button
+            v-if="auth.isAdmin"
             @click="showDelete = true; deleteError = ''"
             class="flex-1 h-11 rounded-xl border border-rose-300 text-rose-600 font-semibold hover:bg-rose-50 flex items-center justify-center gap-2"
           >
@@ -485,7 +486,7 @@ async function doConfirm() {
       </template>
 
       <!-- Sửa thông tin phiếu đã chốt (chỉ owner/admin) -->
-      <template v-if="isConfirmed && isAdmin">
+      <template v-if="isConfirmed && canManageImports">
         <button
           @click="openEdit"
           class="w-full h-11 rounded-xl border border-line-300 text-ink-primary font-semibold hover:bg-surface-50 flex items-center justify-center gap-2"
