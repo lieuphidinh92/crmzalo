@@ -20,6 +20,7 @@ const moreItems = computed(() => [
   ...(auth.canManageImports ? [{ name: 'imports', label: 'Nhập kho', to: '/imports', icon: 'warehouse' }] : []),
   { name: 'customers', label: 'Khách hàng', to: '/customers', icon: 'users' },
   { name: 'debt', label: 'Công nợ', to: '/debt', icon: 'wallet' },
+  ...(auth.isAdmin ? [{ name: 'receipt-assistant', label: 'Trợ lý thu tiền', to: '/receipt-assistant', icon: 'wallet' }] : []),
   { name: 'follow-up', label: 'Cần chăm sóc', to: '/follow-up', icon: 'heart' },
   { name: 'inventory', label: 'Tồn kho', to: '/inventory', icon: 'warehouse' },
   { name: 'promo', label: 'Khuyến mãi', to: '/promotions', icon: 'badge', hot: true },

@@ -591,8 +591,9 @@ onMounted(loadList);
 <template>
   <div class="px-4 lg:px-6 py-4 lg:py-6 max-w-[1100px] mx-auto">
     <!-- Header -->
-    <div class="mb-3">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-xl lg:text-2xl font-bold text-ink-primary">Công nợ</h1>
+      <RouterLink v-if="canRecordPayment" to="/receipt-assistant" class="min-h-11 inline-flex items-center rounded-xl bg-royal-700 px-4 text-sm font-semibold text-white">Trợ lý thu tiền</RouterLink>
     </div>
 
     <!-- Tabs lớn: Phải thu KH / Phải trả NCC -->
@@ -860,6 +861,9 @@ onMounted(loadList);
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-bold tabular-nums" :class="p.reversed ? 'text-ink-secondary line-through' : 'text-emerald-700'">
                       {{ formatVND(p.amount) }}
+                    </span>
+                    <span v-if="!p.reversed && Number(p.unallocated_amount) > 0" class="text-xs font-semibold px-2 py-1 rounded bg-blue-50 text-blue-800">
+                      Ứng trước chưa phân bổ: {{ formatVND(p.unallocated_amount) }}
                     </span>
                     <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
                       {{ methodLabel(p.payment_method) }}
