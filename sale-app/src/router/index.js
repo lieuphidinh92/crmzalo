@@ -20,6 +20,7 @@ const routes = [
       { path: 'orders/:id', name: 'order-detail', component: () => import('../views/OrderDetail.vue') },
       { path: 'customers', name: 'customers', component: () => import('../views/Customers.vue') },
       { path: 'debt', name: 'debt', component: () => import('../views/Debt.vue') },
+      { path: 'receipt-assistant', name: 'receipt-assistant', component: () => import('../views/ReceiptAssistant.vue'), meta: { adminOnly: true } },
       { path: 'follow-up', name: 'follow-up', component: () => import('../views/FollowUp.vue') },
       { path: 'inventory', name: 'inventory', component: () => import('../views/Inventory.vue') },
       { path: 'imports', name: 'imports', component: () => import('../views/ImportsList.vue'), meta: { importAccess: true } },
@@ -57,6 +58,7 @@ router.beforeEach((to) => {
     const allowed = ['owner', 'admin'].includes(u?.role) || u?.canIssueVat === true;
     if (!allowed) return { name: 'home' };
   }
+  if (to.meta.adminOnly && !auth.isAdmin) return { name: 'home' };
   if (to.meta.importAccess && !auth.canManageImports) return { name: 'home' };
   return true;
 });

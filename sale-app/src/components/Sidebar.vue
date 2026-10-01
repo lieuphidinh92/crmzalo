@@ -44,6 +44,7 @@ const navItems = computed(() => [
   { name: 'orders', label: 'Danh sách Đơn hàng', to: '/orders', icon: 'clipboard' },
   { name: 'customers', label: 'Khách hàng', to: '/customers', icon: 'users' },
   { name: 'debt', label: 'Công nợ', to: '/debt', icon: 'wallet' },
+  ...(isAdmin.value ? [{ name: 'receipt-assistant', label: 'Trợ lý thu tiền', to: '/receipt-assistant', icon: 'wallet' }] : []),
   { name: 'follow-up', label: 'Cần chăm sóc', to: '/follow-up', icon: 'heart' },
   { name: 'inventory', label: 'Tồn kho', to: '/inventory', icon: 'warehouse' },
   ...(auth.canManageImports
