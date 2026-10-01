@@ -176,8 +176,9 @@
                 <div class="font-weight-medium">{{ item.productName }}</div>
                 <div class="text-caption text-medium-emphasis font-mono">
                   {{ item.sku }}
-                  <span v-if="item.batch"> · Lô {{ item.batch.batchCode }}</span>
+
                 </div>
+                <OrderItemBatchSelector v-if="order" :order="order" :item="item" @saved="loadOrder" />
               </div>
               <div class="item-qty font-mono">
                 {{ item.quantity }} × {{ formatVND(item.unitPrice) }}
@@ -537,6 +538,7 @@ import OrderProductPickerDialog from '@/components/orders/OrderProductPickerDial
 import OrderGiftDialog from '@/components/orders/OrderGiftDialog.vue';
 import OrderPaymentSection from '@/components/orders/OrderPaymentSection.vue';
 import OrderInvoiceCard from '@/components/orders/OrderInvoiceCard.vue';
+import OrderItemBatchSelector from '@/components/orders/OrderItemBatchSelector.vue';
 import OrderDeliveryNote from '@/components/orders/OrderDeliveryNote.vue';
 
 const route = useRoute();

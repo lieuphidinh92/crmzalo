@@ -61,6 +61,7 @@ import { orderTransitionRoutes } from './modules/orders/order-transitions.js';
 import { vatRoutes } from './modules/orders/vat-routes.js';
 import { amisCallbackRoutes } from './modules/orders/amis-callback-routes.js';
 import { taxLookupRoutes } from './modules/orders/tax-lookup-routes.js';
+import { orderBatchRoutes } from './modules/orders/order-batch-routes.js';
 import { orderItemsRoutes } from './modules/orders/order-items-routes.js';
 import { orderGiftsRoutes } from './modules/orders/order-gifts-routes.js';
 import { orderPaymentRoutes } from './modules/orders/order-payment-routes.js';
@@ -193,6 +194,7 @@ async function bootstrap() {
   await app.register(vatRoutes);
   await app.register(taxLookupRoutes);
   await app.register(orderItemsRoutes);
+  await app.register(orderBatchRoutes);
   await app.register(orderGiftsRoutes);
   await app.register(orderPaymentRoutes);
   await app.register(productRoutes);

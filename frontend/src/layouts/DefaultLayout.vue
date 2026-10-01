@@ -148,6 +148,7 @@ interface MenuItem {
   icon: string;
   path: string;
   adminOnly?: boolean;
+  importAccess?: boolean;
   badge?: string;
 }
 
@@ -156,6 +157,7 @@ interface MenuGroup {
   title: string;
   icon: string;
   adminOnly?: boolean;
+  importAccess?: boolean;
   items: MenuItem[];
 }
 
@@ -204,7 +206,7 @@ const allGroups: MenuGroup[] = [
     items: [
       { title: 'Sản phẩm', icon: 'mdi-package-variant-closed', path: '/products' },
       { title: 'Đơn hàng', icon: 'mdi-cart-outline', path: '/orders' },
-      { title: 'Nhập hàng', icon: 'mdi-truck-delivery-outline', path: '/imports', adminOnly: true },
+      { title: 'Nhập hàng', icon: 'mdi-truck-delivery-outline', path: '/imports', importAccess: true },
       { title: 'Quản lý kho', icon: 'mdi-warehouse', path: '/inventory' },
       { title: 'Công nợ NCC', icon: 'mdi-bank-outline', path: '/supplier-debt', adminOnly: true },
     ],
@@ -256,7 +258,7 @@ const visibleGroups = computed(() =>
 );
 
 function visibleItemsOf(group: MenuGroup): MenuItem[] {
-  return group.items.filter((item) => !item.adminOnly || isAdmin.value);
+  return group.items.filter((item) => (!item.adminOnly || isAdmin.value) && (!item.importAccess || authStore.canManageImports));
 }
 
 const DEFAULT_OPEN = ['communication', 'customers', 'sales'];

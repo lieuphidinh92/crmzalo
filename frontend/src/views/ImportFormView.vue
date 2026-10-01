@@ -8,7 +8,7 @@
       </h1>
       <v-spacer />
       <v-btn
-        v-if="editing && state.id"
+        v-if="editing && state.id && auth.isAdmin"
         variant="outlined"
         color="error"
         prepend-icon="mdi-delete"
@@ -228,9 +228,9 @@
               placeholder="Chọn NCC"
               @update:model-value="onSupplierChange"
             />
-            <v-btn icon="mdi-plus" color="primary" size="small" variant="flat" title="Thêm NCC" @click="quickAddOpen = true" />
+            <v-btn v-if="auth.isAdmin" icon="mdi-plus" color="primary" size="small" variant="flat" title="Thêm NCC" @click="quickAddOpen = true" />
           </div>
-          <div v-if="state.supplierId" class="debt-line mb-3">
+          <div v-if="state.supplierId && auth.isAdmin" class="debt-line mb-3">
             <span class="text-medium-emphasis">Công nợ hiện tại:</span>
             <span class="font-mono" :class="supplierDebt > 0 ? 'text-error' : 'text-success'">
               {{ formatVNDFull(supplierDebt) }}
@@ -305,7 +305,7 @@
             />
           </div>
         </v-col>
-        <v-col cols="6" sm="3" md="2">
+        <v-col v-if="auth.isAdmin" cols="6" sm="3" md="2">
           <div class="field-label">Đặt cọc</div>
           <v-text-field
             v-model.number="state.depositAmount"
@@ -384,6 +384,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useAuthStore } from '@/stores/auth';
+const auth = useAuthStore();
 import { api } from '@/api/index';
 import {
   formatVNDFull,
@@ -536,7 +538,7 @@ const totalProducts = computed(() => state.items.length);
 
 // ── Supplier debt display ──
 async function onSupplierChange(id: string | null) {
-  supplierDebt.value = id ? await fetchSupplierBalance(id) : 0;
+  supplierDebt.value = id && auth.isAdmin ? await fetchSupplierBalance(id) : 0;
 }
 
 async function onQuickAddSupplier() {
@@ -592,7 +594,7 @@ onMounted(async () => {
       product: it.product,
       _expanded: false,
     }));
-    if (state.supplierId) supplierDebt.value = await fetchSupplierBalance(state.supplierId);
+    if (state.supplierId && auth.isAdmin) supplierDebt.value = await fetchSupplierBalance(state.supplierId);
   }
 });
 

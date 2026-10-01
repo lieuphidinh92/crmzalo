@@ -142,7 +142,7 @@
               <th class="dn-th-num" style="width: 36px">STT</th>
               <th>Tên sản phẩm</th>
               <th style="width: 90px">SKU</th>
-              <th style="width: 90px">Lô</th>
+              <th style="width: 145px">Lô / HSD</th>
               <th class="dn-th-num" style="width: 50px">SL</th>
               <th class="dn-th-money" style="width: 90px">Đơn giá</th>
               <th class="dn-th-money" style="width: 110px">Thành tiền</th>
@@ -162,7 +162,7 @@
               <td class="dn-num">{{ idx + 1 }}</td>
               <td>{{ item.productName }}</td>
               <td class="dn-mono">{{ item.sku }}</td>
-              <td class="dn-mono">{{ item.batch?.batchCode ?? '—' }}</td>
+              <td class="dn-mono"><div v-for="line in itemBatchLines(item)" :key="line">{{ line }}</div><span v-if="!itemBatchLines(item).length">Chưa chọn lô / HSD</span></td>
               <td class="dn-num">{{ item.quantity }}</td>
               <td class="dn-money">{{ formatPlain(item.unitPrice) }}</td>
               <td class="dn-money">{{ formatPlain(item.lineTotal) }}</td>
@@ -279,6 +279,7 @@
 </template>
 
 <script setup lang="ts">
+import { itemBatchLines } from '@/composables/use-item-batches';
 import { computed } from 'vue';
 import { toNum, statusLabel, type Order } from '@/composables/use-orders';
 

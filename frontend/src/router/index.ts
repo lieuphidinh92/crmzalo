@@ -94,25 +94,25 @@ const routes = [
     path: '/imports',
     name: 'ImportsList',
     component: () => import('@/views/ImportsListView.vue'),
-    meta: { requiresAuth: true, adminOnly: true },
+    meta: { requiresAuth: true, importAccess: true },
   },
   {
     path: '/imports/new',
     name: 'ImportCreate',
     component: () => import('@/views/ImportFormView.vue'),
-    meta: { requiresAuth: true, adminOnly: true },
+    meta: { requiresAuth: true, importAccess: true },
   },
   {
     path: '/imports/:id/edit',
     name: 'ImportEdit',
     component: () => import('@/views/ImportFormView.vue'),
-    meta: { requiresAuth: true, adminOnly: true },
+    meta: { requiresAuth: true, importAccess: true },
   },
   {
     path: '/imports/:id',
     name: 'ImportDetail',
     component: () => import('@/views/ImportDetailView.vue'),
-    meta: { requiresAuth: true, adminOnly: true },
+    meta: { requiresAuth: true, importAccess: true },
   },
   {
     path: '/supplier-debt',
@@ -239,5 +239,6 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
+  if (to.meta.importAccess && !authStore.canManageImports) return next('/');
   next();
 });

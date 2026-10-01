@@ -158,6 +158,10 @@ export async function orderItemsRoutes(app: FastifyInstance): Promise<void> {
       });
       if (!item) return reply.status(404).send({ error: 'Item not found' });
 
+      if (body.batchId !== undefined && body.batchId !== item.batchId) {
+        return reply.status(409).send({ error: 'Vui lòng dùng chức năng Đổi lô để đồng bộ tồn kho và hạn dùng' });
+      }
+
       const newQty = body.quantity ?? item.quantity;
       const newUnitPrice = body.unitPrice ?? item.unitPrice;
       const newDiscount = body.discountValue ?? item.discountValue;
@@ -189,7 +193,6 @@ export async function orderItemsRoutes(app: FastifyInstance): Promise<void> {
           quantity: newQty,
           unitPrice: newUnitPrice,
           discountValue: newDiscount,
-          batchId: newBatchId,
           priceTierId: newTierId,
           lineTotal,
           lineCost,

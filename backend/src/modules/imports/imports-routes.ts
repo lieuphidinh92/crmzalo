@@ -17,14 +17,15 @@
  * NCC, ghi chú, ngày nhập) and mirrors them down to the batches created at
  * confirm time. Số lượng / giá vốn / VAT / cọc vẫn bất biến sau khi chốt.
  *
- * All endpoints require owner|admin. `member` role gets 403 — cost data
- * is sensitive.
+ * Delegated import managers can access only their own created imports.
+ * Deletes and supplier payments remain owner/admin-only.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import pkg from '@prisma/client';
 const { Prisma } = pkg;
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
+import { requireImportAccess, importScopeWhere } from '../auth/import-permission.js';
 import { requireRole } from '../auth/role-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import ExcelJS from 'exceljs';
@@ -323,7 +324,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
   // ── GET /api/v1/imports — list with filters ───────────────────────
   app.get(
     '/api/v1/imports',
-    { preHandler: requireRole('owner', 'admin') },
+    { preHandler: requireImportAccess },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const user = request.user!;
@@ -337,7 +338,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
           to = '',
         } = request.query as Record<string, string>;
 
-        const where: any = { orgId: user.orgId };
+        const where: any = importScopeWhere(user);
         if (supplierId) where.supplierId = supplierId;
         if (status && (VALID_STATUSES as readonly string[]).includes(status)) {
           where.status = status;
@@ -382,13 +383,13 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
   // ── GET /api/v1/imports/:id — detail with items ───────────────────
   app.get(
     '/api/v1/imports/:id',
-    { preHandler: requireRole('owner', 'admin') },
+    { preHandler: requireImportAccess },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const user = request.user!;
         const { id } = request.params as { id: string };
         const order = await prisma.importOrder.findFirst({
-          where: { id, orgId: user.orgId },
+          where: { id, ...importScopeWhere(user) },
           include: {
             supplier: true,
             warehouse: true,
@@ -463,11 +464,13 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
   // ── POST /api/v1/imports — create draft ───────────────────────────
   app.post(
     '/api/v1/imports',
-    { preHandler: requireRole('owner', 'admin') },
+    { preHandler: requireImportAccess },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const user = request.user!;
         const body = (request.body ?? {}) as CreateImportBody;
+        if (body.supplierId && !await prisma.supplier.findFirst({ where: { id: body.supplierId, orgId: user.orgId }, select: { id: true } })) return reply.status(400).send({ error: 'Nhà cung cấp không thuộc tổ chức' });
+        if (!['owner', 'admin'].includes(user.role) && Number(body.depositAmount ?? 0) !== 0) return reply.status(403).send({ error: 'Chỉ quản lý được ghi nhận đặt cọc NCC' });
         const items = Array.isArray(body.items) ? body.items : [];
         for (let i = 0; i < items.length; i++) {
           const err = validateItem(items[i], i + 1);
@@ -537,17 +540,20 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
   // ── PUT /api/v1/imports/:id — replace draft ───────────────────────
   app.put(
     '/api/v1/imports/:id',
-    { preHandler: requireRole('owner', 'admin') },
+    { preHandler: requireImportAccess },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const user = request.user!;
         const { id } = request.params as { id: string };
         const body = (request.body ?? {}) as UpdateImportBody;
+        if (body.supplierId && !await prisma.supplier.findFirst({ where: { id: body.supplierId, orgId: user.orgId }, select: { id: true } })) return reply.status(400).send({ error: 'Nhà cung cấp không thuộc tổ chức' });
+        if (!['owner', 'admin'].includes(user.role) && Number(body.depositAmount ?? 0) !== 0) return reply.status(403).send({ error: 'Chỉ quản lý được ghi nhận đặt cọc NCC' });
 
         const existing = await prisma.importOrder.findFirst({
-          where: { id, orgId: user.orgId },
-          select: { id: true, status: true },
+          where: { id, ...importScopeWhere(user) },
+          select: { id: true, status: true, depositAmount: true },
         });
+        if (existing && !['owner', 'admin'].includes(user.role) && Number(existing.depositAmount) !== 0) return reply.status(403).send({ error: 'Phiếu có đặt cọc NCC cần quản lý xử lý' });
         if (!existing) return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
         if (existing.status !== 'draft') {
           return reply.status(400).send({ error: 'Đơn nhập đã xác nhận, không thể sửa' });
@@ -628,7 +634,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
   // cron đánh expired, 262 hộp tụt khỏi tồn kho).
   app.patch(
     '/api/v1/imports/:id',
-    { preHandler: requireRole('owner', 'admin') },
+    { preHandler: requireImportAccess },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const user = request.user!;
@@ -636,7 +642,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
         const body = (request.body ?? {}) as PatchImportBody;
 
         const order = await prisma.importOrder.findFirst({
-          where: { id, orgId: user.orgId },
+          where: { id, ...importScopeWhere(user) },
           include: { items: true, batches: true },
         });
         if (!order) return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
@@ -909,7 +915,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
         const user = request.user!;
         const { id } = request.params as { id: string };
         const existing = await prisma.importOrder.findFirst({
-          where: { id, orgId: user.orgId },
+          where: { id, ...importScopeWhere(user) },
           select: { id: true, status: true },
         });
         if (!existing) return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
@@ -932,13 +938,13 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
   // Pure read-only — never mutates. Returns [] if everything's normal.
   app.get(
     '/api/v1/imports/:id/warnings',
-    { preHandler: requireRole('owner', 'admin') },
+    { preHandler: requireImportAccess },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const user = request.user!;
         const { id } = request.params as { id: string };
         const order = await prisma.importOrder.findFirst({
-          where: { id, orgId: user.orgId },
+          where: { id, ...importScopeWhere(user) },
           include: {
             items: {
               include: {
@@ -1007,7 +1013,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
             where: {
               productId: it.productId,
               importOrderId: { not: order.id },
-              importOrder: { orgId: user.orgId, status: 'confirmed' },
+              importOrder: { ...importScopeWhere(user), status: 'confirmed' },
             },
             orderBy: { createdAt: 'desc' },
             take: 3,
@@ -1049,14 +1055,14 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
   // concurrent confirms don't both succeed.
   app.post(
     '/api/v1/imports/:id/confirm',
-    { preHandler: requireRole('owner', 'admin') },
+    { preHandler: requireImportAccess },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const user = request.user!;
         const { id } = request.params as { id: string };
 
         const order = await prisma.importOrder.findFirst({
-          where: { id, orgId: user.orgId },
+          where: { id, ...importScopeWhere(user) },
           include: { items: true },
         });
         if (!order) return reply.status(404).send({ error: 'Không tìm thấy đơn nhập' });
@@ -1066,6 +1072,8 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
         if (!order.items.length) {
           return reply.status(400).send({ error: 'Đơn nhập chưa có sản phẩm' });
         }
+
+        if (!['owner', 'admin'].includes(user.role) && Number(order.depositAmount) !== 0) return reply.status(403).send({ error: 'Phiếu có đặt cọc NCC cần quản lý chốt' });
 
         // Honour the warehouse chosen on the order; fall back to default.
         const warehouseId = order.warehouseId ?? (await getDefaultWarehouseId(user.orgId));
@@ -1341,7 +1349,7 @@ export async function importsRoutes(app: FastifyInstance): Promise<void> {
   //   SKU | Tên SP | SL | Giá nhập | Mã lô | NSX | HSD | Ghi chú
   app.post(
     '/api/v1/imports/parse-excel',
-    { preHandler: requireRole('owner', 'admin') },
+    { preHandler: requireImportAccess },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const user = request.user!;

@@ -15,6 +15,7 @@ export interface JwtPayload {
   // nên đổi cờ trong DB thì user phải đăng xuất/đăng nhập lại mới có hiệu lực.
   canViewAllOrders?: boolean;
   canIssueVat?: boolean;
+  canManageImports?: boolean;
 }
 
 // Check if any users exist — true means first-run setup is needed
@@ -86,6 +87,7 @@ export async function login(email: string, password: string): Promise<JwtPayload
     id: user.id, email: user.email, role: user.role, orgId: user.orgId,
     canViewAllOrders: user.canViewAllOrders,
     canIssueVat: user.canIssueVat,
+    canManageImports: user.canManageImports,
   };
 }
 
@@ -100,6 +102,7 @@ export async function getProfile(userId: string) {
       avatarUrl: true,
       birthDate: true,
       role: true,
+      canManageImports: true,
       orgId: true,
       teamId: true,
       isActive: true,

@@ -1,0 +1,60 @@
+/** Read/no-op route tests plus rollback-only concurrent lock test, localhost only. */
+import assert from 'node:assert/strict';
+import Fastify from 'fastify';
+import jwt from '@fastify/jwt';
+import { prisma } from '../src/shared/database/prisma-client.js';
+import { orderBatchRoutes, changeOrderItemBatch } from '../src/modules/orders/order-batch-routes.js';
+if (new URL(process.env.DATABASE_URL!).hostname !== 'localhost') throw Error('Local only');
+const line = await prisma.orderItem.findFirstOrThrow({ where: { fifoUsages: { some: {} }, order: { status: { in: ['completed', 'shipping'] }, legacyCost: false }, productId: { not: null } }, include: { order: true, fifoUsages: true } });
+const actor = await prisma.user.findUniqueOrThrow({ where: { id: line.order.createdByUserId } });
+assert.equal(line.fifoUsages.length, 1, 'Fixture requires single allocation');
+const batchId = line.fifoUsages[0].batchId;
+const app = Fastify();
+await app.register(jwt, { secret: 'local-test-only-order-batch-secret' });
+await app.register(orderBatchRoutes);
+await app.ready();
+const base = `/api/v1/orders/${line.orderId}/items/${line.id}`;
+const token = (extra: any = {}) => app.jwt.sign({ id: actor.id, orgId: actor.orgId, email: actor.email, role: 'member', canManageImports: true, ...extra });
+let fresh: any = { ...actor, role: 'member', isActive: true, canViewAllOrders: false, canManageImports: false };
+const original = prisma.user.findFirst.bind(prisma.user);
+(prisma.user as any).findFirst = async () => fresh;
+const originalTransaction = prisma.$transaction.bind(prisma);
+(prisma as any).$transaction = (fn: any, opts: any) => originalTransaction((tx: any) => fn(new Proxy(tx, { get(target, key) { return key === 'user' ? { findFirst: async () => fresh } : Reflect.get(target, key); } })), opts);
+try {
+ assert.equal((await app.inject({ url: `${base}/batches` })).statusCode, 401);
+ const headers = { authorization: `Bearer ${token()}` };
+ let r = await app.inject({ method: 'PUT', url: `${base}/batch`, headers, payload: { batchId } });
+ assert.equal(r.statusCode, 403, 'Stale JWT true cannot bypass fresh false');
+ fresh = { ...fresh, canViewAllOrders: true };
+ r = await app.inject({ method: 'PUT', url: `${base}/batch`, headers, payload: { batchId } });
+ assert.equal(r.statusCode, 403, 'View-all cannot edit poststock');
+ fresh = { ...fresh, canViewAllOrders: false, canManageImports: true };
+ r = await app.inject({ method: 'PUT', url: `${base}/batch`, headers: { authorization: `Bearer ${token({ canManageImports: false })}` }, payload: { batchId } });
+ assert.equal(r.statusCode, 200, r.body);
+ assert.equal(r.json().changed, false);
+ r = await app.inject({ url: `${base}/batches`, headers });
+ assert.equal(r.statusCode, 200, r.body);
+ assert.equal(r.json().canEdit, true);
+ assert.equal(/costAtTime|importCost|lineCost|profit/.test(r.body), false);
+ fresh = { ...fresh, id: 'outside-order-scope' };
+ assert.equal((await app.inject({ url: `${base}/batches`, headers })).statusCode, 404);
+ fresh = null;
+ assert.equal((await app.inject({ url: `${base}/batches`, headers })).statusCode, 403);
+ console.log('PASS route auth: no JWT, revoked flag, view-only, fresh grant with stale JWT, out-of-scope, inactive, cost-safe GET');
+} finally { (prisma.user as any).findFirst = original; (prisma as any).$transaction = originalTransaction; await app.close(); }
+// Two real transactions editing the same order wait on the order lock. Each
+// intentionally rolls back; no existing sales/inventory values are changed.
+const owner = await prisma.user.findFirstOrThrow({ where: { orgId: actor.orgId, role: { in: ['owner', 'admin'] }, isActive: true } });
+let unlock!: () => void, locked!: () => void;
+const gate = new Promise<void>(r => unlock = r), acquired = new Promise<void>(r => locked = r);
+const rollback = new Error('rollback');
+let secondFinished = false;
+const first = prisma.$transaction(async tx => { await changeOrderItemBatch(tx, owner, line.orderId, line.id, batchId); locked(); await gate; throw rollback; }, { isolationLevel: 'Serializable', timeout: 15000 }).catch(e => { if (e !== rollback) throw e; });
+await acquired;
+const second = prisma.$transaction(async tx => { await changeOrderItemBatch(tx, owner, line.orderId, line.id, batchId); secondFinished = true; throw rollback; }, { isolationLevel: 'Serializable', timeout: 15000 }).catch(e => { if (e !== rollback) throw e; });
+await new Promise(r => setTimeout(r, 200));
+assert.equal(secondFinished, false, 'Concurrent edit must wait');
+unlock(); await Promise.all([first, second]);
+assert.equal(secondFinished, true);
+console.log('PASS concurrent corrections serialize on order lock; both rolled back');
+await prisma.$disconnect();

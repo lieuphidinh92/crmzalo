@@ -39,6 +39,7 @@ interface FifoItem {
   productId: string;
   quantity: number;
   lineTotal: number;
+  batchId?: string | null;
 }
 
 interface BatchRow {
@@ -116,7 +117,7 @@ export async function validateFifoStock(
  * giao xong tồn trên app cao hơn thực tế, lệch dồn (NEU_01 hiện 590 khi lô còn
  * 90; MH_02 hiện 144 khi lô còn 440). Chạy trong cùng transaction với caller.
  */
-async function syncTotalStock(tx: any, productId: string): Promise<void> {
+export async function syncTotalStock(tx: any, productId: string): Promise<void> {
   const sum = await tx.inventoryBatch.aggregate({
     where: { productId, status: 'active' },
     _sum: { currentQuantity: true },
@@ -136,17 +137,20 @@ export async function processFIFO(
 ): Promise<void> {
   const items = await tx.orderItem.findMany({
     where: { orderId, productId: { not: null } },
-    select: { id: true, productId: true, quantity: true, lineTotal: true },
+    select: { id: true, productId: true, quantity: true, lineTotal: true, batchId: true },
   });
   if (items.length === 0) return;
 
-  for (const item of items as FifoItem[]) {
+  for (const item of (items as FifoItem[]).sort((a, b) => Number(!!b.batchId) - Number(!!a.batchId))) {
     const totalQty = Math.round(item.quantity);
     if (totalQty <= 0) continue;
 
     const batches: BatchRow[] = await tx.inventoryBatch.findMany({
       where: {
         productId: item.productId,
+        orgId: user.orgId,
+        ...(item.batchId ? { id: item.batchId } : {}),
+        OR: [{ expiryDate: null }, { expiryDate: { gte: new Date(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }) + 'T00:00:00Z') } }],
         status: 'active',
         currentQuantity: { gt: 0 },
       },

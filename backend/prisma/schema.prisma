@@ -76,6 +76,7 @@ model User {
   // điều kiện role=owner|admin nên muốn cho xem full đơn là buộc phải cấp admin
   // → lộ lãi. Cờ này tách riêng: chỉ mở PHẠM VI đơn, tiền vẫn khoá theo role.
   // Anh Philip chốt 4/8/2026 cho Thạch Quang Huy (giao hàng) + Mai Hiền (đối soát).
+  canManageImports Boolean @default(false) @map("can_manage_imports")
   canViewAllOrders Boolean   @default(false) @map("can_view_all_orders")
   // Quyền LÀM HOÁ ĐƠN VAT — tách riêng khỏi canViewAllOrders (anh Philip chốt
   // 24/8/2026). Lý do: Huy giao hàng có canViewAllOrders để xem đơn đi giao,

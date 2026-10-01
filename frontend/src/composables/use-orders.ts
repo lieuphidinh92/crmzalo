@@ -76,6 +76,7 @@ export interface OrderItem {
   profit: number | string | null;
   product?: { id: string; sku: string; name: string; mainImageUrl: string | null; unit: string | null } | null;
   batch?: { id: string; batchCode: string; expiryDate: string | null; currentQuantity: number } | null;
+  fifoUsages?: { quantityUsed: number; batch: { batchCode: string; expiryDate: string | null } }[];
   tier?: { id: string; tierName: string } | null;
 }
 

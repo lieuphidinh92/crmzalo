@@ -9,6 +9,7 @@ interface User {
   role: string;
   orgId: string;
   orgName: string;
+  canManageImports?: boolean;
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -19,6 +20,8 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value && !!user.value);
   const isOwner = computed(() => user.value?.role === 'owner');
   const isAdmin = computed(() => ['owner', 'admin'].includes(user.value?.role || ''));
+
+  const canManageImports = computed(() => isAdmin.value || user.value?.canManageImports === true);
 
   async function checkSetup() {
     const res = await api.get('/setup/status');
@@ -51,6 +54,7 @@ export const useAuthStore = defineStore('auth', () => {
         email: d.email,
         fullName: d.fullName || d.full_name || '',
         role: d.role,
+        canManageImports: d.canManageImports === true,
         orgId: d.orgId || d.org_id || '',
         orgName: d.org?.name || d.orgName || '',
       };
@@ -74,5 +78,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, token, needsSetup, isAuthenticated, isOwner, isAdmin, checkSetup, setup, login, fetchProfile, logout, init };
+  return { user, token, needsSetup, isAuthenticated, isOwner, isAdmin, canManageImports, checkSetup, setup, login, fetchProfile, logout, init };
 });

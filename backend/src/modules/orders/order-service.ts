@@ -268,6 +268,7 @@ export const ORDER_FULL_INCLUDE = {
       product: { select: { id: true, sku: true, name: true, mainImageUrl: true, unit: true } },
       batch: { select: { id: true, batchCode: true, expiryDate: true, currentQuantity: true } },
       tier: { select: { id: true, tierName: true } },
+      fifoUsages: { select: { quantityUsed: true, batchId: true, batch: { select: { id: true, batchCode: true, expiryDate: true } } } },
     },
     orderBy: { createdAt: 'asc' },
   },
@@ -293,6 +294,7 @@ export function stripCostFromOrder<T extends OrderFull>(order: T, role: string):
     ...order,
     items: order.items.map((it) => ({
       ...it,
+      costValue: null,
       unitCost: null,
       lineCost: null,
       profit: null,
