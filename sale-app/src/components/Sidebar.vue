@@ -46,7 +46,7 @@ const navItems = computed(() => [
   { name: 'debt', label: 'Công nợ', to: '/debt', icon: 'wallet' },
   { name: 'follow-up', label: 'Cần chăm sóc', to: '/follow-up', icon: 'heart' },
   { name: 'inventory', label: 'Tồn kho', to: '/inventory', icon: 'warehouse' },
-  ...(isAdmin.value
+  ...(auth.canManageImports
     ? [{ name: 'imports', label: 'Nhập kho', to: '/imports', icon: 'import' }]
     : []),
   { name: 'promo', label: 'Khuyến mãi', to: '/promotions', icon: 'badge', hot: true },

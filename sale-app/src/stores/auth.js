@@ -8,6 +8,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!token.value && !!user.value);
 
+  const isAdmin = computed(() => ['owner', 'admin'].includes(user.value?.role));
+  const canManageImports = computed(() => isAdmin.value || user.value?.canManageImports === true);
+
   function clearStoredAuth() {
     for (const storage of [localStorage, sessionStorage]) {
       storage.removeItem('token');
@@ -65,5 +68,5 @@ export const useAuthStore = defineStore('auth', () => {
     window.location.href = '/login';
   }
 
-  return { user, token, isAuthenticated, loadFromStorage, login, fetchProfile, logout };
+  return { user, token, isAuthenticated, isAdmin, canManageImports, loadFromStorage, login, fetchProfile, logout };
 });

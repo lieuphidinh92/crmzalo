@@ -22,10 +22,10 @@ const routes = [
       { path: 'debt', name: 'debt', component: () => import('../views/Debt.vue') },
       { path: 'follow-up', name: 'follow-up', component: () => import('../views/FollowUp.vue') },
       { path: 'inventory', name: 'inventory', component: () => import('../views/Inventory.vue') },
-      { path: 'imports', name: 'imports', component: () => import('../views/ImportsList.vue') },
-      { path: 'imports/new', name: 'import-new', component: () => import('../views/ImportForm.vue') },
-      { path: 'imports/:id/edit', name: 'import-edit', component: () => import('../views/ImportForm.vue') },
-      { path: 'imports/:id', name: 'import-detail', component: () => import('../views/ImportDetail.vue') },
+      { path: 'imports', name: 'imports', component: () => import('../views/ImportsList.vue'), meta: { importAccess: true } },
+      { path: 'imports/new', name: 'import-new', component: () => import('../views/ImportForm.vue'), meta: { importAccess: true } },
+      { path: 'imports/:id/edit', name: 'import-edit', component: () => import('../views/ImportForm.vue'), meta: { importAccess: true } },
+      { path: 'imports/:id', name: 'import-detail', component: () => import('../views/ImportDetail.vue'), meta: { importAccess: true } },
       // Màn "Xuất VAT" của kế toán — chỉ người xem được full đơn mới vào được
       // (chặn ở beforeEach bên dưới, sale thường bị đá về Tổng quan).
       { path: 'vat/:status?', name: 'vat', component: () => import('../views/VatIssue.vue'), meta: { vatDesk: true } },
@@ -57,6 +57,7 @@ router.beforeEach((to) => {
     const allowed = ['owner', 'admin'].includes(u?.role) || u?.canIssueVat === true;
     if (!allowed) return { name: 'home' };
   }
+  if (to.meta.importAccess && !auth.canManageImports) return { name: 'home' };
   return true;
 });
 

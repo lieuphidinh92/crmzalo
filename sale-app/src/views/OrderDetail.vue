@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, defineAsyncComponent, h } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import OrderItemBatchSelector from '../components/OrderItemBatchSelector.vue';
+import { itemBatchLines } from '../composables/useItemBatches';
 import { api } from '../api/client';
 import { usePOSStore } from '../stores/pos';
 import { useAuthStore } from '../stores/auth';
@@ -59,6 +61,7 @@ const docOrder = computed(() => {
     note: o.customerNote || o.internalNote || '',
     items: (o.items || []).map((it) => ({
       name: it.productName,
+      batchLines: itemBatchLines(it),
       sku: it.sku,
       unit: it.unit,
       quantity: Number(it.quantity) || 0,
@@ -901,6 +904,7 @@ async function saveStageDocs() {
                 {{ num(it.quantity) }} {{ it.unit || '' }} × {{ formatVND(it.unitPrice) }}
                 <span v-if="num(it.discountValue) > 0" class="text-amber-600"> − {{ formatVND(it.discountValue) }}</span>
               </div>
+              <OrderItemBatchSelector :order="order" :item="it" @saved="load" />
               <!-- Bộ chỉnh số lượng + giá (chế độ sửa) -->
               <div v-if="editingItems" class="mt-1.5 space-y-1.5">
                 <div class="flex items-center gap-2">
