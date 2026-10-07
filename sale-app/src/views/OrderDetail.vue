@@ -53,6 +53,8 @@ const docOrder = computed(() => {
   if (!o) return null;
   return {
     order_code: o.orderCode || o.order_code || '',
+    orderDate: o.orderDate,
+    createdAt: o.createdAt,
     saleName: o.assignedSale?.fullName || '',
     customerName: o.contact?.fullName || '',
     customerPhone: o.contact?.phone || '',

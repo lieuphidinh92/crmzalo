@@ -68,6 +68,8 @@ async function submit(status) {
     summaryOrder.value = {
       ...snapshot,
       order_code: order.order_code,
+      orderDate: order.order_date,
+      createdAt: order.created_at,
       status: order.status,
     };
     showSummary.value = true;

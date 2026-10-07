@@ -42,11 +42,20 @@ const qrUrl = computed(() => {
 
 const fmt = new Intl.NumberFormat('vi-VN');
 
-function todayVN() {
-  const d = new Date();
-  return { d: d.getDate(), m: d.getMonth() + 1, y: d.getFullYear() };
-}
-const t = todayVN();
+// Ngày chứng từ theo đơn đã lưu, không thay đổi khi xem/in lại.
+const t = computed(() => {
+  for (const value of [props.order.orderDate, props.order.createdAt]) {
+    if (!value) continue;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) continue;
+    const parts = new Intl.DateTimeFormat('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh', day: 'numeric', month: 'numeric', year: 'numeric',
+    }).formatToParts(date);
+    const part = (type) => parts.find((p) => p.type === type).value;
+    return { d: part('day'), m: part('month'), y: part('year') };
+  }
+  return { d: '…', m: '…', y: '…' };
+});
 
 const docNo = computed(() => props.order.order_code || '');
 const items = computed(() => props.order.items || []);
