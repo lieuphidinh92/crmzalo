@@ -1,12 +1,36 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import dayjs from 'dayjs';
 import { api } from '../../api/client';
 import { formatVND, statusLabel, statusColor } from '../../composables/useFormat';
 import { useAuthStore } from '../../stores/auth';
 
-defineProps({ rows: { type: Array, default: () => [] } });
+const props = defineProps({ refreshedAt: String });
+const period = ref('current');
+const rows = ref([]);
+const loadingRows = ref(false);
+const rowsError = ref('');
+const vietnamNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+const month = computed(() => dayjs(vietnamNow).startOf('month').subtract(period.value === 'previous' ? 1 : 0, 'month').format('YYYY-MM'));
+const monthLabel = computed(() => month.value.split('-').reverse().join('/'));
+let boardRequest = 0;
+let orderRequest = 0;
+async function loadRows() {
+  const request = ++boardRequest;
+  loadingRows.value = true;
+  rowsError.value = '';
+  selected.value = null;
+  ++orderRequest;
+  try {
+    const { data } = await api.get('/sale-app/dashboard-v2/leaderboard', { params: { month: month.value } });
+    if (request === boardRequest) rows.value = data.rows;
+  } catch (error) {
+    if (request === boardRequest) rowsError.value = error.response?.data?.error || 'Không tải được bảng xếp hạng';
+  } finally {
+    if (request === boardRequest) loadingRows.value = false;
+  }
+}
 const emit = defineEmits(['targets-updated']);
 const router = useRouter();
 const auth = useAuthStore();
@@ -25,16 +49,17 @@ function avatarFailed(saleId) {
 
 async function openOrders(row) {
   if (!canOpenOrders(row)) return;
-  selected.value = { sale: { id: row.saleId, fullName: row.name }, orders: [], count: row.orders, revenue: row.revenue };
+  const request = ++orderRequest;
+  selected.value = { month: month.value, sale: { id: row.saleId, fullName: row.name }, orders: [], count: row.orders, revenue: row.revenue };
   loadingOrders.value = true;
   orderError.value = '';
   try {
-    const response = await api.get(`/sale-app/dashboard-v2/leaderboard/${row.saleId}/orders`);
-    selected.value = response.data;
+    const response = await api.get(`/sale-app/dashboard-v2/leaderboard/${row.saleId}/orders`, { params: { month: month.value } });
+    if (request === orderRequest && selected.value) selected.value = response.data;
   } catch (error) {
-    orderError.value = error.response?.data?.error || 'Không tải được danh sách đơn hàng';
+    if (request === orderRequest) orderError.value = error.response?.data?.error || 'Không tải được danh sách đơn hàng';
   } finally {
-    loadingOrders.value = false;
+    if (request === orderRequest) loadingOrders.value = false;
   }
 }
 
@@ -51,6 +76,7 @@ function canManageTargets() {
 function openTarget(row) {
   const target = row.dashboardTarget || {};
   targetEditor.value = {
+    month: month.value,
     saleId: row.saleId,
     name: row.name,
     revenue: target.revenue ?? '',
@@ -67,6 +93,7 @@ async function saveTarget() {
   targetError.value = '';
   try {
     await api.put(`/sale-app/dashboard-v2/targets/${targetEditor.value.saleId}`, {
+      month: targetEditor.value.month,
       revenue: targetEditor.value.revenue || null,
       activeCustomers: targetEditor.value.activeCustomers || null,
       orderFrequency: targetEditor.value.orderFrequency || null,
@@ -74,21 +101,31 @@ async function saveTarget() {
     });
     targetEditor.value = null;
     emit('targets-updated');
+    await loadRows();
   } catch (error) {
     targetError.value = error.response?.data?.error || 'Không lưu được KPI';
   } finally {
     savingTarget.value = false;
   }
 }
+watch([month, () => props.refreshedAt], loadRows, { immediate: true });
 </script>
 
 <template>
   <section class="flex h-full flex-col overflow-hidden rounded-card border border-line-200 bg-white shadow-card">
     <header class="flex h-[52px] shrink-0 items-center justify-between border-b border-line-200 px-4">
-      <h2 class="text-[14px] font-bold tracking-[-0.01em] text-ink-primary">LEADERBOARD (THÁNG NÀY)</h2>
+      <h2 class="text-[14px] font-bold tracking-[-0.01em] text-ink-primary">LEADERBOARD</h2>
       <button class="text-[10px] font-semibold text-royal-700" @click="router.push('/reports')">Xem tất cả</button>
     </header>
-    <div v-if="!rows.length" class="p-8 text-center text-xs text-ink-secondary">Chưa phát sinh doanh số tháng này.</div>
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line-200 px-4 py-2.5">
+      <div class="flex gap-1 rounded-lg bg-surface-50 p-1" role="group" aria-label="Tháng đối soát">
+        <button v-for="option in [{ value: 'current', label: 'Tháng này' }, { value: 'previous', label: 'Tháng trước' }]" :key="option.value" type="button" :aria-pressed="period === option.value" class="rounded-md px-3 py-1.5 text-xs font-semibold" :class="period === option.value ? 'bg-royal-700 text-white' : 'text-ink-secondary hover:bg-royal-50'" @click="period = option.value">{{ option.label }}</button>
+      </div>
+      <span class="text-xs text-ink-secondary">{{ monthLabel }}</span>
+    </div>
+    <div v-if="loadingRows" class="p-8 text-center text-xs text-ink-secondary" role="status">Đang tải doanh số…</div>
+    <div v-else-if="rowsError" class="p-6 text-center text-xs text-red-700" role="alert">{{ rowsError }} <button class="font-semibold underline" @click="loadRows">Thử lại</button></div>
+    <div v-else-if="!rows.length" class="p-8 text-center text-xs text-ink-secondary">Chưa phát sinh doanh số tháng {{ monthLabel }}.</div>
     <div v-else class="flex-1 divide-y divide-line-200">
       <div class="grid h-8 grid-cols-[28px_1fr_1fr_82px] items-center gap-2 bg-surface-50 px-4 text-[8px] font-semibold uppercase tracking-[0.025em] text-ink-secondary"><span>#</span><span>Sale</span><span class="text-right">Doanh số</span><span class="text-right">% target</span></div>
       <div v-for="row in rows" :key="row.saleId" class="grid min-h-[56px] grid-cols-[28px_1fr_1fr_82px] items-center gap-2 px-4 py-1.5" :class="row.isMe ? 'bg-royal-50/60' : ''">
@@ -100,7 +137,7 @@ async function saveTarget() {
           </span>
           <div class="min-w-0">
             <div class="flex min-w-0 items-center gap-1">
-              <button :disabled="!canOpenOrders(row)" :title="canOpenOrders(row) ? `Xem đơn hàng tháng của ${row.name}` : 'Bạn không có quyền xem đơn của nhân viên này'" class="min-w-0 truncate text-left text-[11px] font-semibold leading-4 text-ink-primary underline-offset-2 disabled:cursor-default enabled:hover:text-royal-700 enabled:hover:underline" @click="openOrders(row)">
+              <button :disabled="!canOpenOrders(row)" :title="canOpenOrders(row) ? `Xem đơn hàng tháng ${monthLabel} của ${row.name}` : 'Bạn không có quyền xem đơn của nhân viên này'" class="min-w-0 truncate text-left text-[11px] font-semibold leading-4 text-ink-primary underline-offset-2 disabled:cursor-default enabled:hover:text-royal-700 enabled:hover:underline" @click="openOrders(row)">
                 {{ row.name }} <span v-if="row.isMe" class="text-royal-700">(Bạn)</span>
               </button>
               <button v-if="canManageTargets()" title="Chỉnh KPI" class="shrink-0 text-[8px] font-semibold text-royal-700 hover:underline" @click="openTarget(row)">KPI</button>
@@ -123,7 +160,7 @@ async function saveTarget() {
       <section class="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-pop sm:rounded-2xl" role="dialog" aria-modal="true" aria-label="Danh sách đơn hàng trong tháng">
         <header class="flex items-start justify-between gap-4 border-b border-line-200 px-4 py-4 sm:px-5">
           <div>
-            <h3 class="text-base font-bold text-ink-primary">Đơn hàng tháng của {{ selected.sale.fullName }}</h3>
+            <h3 class="text-base font-bold text-ink-primary">Đơn hàng tháng {{ selected.month.split('-').reverse().join('/') }} của {{ selected.sale.fullName }}</h3>
             <p class="mt-1 text-xs text-ink-secondary">{{ selected.count }} đơn hợp lệ · {{ formatVND(selected.revenue) }}</p>
           </div>
           <button class="flex h-8 w-8 items-center justify-center rounded-lg border border-line-200 text-ink-secondary" aria-label="Đóng" @click="selected = null">×</button>
@@ -154,7 +191,7 @@ async function saveTarget() {
     <div v-if="targetEditor" class="fixed inset-0 z-[110] flex items-end justify-center bg-slate-950/40 p-0 sm:items-center sm:p-5" @click.self="targetEditor = null" @keydown.esc.window="targetEditor = null">
       <form class="w-full max-w-lg rounded-t-2xl bg-white shadow-pop sm:rounded-2xl" @submit.prevent="saveTarget">
         <header class="flex items-start justify-between border-b border-line-200 px-5 py-4">
-          <div><h3 class="text-base font-bold text-ink-primary">KPI tháng – {{ targetEditor.name }}</h3><p class="mt-1 text-xs text-ink-secondary">Để trống trường không áp dụng mục tiêu.</p></div>
+          <div><h3 class="text-base font-bold text-ink-primary">KPI tháng {{ targetEditor.month.split('-').reverse().join('/') }} – {{ targetEditor.name }}</h3><p class="mt-1 text-xs text-ink-secondary">Để trống trường không áp dụng mục tiêu.</p></div>
           <button type="button" class="flex h-8 w-8 items-center justify-center rounded-lg border border-line-200" @click="targetEditor = null">×</button>
         </header>
         <div class="grid grid-cols-2 gap-4 p-5">

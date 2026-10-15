@@ -117,7 +117,7 @@ function stockMeta(row) {
         <SalesPipelinePanel :data="dashboard.pipeline" :processing-orders="dashboard.utilities.processingOrders" />
         <ProductOpportunityPanel :rows="dashboard.productOpportunities" />
         <div class="lg:col-span-2 min-[1600px]:col-span-1">
-          <CompactLeaderboard :rows="dashboard.leaderboard" @targets-updated="load(true)" />
+          <CompactLeaderboard :refreshed-at="dashboard.generatedAt" @targets-updated="load(true)" />
         </div>
       </section>
 
