@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { canSeeAllOrders, reqUser } from '../orders/order-service.js';
 import { logger } from '../../shared/utils/logger.js';
-import { getSaleDashboardV2, getSaleMonthlyOrders } from './dashboard-v2-service.js';
+import { getSaleDashboardV2, getSaleMonthlyOrders, getSaleLeaderboard } from './dashboard-v2-service.js';
 import {
   completeDashboardAction,
   setSaleDashboardTarget,
@@ -24,7 +24,16 @@ export async function dashboardV2Routes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.get<{ Params: { saleId: string } }>(
+  app.get<{ Querystring: { month?: string } }>('/api/v1/sale-app/dashboard-v2/leaderboard', async (request, reply) => {
+    try {
+      return await getSaleLeaderboard(reqUser(request), request.query.month);
+    } catch (err: any) {
+      logger.error('[sale-app] leaderboard month error:', err);
+      return reply.status(err.statusCode ?? 500).send({ error: err.statusCode === 400 ? err.message : 'Không tải được bảng xếp hạng' });
+    }
+  });
+
+  app.get<{ Params: { saleId: string }; Querystring: { month?: string } }>(
     '/api/v1/sale-app/dashboard-v2/leaderboard/:saleId/orders',
     async (request, reply) => {
       try {
@@ -32,12 +41,12 @@ export async function dashboardV2Routes(app: FastifyInstance): Promise<void> {
         if (request.params.saleId !== user.id && !canSeeAllOrders(user)) {
           return reply.status(403).send({ error: 'Bạn không có quyền xem đơn của nhân viên này' });
         }
-        const result = await getSaleMonthlyOrders(user, request.params.saleId);
+        const result = await getSaleMonthlyOrders(user, request.params.saleId, request.query.month);
         if (!result) return reply.status(404).send({ error: 'Không tìm thấy nhân viên' });
         return result;
-      } catch (err) {
+      } catch (err: any) {
         logger.error('[sale-app] dashboard-v2 sale orders error:', err);
-        return reply.status(500).send({ error: 'Không tải được danh sách đơn hàng' });
+        return reply.status(err.statusCode ?? 500).send({ error: err.statusCode === 400 ? err.message : 'Không tải được danh sách đơn hàng' });
       }
     },
   );

@@ -1,3 +1,4 @@
+import { dashboardMonthRange } from './dashboard-month.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { getOrgGoals } from '../settings/business-goals-service.js';
 import { toNumber } from '../orders/order-service.js';
@@ -65,6 +66,7 @@ function labelStage(stage: string | null): string {
 export async function getSaleDashboardV2(user: DashboardUser) {
   const now = new Date();
   const today = startOfDay(now);
+  const leaderboardRange = dashboardMonthRange(undefined, now);
   const monthStart = startOfMonth(now);
   const nextMonth = addMonths(monthStart, 1);
   const previousMonth = addMonths(monthStart, -1);
@@ -148,7 +150,7 @@ export async function getSaleDashboardV2(user: DashboardUser) {
         where: {
           orgId: user.orgId,
           status: { in: COUNTABLE_STATUSES },
-          orderDate: { gte: monthStart, lt: nextMonth },
+          orderDate: { gte: leaderboardRange.start, lt: leaderboardRange.end },
         },
         select: { assignedSaleId: true, totalAmount: true, totalAmountValue: true },
       }),
@@ -537,34 +539,7 @@ export async function getSaleDashboardV2(user: DashboardUser) {
     };
   });
 
-  const teamAgg = new Map<string, { revenue: number; orders: number }>();
-  for (const order of teamMonthOrders as any[]) {
-    if (!order.assignedSaleId) continue;
-    const row = teamAgg.get(order.assignedSaleId) ?? { revenue: 0, orders: 0 };
-    row.revenue += toNumber(order.totalAmountValue ?? order.totalAmount);
-    row.orders++;
-    teamAgg.set(order.assignedSaleId, row);
-  }
-  const leaderboard = (teamUsers as any[])
-    .map((sale: any) => {
-      const revenue = roundMoney(teamAgg.get(sale.id)?.revenue ?? 0);
-      const target = targetMap[sale.id]?.revenue ?? null;
-      return {
-        saleId: sale.id,
-        name: sale.fullName,
-        avatarUrl: sale.avatarUrl ?? sale.zaloAccounts?.[0]?.avatarUrl ?? null,
-        revenue,
-        orders: teamAgg.get(sale.id)?.orders ?? 0,
-        isMe: sale.id === user.id,
-        target,
-        targetPercent: target ? Math.round((revenue / target) * 1000) / 10 : null,
-        dashboardTarget: targetMap[sale.id] ?? null,
-      };
-    })
-    .filter((sale: any) => sale.orders > 0)
-    .sort((a: any, b: any) => b.revenue - a.revenue)
-    .slice(0, 5)
-    .map((sale: any, index: number) => ({ ...sale, rank: index + 1 }));
+  const leaderboard = buildLeaderboard(user, teamUsers, teamMonthOrders, targetMap);
 
   const processingWhere = {
     ...orderScope,
@@ -748,13 +723,62 @@ export async function getSaleDashboardV2(user: DashboardUser) {
   };
 }
 
+function buildLeaderboard(user: DashboardUser, teamUsers: any[], teamMonthOrders: any[], targetMap: Awaited<ReturnType<typeof getSaleDashboardTargets>>) {
+  const teamAgg = new Map<string, { revenue: number; orders: number }>();
+  for (const order of teamMonthOrders as any[]) {
+    if (!order.assignedSaleId) continue;
+    const row = teamAgg.get(order.assignedSaleId) ?? { revenue: 0, orders: 0 };
+    row.revenue += toNumber(order.totalAmountValue ?? order.totalAmount);
+    row.orders++;
+    teamAgg.set(order.assignedSaleId, row);
+  }
+  return (teamUsers as any[])
+    .map((sale: any) => {
+      const revenue = roundMoney(teamAgg.get(sale.id)?.revenue ?? 0);
+      const target = targetMap[sale.id]?.revenue ?? null;
+      return {
+        saleId: sale.id,
+        name: sale.fullName,
+        avatarUrl: sale.avatarUrl ?? sale.zaloAccounts?.[0]?.avatarUrl ?? null,
+        revenue,
+        orders: teamAgg.get(sale.id)?.orders ?? 0,
+        isMe: sale.id === user.id,
+        target,
+        targetPercent: target ? Math.round((revenue / target) * 1000) / 10 : null,
+        dashboardTarget: targetMap[sale.id] ?? null,
+      };
+    })
+    .filter((sale: any) => sale.orders > 0)
+    .sort((a: any, b: any) => b.revenue - a.revenue)
+    .slice(0, 5)
+    .map((sale: any, index: number) => ({ ...sale, rank: index + 1 }));
+}
+
+export async function getSaleLeaderboard(user: DashboardUser, month?: string) {
+  const range = dashboardMonthRange(month);
+  const [teamUsers, teamMonthOrders, targetMap] = await Promise.all([
+    prisma.user.findMany({
+      where: { orgId: user.orgId, isActive: true },
+      select: { id: true, fullName: true, avatarUrl: true, zaloAccounts: {
+        where: { avatarUrl: { not: null } }, select: { avatarUrl: true },
+        orderBy: { lastConnectedAt: 'desc' }, take: 1,
+      } },
+    }),
+    prisma.order.findMany({
+      where: { orgId: user.orgId, status: { in: COUNTABLE_STATUSES }, orderDate: { gte: range.start, lt: range.end } },
+      select: { assignedSaleId: true, totalAmount: true, totalAmountValue: true },
+    }),
+    getSaleDashboardTargets(user.orgId, range.month),
+  ]);
+  return { month: range.month, rows: buildLeaderboard(user, teamUsers, teamMonthOrders, targetMap) };
+}
+
 export async function getSaleMonthlyOrders(
   user: DashboardUser,
   saleId: string,
-  anchor = new Date(),
+  month?: string,
 ) {
-  const monthStart = startOfMonth(anchor);
-  const nextMonth = addMonths(monthStart, 1);
+  const range = dashboardMonthRange(month);
   const sale = await prisma.user.findFirst({
     where: { id: saleId, orgId: user.orgId, isActive: true },
     select: { id: true, fullName: true },
@@ -765,11 +789,8 @@ export async function getSaleMonthlyOrders(
     where: {
       orgId: user.orgId,
       status: { in: COUNTABLE_STATUSES },
-      orderDate: { gte: monthStart, lt: nextMonth },
-      OR: [
-        { assignedSaleId: saleId },
-        { assignedSaleId: null, contact: { assignedUserId: saleId } },
-      ],
+      orderDate: { gte: range.start, lt: range.end },
+      assignedSaleId: saleId,
     },
     select: {
       id: true,
@@ -796,7 +817,7 @@ export async function getSaleMonthlyOrders(
 
   return {
     sale,
-    month: monthStart.toISOString().slice(0, 7),
+    month: range.month,
     count: rows.length,
     revenue: roundMoney(rows.reduce((sum: number, row: { totalAmount: number }) => sum + row.totalAmount, 0)),
     orders: rows,

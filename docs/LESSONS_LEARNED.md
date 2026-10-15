@@ -247,3 +247,5 @@ bước) thì mở đúng mục trong
 
 - Tổng báo cáo và bảng nhân viên phải tính trên toàn bộ bộ lọc, không chỉ trang đơn đang xem; dùng cùng snapshot và phạm vi `orderScopeWhere`.
 - Doanh số theo ngày đặt đơn (fallback ngày tạo), mốc VN với đầu cuối exclusive; đã thu/còn nợ là trạng thái hiện tại của đơn trong kỳ, không phải dòng tiền thu trong kỳ.
+
+- 15/10/2026 — Đối soát leaderboard: danh sách đơn và bảng doanh số phải dùng cùng tháng giờ Việt Nam, trạng thái và `assignedSaleId`; gửi tháng rõ ràng khi mở đơn hoặc lưu KPI.
