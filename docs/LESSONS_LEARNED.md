@@ -249,3 +249,5 @@ bước) thì mở đúng mục trong
 - Doanh số theo ngày đặt đơn (fallback ngày tạo), mốc VN với đầu cuối exclusive; đã thu/còn nợ là trạng thái hiện tại của đơn trong kỳ, không phải dòng tiền thu trong kỳ.
 
 - 15/10/2026 — Đối soát leaderboard: danh sách đơn và bảng doanh số phải dùng cùng tháng giờ Việt Nam, trạng thái và `assignedSaleId`; gửi tháng rõ ràng khi mở đơn hoặc lưu KPI.
+
+- **21/10/2026 — Xuất sổ công nợ:** dùng chung handler JSON và Excel để giữ nguyên cách tính Nợ/Có và phạm vi tài khoản; lỗi `responseType: blob` cần đọc JSON từ Blob và hiện trong biến lỗi riêng. Bản Desktop cũ hơn repo `dev/zalo-crm/CRM-Med-main`: áp patch lên bản triển khai mới nhất và build/test ở đó trước khi phát hành.

@@ -11,6 +11,7 @@
  *  POST /api/v1/sale-app/debt/payments/:id/reverse   → đảo bút toán      [owner/admin]
  *  GET  /api/v1/sale-app/debt/customers/:id/payments → lịch sử thu nợ
  *  GET  /api/v1/sale-app/debt/customers/:id/ledger   → sổ chi tiết công nợ (Nợ/Có + số dư luỹ kế)
+ *       ?format=xlsx                              → xuất sổ + đơn còn nợ ra Excel
  *  GET  /api/v1/sale-app/debt/update-log             → lịch sử KẾ TOÁN nhập liệu [owner/admin]
  *  POST /api/v1/sale-app/uploads/proof               → upload ảnh chứng từ [owner/admin]
  *
@@ -551,6 +552,9 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
             orderDate: true,
             createdAt: true,
             debtAmountValue: true,
+            totalAmount: true,
+            totalAmountValue: true,
+            paidAmount: true,
           },
         });
         const inScope = new Set(orders.map((o: { id: string }) => o.id));
@@ -647,7 +651,7 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           delete r.sort;
         }
 
-        return {
+        const result = {
           customer: {
             id: contact.id,
             name: contact.fullName,
@@ -659,6 +663,22 @@ export async function debtRoutes(app: FastifyInstance): Promise<void> {
           rows,
           totals: { debit: sumDebit, credit: sumCredit, closing: balance },
         };
+        if ((request.query as { format?: string }).format === 'xlsx') {
+          const { buildDebtExport } = await import('./debt-export.js');
+          const outstanding = orders.filter((o) => toNumber(o.debtAmountValue) > 0).map((o) => ({
+            date: o.orderDate || o.createdAt,
+            code: o.orderCode,
+            total: toNumber(o.totalAmountValue ?? o.totalAmount),
+            paid: toNumber(o.paidAmount),
+            debt: toNumber(o.debtAmountValue),
+          }));
+          const file = await buildDebtExport(result, outstanding, new Date(), user.role === 'member');
+          reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+          reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
+          reply.header('Cache-Control', 'no-store');
+          return reply.send(file.buffer);
+        }
+        return result;
       } catch (err) {
         logger.error('[sale-app] debt/customers/:id/ledger error:', err);
         return reply.status(500).send({ error: 'Lỗi tải sổ chi tiết công nợ' });

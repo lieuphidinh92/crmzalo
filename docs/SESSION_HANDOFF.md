@@ -128,3 +128,11 @@ Nền thông báo dùng chung + việc đầu tiên: nhắc kế toán xuất VA
 - Đã bàn giao 56 khách cho nhân viên mới, đối chiếu 1.231 đơn không đổi doanh số lịch sử.
 - Đã đối soát một khách theo xác nhận chủ doanh nghiệp: đảo 4 phiếu nhập thừa, sửa liên kết phiếu thu; công nợ và sổ chi tiết bằng 0.
 - Các thay đổi dữ liệu đã thực hiện trên production, không chạy lại khi deploy. Chi tiết không chứa dữ liệu nhạy cảm: [SESSION_2026-09-16](archive/SESSION_2026-09-16.md).
+
+## 21/10/2026 — Xuất Excel công nợ từng khách
+
+- Nút “Xuất Excel công nợ” trong drawer KH, dùng ở cả 3 tab.
+- `GET /api/v1/sale-app/debt/customers/:id/ledger?format=xlsx` dùng cùng dữ liệu/phân quyền với sổ JSON; file gồm “Sổ chi tiết” + “Đơn còn nợ”. Số tiền/ngày là ô Excel có kiểu, tên file theo KH và ngày VN.
+- Builder: `backend/src/modules/sale-app/debt-export.ts`, dùng ExcelJS sẵn có. Không đổi schema, không cần migration hay biến môi trường mới.
+- Kiểm tra: backend TypeScript + sale-app Vite build; `cd backend && node --import tsx scripts/test-debt-export.ts` (auth, org/member scope, số dư, kiểu ô, khách không nợ, ngày VN); UI desktop/mobile 390px, tải thành công và lỗi riêng không làm mất đơn; đối chiếu bản chụp 36 giao dịch của BM CARE còn nợ 48.852.000đ.
+- Triển khai cần backend nhánh `feature/sale-app-nhom1` và giao diện nhánh `main`.
