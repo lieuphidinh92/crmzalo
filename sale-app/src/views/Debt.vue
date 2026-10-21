@@ -105,6 +105,9 @@ async function exportCustomerDebt() {
     const res = await api.get(`/sale-app/debt/customers/${customerId}/ledger`, {
       params: { format: 'xlsx' }, responseType: 'blob', timeout: 60000,
     });
+    if (!res.headers?.['content-type']?.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+      throw new Error('EXPORT_NOT_READY');
+    }
     const filename = /filename="([^"]+)"/.exec(res.headers?.['content-disposition'] || '')?.[1] || 'Cong-no-khach-hang.xlsx';
     const url = URL.createObjectURL(res.data);
     const link = document.createElement('a');
@@ -118,6 +121,7 @@ async function exportCustomerDebt() {
   } catch (err) {
     if (selected.value?.id === customerId) {
       let message = err.response?.status === 403 ? 'Bạn không có quyền xuất công nợ khách hàng này.' : 'Không xuất được Excel. Anh/chị vui lòng thử lại.';
+      if (err.message === 'EXPORT_NOT_READY') message = 'Phần mềm đang cập nhật chức năng xuất. Vui lòng tải lại trang và thử lại.';
       if (err.response?.data instanceof Blob) {
         try { message = JSON.parse(await err.response.data.text()).error || message; } catch { /* Non-JSON network/proxy error. */ }
       }
