@@ -93,6 +93,44 @@ const detailLoading = ref(false);
 const detailError = ref('');
 const tab = ref('orders'); // 'orders' | 'payments' | 'ledger'
 const toast = ref('');
+const exportingDebt = ref(false);
+const exportDebtError = ref('');
+
+async function exportCustomerDebt() {
+  if (!selected.value || exportingDebt.value) return;
+  const customerId = selected.value.id;
+  exportingDebt.value = true;
+  exportDebtError.value = '';
+  try {
+    const res = await api.get(`/sale-app/debt/customers/${customerId}/ledger`, {
+      params: { format: 'xlsx' }, responseType: 'blob', timeout: 60000,
+    });
+    if (!res.headers?.['content-type']?.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+      throw new Error('EXPORT_NOT_READY');
+    }
+    const filename = /filename="([^"]+)"/.exec(res.headers?.['content-disposition'] || '')?.[1] || 'Cong-no-khach-hang.xlsx';
+    const url = URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Allow Safari time to start the download before releasing the blob.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    if (selected.value?.id === customerId) {
+      let message = err.response?.status === 403 ? 'Bạn không có quyền xuất công nợ khách hàng này.' : 'Không xuất được Excel. Anh/chị vui lòng thử lại.';
+      if (err.message === 'EXPORT_NOT_READY') message = 'Phần mềm đang cập nhật chức năng xuất. Vui lòng tải lại trang và thử lại.';
+      if (err.response?.data instanceof Blob) {
+        try { message = JSON.parse(await err.response.data.text()).error || message; } catch { /* Non-JSON network/proxy error. */ }
+      }
+      exportDebtError.value = message;
+    }
+  } finally {
+    exportingDebt.value = false;
+  }
+}
 
 // Lịch sử thu nợ.
 const payments = ref([]);
@@ -345,6 +383,7 @@ async function loadList() {
 }
 
 async function openCustomer(c) {
+  exportDebtError.value = '';
   selected.value = c;
   detail.value = null;
   detailError.value = '';
@@ -364,6 +403,7 @@ async function openCustomer(c) {
 }
 
 function closeDetail() {
+  exportDebtError.value = '';
   selected.value = null;
   detail.value = null;
   payments.value = [];
@@ -754,6 +794,21 @@ onMounted(loadList);
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
+        </div>
+
+        <div class="px-4 pt-3">
+          <button
+            @click="exportCustomerDebt"
+            :disabled="exportingDebt"
+            :aria-busy="exportingDebt"
+            class="w-full min-h-11 px-3 py-2 rounded-btn border border-royal-200 text-royal-700 bg-royal-50 hover:bg-royal-100 active:bg-royal-100 disabled:opacity-60 disabled:cursor-wait flex items-center justify-center gap-2 text-sm font-semibold"
+          >
+            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5" />
+            </svg>
+            {{ exportingDebt ? 'Đang xuất Excel…' : 'Xuất Excel công nợ' }}
+          </button>
+          <p v-if="exportDebtError" role="alert" class="mt-2 text-sm text-red-700">{{ exportDebtError }}</p>
         </div>
 
         <!-- Tabs -->
