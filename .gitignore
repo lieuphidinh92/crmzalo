@@ -80,3 +80,5 @@ coverage/
 
 # Local data snapshots (chứa dữ liệu KH/sản phẩm) — không commit
 backend/scripts/backup-*.json
+
+.vercel/

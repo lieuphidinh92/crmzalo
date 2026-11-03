@@ -251,3 +251,5 @@ bước) thì mở đúng mục trong
 - 15/10/2026 — Đối soát leaderboard: danh sách đơn và bảng doanh số phải dùng cùng tháng giờ Việt Nam, trạng thái và `assignedSaleId`; gửi tháng rõ ràng khi mở đơn hoặc lưu KPI.
 
 - **21/10/2026 — Xuất sổ công nợ:** dùng chung handler JSON và Excel để giữ nguyên cách tính Nợ/Có và phạm vi tài khoản; lỗi `responseType: blob` cần đọc JSON từ Blob và hiện trong biến lỗi riêng. Bản Desktop cũ hơn repo `dev/zalo-crm/CRM-Med-main`: áp patch lên bản triển khai mới nhất và build/test ở đó trước khi phát hành.
+
+- **03/11/2026 — Kho tách phiên và dữ liệu.** Singapore tách org tránh FIFO cũ lấy nhầm lô. Đọc DATE thành chuỗi theo từng query pg, không thay parser toàn cục; kiểm chứng bằng PostgreSQL thật ở múi giờ VN.

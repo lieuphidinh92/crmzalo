@@ -1,0 +1,34 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {fixture} from './fixture.js';
+
+test('legacy product mismatch needs explicit administrator review and is invalidated by metadata edits',async t=>{
+  const f=await fixture();t.after(()=>f.close());const s=f.service;
+  const sg=(await s.login('singapore',{email:'admin@warehouse.test',password:f.password})).profile;
+  const vn=(await s.login('58nv1',{email:'admin@warehouse.test',password:f.password})).profile;
+  const operator=(await s.login('singapore',{email:'duc@warehouse.test',password:f.password})).profile;
+  const source=(await s.createProduct(sg,{sku:'LINK',name:'Evening Primrose Oil 200 viên',packageSize:'200 viên',unit:'Lọ'})).id;
+  const target=(await s.createProduct(vn,{sku:'LINK',name:'Evening Primrose Oil 200 tablets',packageSize:'200 tablets',unit:'Lọ'})).id;
+  const confirmation=(a:any,revision=1)=>({checked:true,confirmation:a.warehouse==='singapore'?'SINGAPORE':'58NV1',revision});
+  const create=(a:any,type:string,lines:any[],extra:any={})=>s.create(a,{requestId:randomUUID(),type,documentDate:s.today(a),counterparty:'QA physical comparison',lines,...extra});
+  const initial=await create(sg,'opening',[{productId:source,batchCode:'LINK',quantity:10,unitCostMinor:100000,expiryDate:'2029-01-01'}]);await s.commit(sg,initial.id,confirmation(sg));
+  const batch=(await s.batches(sg))[0];
+  const transfer=await create(sg,'transfer',[{productId:source,batchId:batch.id,quantity:2}],{destination:'58nv1'});
+  await assert.rejects(s.commit(sg,transfer.id,confirmation(sg)),{statusCode:409});assert.equal((await s.batches(sg))[0].current_quantity,10);
+  const proposal=(await s.productLinks(sg))[0];assert.equal(proposal.approved,false);
+  const approval={...confirmation(sg),sourceId:source,targetId:target,sourceSignature:proposal.source_signature,targetSignature:proposal.target_signature};
+  await assert.rejects(s.approveProductLink(operator,approval),{statusCode:403});
+  await s.approveProductLink(sg,approval);assert.equal((await s.productLinks(vn))[0].approved,true);
+  await s.commit(sg,transfer.id,confirmation(sg));const sent=await s.detail(vn,transfer.id);
+  await s.receive(vn,sent.id,{...confirmation(vn,sent.revision),requestId:randomUUID(),note:'Đếm đủ 2',lines:[{lineId:sent.lines[0].id,quantity:2}]});
+  assert.equal((await s.batches(vn))[0].current_quantity,2);
+  const reverse=await create(vn,'transfer',[{productId:target,batchId:(await s.batches(vn))[0].id,quantity:1}],{destination:'singapore'});
+  await s.commit(vn,reverse.id,confirmation(vn));const back=await s.detail(sg,reverse.id);
+  await s.receive(sg,back.id,{...confirmation(sg,back.revision),requestId:randomUUID(),note:'Nhận lại 1',lines:[{lineId:back.lines[0].id,quantity:1}]});
+  assert.equal((await s.batches(sg))[0].current_quantity,9);
+  await f.db.query("UPDATE products SET package_size='300 tablets' WHERE id=$1",[target]);
+  assert.equal((await s.productLinks(sg))[0].approved,false);
+  const stale=await create(sg,'transfer',[{productId:source,batchId:batch.id,quantity:1}],{destination:'58nv1'});
+  await assert.rejects(s.commit(sg,stale.id,confirmation(sg)),{statusCode:409});assert.equal((await s.batches(sg))[0].current_quantity,9);
+});
