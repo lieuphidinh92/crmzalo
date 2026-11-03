@@ -253,3 +253,5 @@ bước) thì mở đúng mục trong
 - **21/10/2026 — Xuất sổ công nợ:** dùng chung handler JSON và Excel để giữ nguyên cách tính Nợ/Có và phạm vi tài khoản; lỗi `responseType: blob` cần đọc JSON từ Blob và hiện trong biến lỗi riêng. Bản Desktop cũ hơn repo `dev/zalo-crm/CRM-Med-main`: áp patch lên bản triển khai mới nhất và build/test ở đó trước khi phát hành.
 
 - **03/11/2026 — Kho tách phiên và dữ liệu.** Singapore tách org tránh FIFO cũ lấy nhầm lô. Đọc DATE thành chuỗi theo từng query pg, không thay parser toàn cục; kiểm chứng bằng PostgreSQL thật ở múi giờ VN.
+
+- 03/11/2026 — Cross-subdomain warehouse exclusivity needs server revocation plus shared parent-domain cookies; BroadcastChannel/localStorage alone cannot synchronize sing and sale origins. Bind sessions to HttpOnly device cookies, serialize successful logins, and keep the active-warehouse signal non-authoritative. Remember sessions, never plaintext passwords. Reapply only the targeted Prisma field/index to the newer deployment schema instead of copying the older Desktop schema.

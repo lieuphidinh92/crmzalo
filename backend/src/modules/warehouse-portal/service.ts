@@ -40,7 +40,7 @@ async function sync(q: Queryable, productId: string) {
 
 export class WarehouseService {
   constructor(public db: Store) {}
-  async login(warehouse: string, body: any) {
+  async login(warehouse: string, body: any, deviceKey?: string) {
     const email = text(body?.email,'Email').toLowerCase();
     if(typeof body?.password!=='string'||body.password.length<1||body.password.length>200) fail('Mật khẩu không hợp lệ.');
     const password = body.password;
@@ -50,15 +50,21 @@ export class WarehouseService {
     const valid = await bcrypt.compare(password, user?.password_hash || '$2b$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW');
     if (!user || !valid) fail('Email, mật khẩu hoặc quyền truy cập kho không hợp lệ.',401);
     const token = randomBytes(32).toString('hex');
-    await this.db.query("INSERT INTO wp_sessions(token_hash,warehouse_code,user_id,expires_at) VALUES($1,$2,$3,now()+interval '8 hours')",[hash(token),warehouse,user.id]);
+    await this.db.transaction(async q=>{
+      if(deviceKey){
+        await q.query('SELECT pg_advisory_xact_lock(hashtext($1))',[deviceKey]);
+        await q.query('DELETE FROM wp_sessions WHERE device_key=$1 AND warehouse_code<>$2',[deviceKey,warehouse]);
+      }
+      await q.query("INSERT INTO wp_sessions(token_hash,warehouse_code,user_id,device_key,expires_at) VALUES($1,$2,$3,$4,now()+interval '8 hours')",[hash(token),warehouse,user.id,deviceKey||null]);
+    });
     return { token, profile: await this.authenticate(warehouse, token) };
   }
-  async authenticate(warehouse: string, token: string): Promise<Actor> {
+  async authenticate(warehouse: string, token: string, deviceKey?: string): Promise<Actor> {
     if (!/^[a-f0-9]{64}$/.test(token)) fail('Vui lòng đăng nhập riêng vào kho này.',401);
     const r = (await this.db.query(`SELECT s.user_id,a.role,a.see_cost,w.warehouse_id,w.org_id,w.timezone,u.full_name
       FROM wp_sessions s JOIN wp_warehouses w ON w.code=s.warehouse_code
       JOIN wp_access a ON a.warehouse_code=s.warehouse_code AND a.user_id=s.user_id JOIN users u ON u.id=s.user_id
-      WHERE s.token_hash=$1 AND s.warehouse_code=$2 AND s.expires_at>now() AND w.active=true AND u.is_active=true`,[hash(token),warehouse])).rows[0];
+      WHERE s.token_hash=$1 AND s.warehouse_code=$2 AND ($3::text IS NULL OR s.device_key=$3) AND s.expires_at>now() AND w.active=true AND u.is_active=true`,[hash(token),warehouse,deviceKey??null])).rows[0];
     if (!r) fail('Phiên kho đã hết hạn hoặc quyền đã thay đổi. Hãy đăng nhập lại.',401);
     return { userId:r.user_id,warehouse,role:r.role,seeCost:r.see_cost,warehouseId:r.warehouse_id,orgId:r.org_id,timezone:r.timezone,fullName:r.full_name };
   }
