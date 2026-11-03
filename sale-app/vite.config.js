@@ -22,6 +22,10 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/warehouse/'),
+            handler: 'NetworkOnly',
+          },
+          {
             // Chunk không nạp sẵn (vd màn in chứng từ): lần đầu tải qua mạng,
             // từ lần 2 lấy từ máy → bấm in lần sau vẫn nhanh.
             urlPattern: ({ url }) => url.pathname.startsWith('/assets/') && url.pathname.endsWith('.js'),
