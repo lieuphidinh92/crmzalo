@@ -113,6 +113,7 @@ model User {
   portalConfirmed PortalDocument[] @relation("PortalConfirmer")
   portalReceipts PortalReceipt[]
   portalAudits PortalAudit[]
+  portalProductLinks PortalProductLink[]
 
   @@map("users")
 }
@@ -1431,6 +1432,8 @@ model Product {
 
   portalSourceLines PortalLine[] @relation("PortalSourceProduct")
   portalDestinationLines PortalLine[] @relation("PortalDestinationProduct")
+  portalLinksFrom PortalProductLink[] @relation("PortalLinkSource")
+  portalLinksTo PortalProductLink[] @relation("PortalLinkDestination")
 
   @@unique([orgId, sku])
   @@index([orgId, status])
@@ -1613,6 +1616,7 @@ model PortalWarehouse {
   receipts PortalReceipt[]
   audits PortalAudit[]
   baselines PortalBaseline[]
+  productLinks PortalProductLink[]
   @@map("wp_warehouses")
 }
 model PortalAccess {
@@ -1680,6 +1684,7 @@ model PortalLine {
   documentId String @map("document_id")
   productId String @map("product_id")
   destinationProductId String? @map("destination_product_id")
+  destinationSignature String? @map("destination_signature")
   sku String
   name String
   packageSize String? @map("package_size")
@@ -1740,4 +1745,19 @@ model PortalAudit {
   document PortalDocument? @relation(fields:[documentId],references:[id],onDelete:NoAction,onUpdate:NoAction)
   @@index([warehouseCode,createdAt])
   @@map("wp_audit")
+}
+model PortalProductLink {
+  sourceProductId String @map("source_product_id")
+  destinationProductId String @map("destination_product_id")
+  sourceSignature String @map("source_signature")
+  destinationSignature String @map("destination_signature")
+  warehouseCode String @map("warehouse_code")
+  approvedById String @map("approved_by")
+  approvedAt DateTime @default(now()) @db.Timestamptz(6) @map("approved_at")
+  source Product @relation("PortalLinkSource",fields:[sourceProductId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  destination Product @relation("PortalLinkDestination",fields:[destinationProductId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  warehouse PortalWarehouse @relation(fields:[warehouseCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
+  approvedBy User @relation(fields:[approvedById],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  @@id([sourceProductId,destinationProductId])
+  @@map("wp_product_links")
 }

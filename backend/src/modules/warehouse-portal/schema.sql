@@ -46,7 +46,7 @@ CREATE TABLE wp_documents (
 );
 CREATE TABLE wp_lines (
   id text PRIMARY KEY, document_id text NOT NULL REFERENCES wp_documents(id),
-  product_id text NOT NULL REFERENCES products(id), destination_product_id text REFERENCES products(id),
+  product_id text NOT NULL REFERENCES products(id), destination_product_id text REFERENCES products(id), destination_signature text,
   sku text NOT NULL, name text NOT NULL, package_size text,
   batch_id text REFERENCES inventory_batches(id), batch_code text NOT NULL,
   expiry_date date, manufacture_date date,
@@ -78,6 +78,15 @@ CREATE TABLE wp_audit (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ON wp_audit(warehouse_code,created_at);
+CREATE TABLE wp_product_links (
+  source_product_id text NOT NULL REFERENCES products(id),
+  destination_product_id text NOT NULL REFERENCES products(id),
+  source_signature text NOT NULL, destination_signature text NOT NULL,
+  warehouse_code text NOT NULL REFERENCES wp_warehouses(code),
+  approved_by text NOT NULL REFERENCES users(id), approved_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(source_product_id,destination_product_id),
+  CHECK(source_product_id<>destination_product_id)
+);
 -- Portal sessions are server-side only; these tables are not a public Data API.
 ALTER TABLE wp_warehouses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wp_access ENABLE ROW LEVEL SECURITY;
@@ -88,3 +97,4 @@ ALTER TABLE wp_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wp_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wp_receipt_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wp_audit ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wp_product_links ENABLE ROW LEVEL SECURITY;

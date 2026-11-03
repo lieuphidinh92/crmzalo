@@ -21,6 +21,7 @@ function date(s: unknown, label: string): string {
 }
 const day = (value: any): string | null => value == null ? null : value instanceof Date ? value.toISOString().slice(0,10) : String(value).slice(0,10);
 const normalized = (s: string | null) => (s || '').toLowerCase().replace(/\s/g,'');
+const signature=(p:any)=>hash(JSON.stringify([p.sku,normalized(p.name),normalized(p.package_size)]));
 export const confirmationFor = (warehouse: string) => warehouse === 'singapore' ? 'SINGAPORE' : '58NV1';
 const writable = (a: Actor) => { if (!['operator','admin'].includes(a.role)) fail('Bạn chỉ có quyền xem kho này.',403); };
 function confirm(a: Actor, body: any) {
@@ -195,14 +196,19 @@ export class WarehouseService {
   async destinationProduct(q: Queryable, warehouse: any, l: any) {
     const p=(await q.query('SELECT * FROM products WHERE org_id=$1 AND sku=$2',[warehouse.org_id,l.sku])).rows[0];
     if(p) {
-      if(normalized(p.package_size)!==normalized(l.package_size)||normalized(p.name)!==normalized(l.name)) fail(`Mã ${l.sku} ở hai kho khác tên hoặc quy cách. Quản trị cần đối chiếu trước khi gửi.`,409);
-      return p.id;
+      if(normalized(p.package_size)!==normalized(l.package_size)||normalized(p.name)!==normalized(l.name)) {
+        const approved=(await q.query(`SELECT 1 FROM wp_product_links WHERE
+          (source_product_id=$1 AND destination_product_id=$2 AND source_signature=$3 AND destination_signature=$4) OR
+          (source_product_id=$2 AND destination_product_id=$1 AND source_signature=$4 AND destination_signature=$3)`,[l.product_id,p.id,signature(l),signature(p)])).rows.length;
+        if(!approved) fail(`Mã ${l.sku} ở hai kho khác tên hoặc quy cách. Quản trị cần xác nhận tại mục Liên kết sản phẩm trước khi gửi.`,409);
+      }
+      return {id:p.id,signature:signature(p)};
     }
     const source=(await q.query('SELECT unit,main_image_url FROM products WHERE id=$1',[l.product_id])).rows[0];
     const id=randomUUID();
     await q.query(`INSERT INTO products(id,org_id,sku,name,package_size,unit,main_image_url,status,sellable,has_sales,allow_oversell,total_stock,warning_stock,gallery_urls,marketing_docs,created_at,updated_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,'active',true,false,false,0,30,'[]','[]',timezone('UTC',now()),timezone('UTC',now()))`,[id,warehouse.org_id,l.sku,l.name,l.package_size,source.unit,source.main_image_url]);
-    return id;
+    return {id,signature:signature(l)};
   }
   async commit(a: Actor,id: string, body: any) {
     confirm(a,body);
@@ -248,8 +254,8 @@ export class WarehouseService {
             await q.query('UPDATE wp_lines SET cost_vnd=$2 WHERE id=$1',[l.id,batch.import_cost]);
             if(d.type==='transfer') {
               if(batch.import_cost===null) fail('Lô thiếu giá vốn.',409);
-              const pid=await this.destinationProduct(q,destination,l);
-              await q.query('UPDATE wp_lines SET destination_product_id=$2 WHERE id=$1',[l.id,pid]);
+              const target=await this.destinationProduct(q,destination,l);
+              await q.query('UPDATE wp_lines SET destination_product_id=$2,destination_signature=$3 WHERE id=$1',[l.id,target.id,target.signature]);
             }
             await this.movement(q,a,l.product_id,batch.id,-l.quantity,'export',id,d.code);
           }
@@ -290,8 +296,8 @@ export class WarehouseService {
         if(qty>l.quantity-l.received-l.reconciled) fail('Số lượng vượt phần hàng còn đang vận chuyển.',409);
         if(!reconcile) {
           if(day(l.expiry_date)&&day(l.expiry_date)!<this.today(a)) fail('Hàng đã hết hạn. Cần quản trị đối soát, không cộng vào tồn có thể xuất.',409);
-          const target=(await q.query('SELECT id,name,package_size FROM products WHERE id=$1 AND org_id=$2',[l.destination_product_id,a.orgId])).rows[0];
-          if(!target||normalized(target.name)!==normalized(l.name)||normalized(target.package_size)!==normalized(l.package_size)) fail('Thông tin mã nhận đã thay đổi. Cần đối chiếu trước khi nhận.',409);
+          const target=(await q.query('SELECT id,sku,name,package_size FROM products WHERE id=$1 AND org_id=$2',[l.destination_product_id,a.orgId])).rows[0];
+          if(!target||signature(target)!==l.destination_signature) fail('Thông tin mã nhận đã thay đổi. Cần đối chiếu trước khi nhận.',409);
           await this.addStock(q,a,{...l,product_id:target.id},qty,id,`${d.code}: nhận từ ${d.warehouse_code}`);
         }
         await q.query(`UPDATE wp_lines SET ${reconcile?'reconciled':'received'}=${reconcile?'reconciled':'received'}+$2 WHERE id=$1`,[l.id,qty]);
@@ -335,6 +341,34 @@ export class WarehouseService {
     if(a.role!=='admin') fail('Chỉ quản trị kho được quản lý quyền.',403);
     return (await this.db.query(`SELECT u.id,u.full_name,u.email,pa.role,pa.see_cost FROM users u LEFT JOIN wp_access pa ON pa.user_id=u.id AND pa.warehouse_code=$1
       WHERE u.org_id=(SELECT org_id FROM users WHERE id=$2) AND u.is_active=true ORDER BY u.full_name`,[a.warehouse,a.userId])).rows;
+  }
+  async productLinks(a: Actor) {
+    if(a.role!=='admin') fail('Chỉ quản trị được đối chiếu mã giữa hai kho.',403);
+    const other=(await this.db.query('SELECT org_id FROM wp_warehouses WHERE code<>$1 AND active=true',[a.warehouse])).rows[0];
+    if(!other) return [];
+    const rows=(await this.db.query(`SELECT p.id source_id,p.sku,p.name source_name,p.package_size source_pack,
+      t.id target_id,t.name target_name,t.package_size target_pack FROM products p JOIN products t ON t.sku=p.sku
+      WHERE p.org_id=$1 AND t.org_id=$2 ORDER BY p.sku`,[a.orgId,other.org_id])).rows;
+    const links=(await this.db.query('SELECT * FROM wp_product_links')).rows;
+    return rows.map(r=>{
+      const ss=signature({sku:r.sku,name:r.source_name,package_size:r.source_pack}),ts=signature({sku:r.sku,name:r.target_name,package_size:r.target_pack});
+      const approved=links.some(l=>(l.source_product_id===r.source_id&&l.destination_product_id===r.target_id&&l.source_signature===ss&&l.destination_signature===ts)||(l.destination_product_id===r.source_id&&l.source_product_id===r.target_id&&l.destination_signature===ss&&l.source_signature===ts));
+      return {...r,source_signature:ss,target_signature:ts,compatible:ss===ts,approved};
+    });
+  }
+  async approveProductLink(a: Actor,body:any) {
+    if(a.role!=='admin') fail('Chỉ quản trị được xác nhận liên kết sản phẩm.',403);
+    confirm(a,body);
+    return this.db.transaction(async q=>{
+      const source=(await q.query('SELECT id,sku,name,package_size FROM products WHERE id=$1 AND org_id=$2 FOR UPDATE',[body.sourceId,a.orgId])).rows[0];
+      const target=(await q.query('SELECT p.id,p.sku,p.name,p.package_size FROM products p JOIN wp_warehouses w ON w.org_id=p.org_id WHERE p.id=$1 AND w.code<>$2 AND w.active=true FOR UPDATE OF p',[body.targetId,a.warehouse])).rows[0];
+      if(!source||!target||source.sku!==target.sku) fail('Chỉ liên kết hai sản phẩm cùng mã đã đối chiếu ở đúng hai kho.');
+      if(signature(source)!==body.sourceSignature||signature(target)!==body.targetSignature) fail('Thông tin sản phẩm đã thay đổi. Tải lại và đối chiếu.',409);
+      await q.query(`INSERT INTO wp_product_links(source_product_id,destination_product_id,source_signature,destination_signature,warehouse_code,approved_by)
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(source_product_id,destination_product_id) DO UPDATE SET source_signature=EXCLUDED.source_signature,
+        destination_signature=EXCLUDED.destination_signature,approved_by=EXCLUDED.approved_by,approved_at=now()`,[source.id,target.id,body.sourceSignature,body.targetSignature,a.warehouse,a.userId]);
+      await audit(q,a,'products.linked',null,{sourceId:source.id,targetId:target.id,sourceSignature:body.sourceSignature,targetSignature:body.targetSignature});return {linked:true};
+    });
   }
   async setAccess(a: Actor,body: any) {
     if(a.role!=='admin') fail('Chỉ quản trị kho được quản lý quyền.',403);

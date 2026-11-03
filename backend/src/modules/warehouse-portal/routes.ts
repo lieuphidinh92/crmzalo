@@ -38,6 +38,8 @@ export async function warehousePortalRoutes(app: FastifyInstance, options: Optio
     protectedApp.post(prefix+'/documents/:id/reconcile',async r=>service.receive(actor(r),(r.params as any).id,r.body,true));
     protectedApp.get(prefix+'/history',async r=>({movements:await service.history(actor(r))}));
     protectedApp.get(prefix+'/access',async r=>({users:await service.access(actor(r))}));
+    protectedApp.get(prefix+'/product-links',async r=>({links:await service.productLinks(actor(r))}));
+    protectedApp.post(prefix+'/product-links',async r=>service.approveProductLink(actor(r),r.body));
     protectedApp.post(prefix+'/access',async r=>service.setAccess(actor(r),r.body));
     protectedApp.get(prefix+'/report',async r=>{const p=r.query as any;return {rows:await service.report(actor(r),p.from,p.to)};});
     protectedApp.get(prefix+'/report.xlsx',async(r,reply)=>{

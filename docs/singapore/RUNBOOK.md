@@ -11,11 +11,13 @@
 
 Run the provisioning script from `backend`, with the configured database environment, verified warehouse ID, owner ID and optional operator ID. Default is dry-run and rollback. Add `--apply` only after verifying its output and retaining the backup.
 
-The script installs nine additive portal tables with CHECK constraints, foreign keys and RLS. It creates a separate Singapore organization, grants the named users access and imports three source catalog records. It does not import prices or opening stock. Existing batch quantities, costs and legacy movement history are preserved. The 58NV1 opening snapshot is stored in `wp_baselines`, not as synthetic legacy movements.
+The script installs ten additive portal tables with CHECK constraints, foreign keys and RLS. It creates a separate Singapore organization, grants the named users access and imports three source catalog records. It does not import prices or opening stock. Existing batch quantities, costs and legacy movement history are preserved. The 58NV1 opening snapshot is stored in `wp_baselines`, not as synthetic legacy movements.
 
 Enable routes with `WAREHOUSE_PORTAL_ENABLED=true` only after provisioning. Render's build command is `npm ci && npx prisma generate`; schema changes must be applied deliberately, rather than auto-creating unconstrained tables with `db push`.
 
 The source spreadsheet's prices are pending user verification. Do not swap prices or infer opening stock from a price list.
+
+Product names and package sizes must match at both ends. If a legacy SKU differs, only an administrator may explicitly approve a bidirectional product link after viewing both records. Approval stores both signatures; a later metadata change invalidates it. HC_10 needs this review because its legacy name uses “200 tablets” and has no package size.
 
 ## Daily workflow
 

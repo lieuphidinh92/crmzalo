@@ -18,11 +18,14 @@ try{
   assert(owner&&owner.org_id===warehouse.org_id&&['owner','admin'].includes(owner.role),'Owner must be an active administrator in the source organization');
   if(operatorId) assert((await c.query('SELECT id FROM users WHERE id=$1 AND org_id=$2 AND is_active=true',[operatorId,warehouse.org_id])).rows.length===1,'Operator must belong to the source organization');
   const tables=(await c.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'wp_%'")).rows.map(r=>r.tablename);
-  const expected=['wp_warehouses','wp_baselines','wp_access','wp_sessions','wp_documents','wp_lines','wp_receipts','wp_receipt_lines','wp_audit'];
-  assert(tables.length===0||expected.every(t=>tables.includes(t)),'Partial portal schema detected. Inspect before continuing.');
+  const expected=['wp_warehouses','wp_baselines','wp_access','wp_sessions','wp_documents','wp_lines','wp_receipts','wp_receipt_lines','wp_audit','wp_product_links'];
+  const initial=expected.filter(t=>t!=='wp_product_links');
+  const upgrade=initial.every(t=>tables.includes(t))&&tables.length===initial.length;
+  assert(tables.length===0||expected.every(t=>tables.includes(t))||upgrade,'Partial portal schema detected. Inspect before continuing.');
   const before={warehouse,portalTables:tables,stock:(await c.query('SELECT id,product_id,batch_code,current_quantity,import_cost FROM inventory_batches WHERE warehouse_id=$1 ORDER BY id FOR UPDATE',[warehouse58])).rows};
   if(apply){mkdirSync(new URL('./backups/',import.meta.url),{recursive:true});writeFileSync(new URL(`./backups/portal-before-${Date.now()}.json`,import.meta.url),JSON.stringify(before,null,2),{flag:'wx',mode:0o600});}
   if(!tables.length) await c.query(readFileSync(new URL('../src/modules/warehouse-portal/schema.sql',import.meta.url),'utf8'));
+  else if(upgrade) await c.query(readFileSync(new URL('../src/modules/warehouse-portal/upgrade-product-links.sql',import.meta.url),'utf8'));
   let sg=(await c.query("SELECT * FROM wp_warehouses WHERE code='singapore'")).rows[0];
   const vn=(await c.query("SELECT * FROM wp_warehouses WHERE code='58nv1'")).rows[0];
   if(vn) assert.equal(vn.warehouse_id,warehouse58,'Portal already bound to a different 58NV1 warehouse');
