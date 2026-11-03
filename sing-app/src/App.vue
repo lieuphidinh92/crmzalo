@@ -1,7 +1,9 @@
 <script setup>
-import {computed,onMounted,ref,watch} from 'vue';
+import {computed,onMounted,onUnmounted,ref,watch} from 'vue';
 import Icon from './Icon.vue';
 import MoneyField from './MoneyField.vue';
+import CountryFlag from './CountryFlag.vue';
+import mchLogo from './assets/mch-logo.png';
 import {warehouseApi} from './api';
 import './style.css';
 const vModalFocus={mounted(el){const previous=document.activeElement;el.setAttribute('tabindex','-1');const background=[...document.querySelectorAll('.wp-shell > :not(.wp-overlay)')];background.forEach(e=>e.inert=true);const overflow=document.body.style.overflow;document.body.style.overflow='hidden';el.focus();const trap=e=>{if(e.key!=='Tab')return;const items=[...el.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')].filter(x=>x.getClientRects().length);if(!items.length){e.preventDefault();return;}if(e.shiftKey&&(document.activeElement===items[0]||document.activeElement===el)){e.preventDefault();items.at(-1).focus();}else if(!e.shiftKey&&(document.activeElement===items.at(-1)||document.activeElement===el)){e.preventDefault();items[0].focus();}};el.addEventListener('keydown',trap);el._restore=()=>{background.forEach(e=>e.inert=false);document.body.style.overflow=overflow;el.removeEventListener('keydown',trap);if(previous?.isConnected)previous.focus();};},unmounted(el){el._restore?.();}};
@@ -13,8 +15,11 @@ const portalUrl=isSG?'https://sale.halo.com.vn/warehouse-58nv1':'https://sing.ha
 const profile=ref(null),booting=ref(true),busy=ref(false),error=ref(''),notice=ref(''),view=ref('home');
 const email=ref(''),password=ref('');
 const products=ref([]),batches=ref([]),documents=ref([]),history=ref([]),search=ref('');
-function expire(){profile.value=null;activeDoc.value=null;createOpen.value=false;productModal.value=false;accessTarget.value=null;linkTarget.value=null;productLinks.value=[];products.value=[];batches.value=[];documents.value=[];history.value=[];accessUsers.value=[];reportRows.value=[];notice.value='';}
+function expire(message=''){profile.value=null;activeDoc.value=null;createOpen.value=false;productModal.value=false;accessTarget.value=null;linkTarget.value=null;productLinks.value=[];products.value=[];batches.value=[];documents.value=[];history.value=[];accessUsers.value=[];reportRows.value=[];notice.value='';if(message)error.value=message;}
 const api=warehouseApi(warehouse,expire);
+const loginPrefs=api.preferences(),remember=ref(loginPrefs.remember!==false);email.value=loginPrefs.email||'';
+watch(remember,value=>api.rememberInfo(value,email.value));
+onUnmounted(()=>api.dispose());
 const canWrite=computed(()=>['operator','admin'].includes(profile.value?.role));
 const nav=[['home','home','Tổng quan'],['products','box','Sản phẩm'],['stock','box','Tồn kho'],['documents','in','Nhập · Xuất'],['transfers','transfer','Chuyển kho'],['history','clock','Lịch sử'],['reports','chart','Báo cáo'],['access','shield','Quyền truy cập'],['links','transfer','Liên kết sản phẩm']];
 const names={import:'Nhập kho',export:'Xuất kho',opening:'Tồn đầu kỳ',stocktake:'Kiểm kê',transfer:'Chuyển kho'};
@@ -33,9 +38,9 @@ const filteredProducts=computed(()=>products.value.filter(p=>(p.sku+' '+p.name).
 const shownDocs=computed(()=>documents.value.filter(d=>view.value==='transfers'?d.type==='transfer':d.type!=='transfer'));
 async function run(fn){if(busy.value)return;busy.value=true;error.value='';try{return await fn();}catch(e){error.value=e.message;}finally{busy.value=false;}}
 async function refresh(){const [p,b,d,h]=await Promise.all([api.call('/products'),api.call('/batches'),api.call('/documents'),api.call('/history')]);products.value=p.products;batches.value=b.batches;documents.value=d.documents;history.value=h.movements;}
-async function login(){await run(async()=>{profile.value=await api.login(email.value,password.value);password.value='';await refresh();});}
+async function login(){await run(async()=>{profile.value=await api.login(email.value,password.value,remember.value);password.value='';await refresh();});}
 async function logout(){await run(async()=>{await api.logout();expire();password.value='';});}
-onMounted(async()=>{document.title='HALO · Kho '+title;if(api.hasSession()){try{profile.value=await api.call('/profile');await refresh();}catch(e){api.clear();profile.value=null;error.value=e.message;}}booting.value=false;});
+onMounted(async()=>{document.title=(isSG?'MCH':'HALO')+' · Kho '+title;if(api.hasSession()){try{profile.value=await api.call('/profile');await refresh();}catch(e){api.clear();profile.value=null;error.value=e.message;}}booting.value=false;});
 watch(view,()=>{search.value='';error.value='';if(view.value==='access')run(loadAccess);if(view.value==='links')run(loadLinks);});
 
 const createOpen=ref(false),step=ref(1),draft=ref({}),activeDoc=ref(null),action=ref(''),confirmation=ref(''),checked=ref(false),actionNote=ref(''),receiveQty=ref({}),actionRequest=ref('');
@@ -83,29 +88,30 @@ async function reload(){if(loading.value)return;loading.value=true;await run(asy
 
 <template>
 <div class="wp-shell" :class="isSG?'wp-sg':'wp-nv'">
+  <CountryFlag v-if="isSG" singapore class="wp-country-backdrop" preserveAspectRatio="xMidYMid slice" aria-hidden="true"/>
   <div v-if="isPreview" class="wp-preview-badge">BẢN THỬ · DỮ LIỆU GIẢ LẬP</div>
   <div v-if="booting" class="wp-boot" role="status">Đang kiểm tra phiên kho {{ title }}…</div>
   <div v-else-if="!profile" class="wp-login">
     <section class="wp-login-story">
-      <a class="wp-brand" href="/"><span class="wp-brand-mark">H</span> HALO<span class="wp-brand-sub">WAREHOUSE</span></a>
+      <a class="wp-brand" href="/"><img v-if="isSG" :src="mchLogo" alt="MCH Global Pte. Ltd." class="wp-mch-logo"><template v-else><span class="wp-brand-mark">H</span> HALO<span class="wp-brand-sub">WAREHOUSE</span></template></a>
       <div class="wp-story-copy"><span class="wp-eyebrow">MỘT KHO. MỘT PHIÊN. ĐÚNG TRÁCH NHIỆM.</span><h1>Rõ từng lô hàng.<br>Chắc từng lần chuyển.</h1><p>Không gian vận hành riêng của kho {{ title }}.<br>Mỗi lần nhập, xuất và nhận hàng đều có dấu vết.</p></div>
       <svg class="wp-warehouse-art" viewBox="0 0 620 250" fill="none" aria-hidden="true"><path d="m60 115 235-95 255 95v125H60V115Z" stroke="currentColor" stroke-width="1.5"/><path d="M60 115h490M112 239V145h100v94m40 0V145h100v94m40 0V145h100v94M295 20v95M84 105l211-61 233 62M133 166h59m-59 20h59m-59 20h59m-59 20h59m81-60h59m-59 20h59m-59 20h59m-59 20h59" stroke="currentColor"/><path d="M423 217v-43h44v43h-44Zm22-43v43m-22-25h44M24 240h566" stroke="currentColor" stroke-width="1.5"/><circle cx="550" cy="48" r="22" stroke="currentColor"/><path d="m541 48 7 7 11-15" stroke="currentColor" stroke-width="2"/></svg>
       <div class="wp-login-foot"><Icon name="shield"/> Phiên đăng nhập được giới hạn theo từng kho</div>
     </section>
-    <section class="wp-login-form"><div class="wp-login-card"><span class="wp-location"><i/> {{isSG?'SG · SINGAPORE':'VN · 58NV1'}}</span><h2>Đăng nhập kho {{title}}</h2><p class="wp-muted">Dùng tài khoản được cấp quyền tại kho này.</p>
-      <div class="wp-context-note"><Icon name="alert"/><span>Bạn đang vào <strong>{{title}}</strong>. Muốn thao tác tại {{other}}, cần đăng nhập riêng tại cổng kho đó.</span></div>
-      <form @submit.prevent="login"><label>Email<input v-model="email" type="email" autocomplete="username" required placeholder="Email của bạn" :disabled="busy"></label><label>Mật khẩu<input v-model="password" type="password" autocomplete="current-password" required placeholder="Nhập mật khẩu" :disabled="busy"></label><p v-if="error" class="wp-error" role="alert">{{error}}</p><button class="wp-primary wp-wide" :disabled="busy">{{busy?'Đang kiểm tra…':'Đăng nhập vào '+title}}<Icon name="arrow"/></button></form>
+    <section class="wp-login-form"><div class="wp-login-card"><span class="wp-location"><CountryFlag :singapore="isSG" class="wp-flag"/> {{isSG?'SG · SINGAPORE':'VN · 58NV1'}}</span><h2>Đăng nhập kho {{title}}</h2><p class="wp-muted">Dùng tài khoản được cấp quyền tại kho này.</p>
+      <div class="wp-context-note"><Icon name="alert"/><span>Bạn đang vào <strong>{{title}}</strong>. Đăng nhập tại đây sẽ tự đăng xuất kho {{other}} trong cùng trình duyệt.</span></div>
+      <form @submit.prevent="login"><label>Email<input v-model="email" type="email" autocomplete="username" required placeholder="Email của bạn" :disabled="busy"></label><label>Mật khẩu<input v-model="password" type="password" autocomplete="current-password" required placeholder="Nhập mật khẩu" :disabled="busy"></label><label class="wp-remember"><input v-model="remember" type="checkbox" :disabled="busy">Nhớ thông tin đăng nhập</label><p v-if="error" class="wp-error" role="alert">{{error}}</p><button class="wp-primary wp-wide" :disabled="busy">{{busy?'Đang kiểm tra…':'Đăng nhập vào '+title}}<Icon name="arrow"/></button></form>
       <div class="wp-login-other">Bạn cần thao tác tại kho {{other}}?<a :href="portalUrl">Mở cổng kho {{other}} <span>↗</span></a></div>
-      <p class="wp-small wp-muted">Phiên hết hạn sau 8 giờ. Không lưu mật khẩu trên thiết bị.</p>
+      <p class="wp-small wp-muted">Nhớ email và phiên tối đa 8 giờ. App không lưu mật khẩu. Bỏ tích khi dùng máy chung.</p>
     </div></section>
   </div>
 
   <template v-else>
-    <aside class="wp-sidebar"><a class="wp-brand" href="/"><span class="wp-brand-mark">H</span> HALO<span class="wp-brand-sub">OPERATIONS</span></a><div class="wp-side-location"><span class="wp-eyebrow">KHO ĐANG ĐĂNG NHẬP</span><strong>{{title}}</strong><span>{{isSG?'Singapore · UTC+8':'Việt Nam · UTC+7'}}</span></div>
+    <aside class="wp-sidebar"><a class="wp-brand" href="/"><img v-if="isSG" :src="mchLogo" alt="MCH Global Pte. Ltd." class="wp-mch-logo"><template v-else><span class="wp-brand-mark">H</span> HALO<span class="wp-brand-sub">OPERATIONS</span></template></a><div class="wp-side-location"><span class="wp-eyebrow">KHO ĐANG ĐĂNG NHẬP</span><strong>{{title}}</strong><span>{{isSG?'Singapore · UTC+8':'Việt Nam · UTC+7'}}</span></div>
       <nav aria-label="Chức năng kho"><button v-for="[id,icon,label] in nav.filter(n=>!['access','links'].includes(n[0])||profile.role==='admin')" :key="id" @click="view=id" :class="{active:view===id}" :aria-current="view===id?'page':undefined"><Icon :name="icon"/>{{label}}<b v-if="id==='transfers'&&awaiting.length">{{awaiting.length}}</b></button></nav>
       <div class="wp-sidebar-bottom"><Icon name="shield"/><p>Chỉ thao tác tại <strong>{{title}}</strong>.<br>Kho nhận tự kiểm đếm và xác nhận.</p><a :href="portalUrl">Mở cổng {{other}} ↗</a></div>
     </aside>
-    <div class="wp-workspace"><header class="wp-topbar"><div class="wp-live-warehouse"><span class="wp-country">{{isSG?'SG':'VN'}}</span><strong>KHO {{title}}</strong><span class="wp-session-label"><i/> Phiên kho riêng</span></div><div class="wp-user"><span>{{profile.fullName}}<small>{{profile.role==='admin'?'Quản trị kho':profile.role==='operator'?'Nhân viên kho':'Chỉ xem'}}</small></span><button class="wp-icon-btn" @click="logout" :disabled="busy" title="Đăng xuất kho này" aria-label="Đăng xuất kho này"><Icon name="logout"/></button></div></header>
+    <div class="wp-workspace"><header class="wp-topbar"><div class="wp-live-warehouse"><img v-if="isSG" :src="mchLogo" alt="MCH Global" class="wp-header-logo"><CountryFlag :singapore="isSG" class="wp-country-flag"/><strong>KHO {{title}}</strong><span class="wp-session-label"><i/> Phiên kho riêng</span></div><div class="wp-user"><span>{{profile.fullName}}<small>{{profile.role==='admin'?'Quản trị kho':profile.role==='operator'?'Nhân viên kho':'Chỉ xem'}}</small></span><button class="wp-icon-btn" @click="logout" :disabled="busy" title="Đăng xuất kho này" aria-label="Đăng xuất kho này"><Icon name="logout"/></button></div></header>
       <main class="wp-main">
         <div class="wp-page-heading"><div><span class="wp-eyebrow">HALO / KHO {{title}}</span><h1>{{nav.find(n=>n[0]===view)?.[2]}}</h1><p class="wp-muted">{{view==='home'?'Nhịp vận hành hôm nay, trong một góc nhìn.':view==='transfers'?'Gửi đúng kho. Nhận đúng số thực tế.':`Dữ liệu riêng của kho ${title}.`}}</p></div><button class="wp-secondary" @click="reload" :disabled="busy||loading"><Icon name="clock"/>{{loading?'Đang tải…':'Làm mới'}}</button></div>
         <p v-if="error&&!activeDoc&&!createOpen&&!productModal" class="wp-error" role="alert">{{error}}</p><p v-if="notice" class="wp-notice" role="status">{{notice}}<button @click="notice=''" aria-label="Đóng thông báo">×</button></p>
