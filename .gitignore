@@ -70,3 +70,8 @@ coverage/
 .npm/
 .yarn-integrity
 .cache/
+
+.vercel/
+
+# Include dependency symlinks as well as directories for the new portal.
+**/node_modules

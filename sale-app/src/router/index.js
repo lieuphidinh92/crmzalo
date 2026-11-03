@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 
 const routes = [
+  { path: '/warehouse-58nv1', name: 'warehouse-58nv1', component: () => import('../views/Warehouse58.vue'), meta: { public: true, warehousePortal: true } },
   {
     path: '/login',
     name: 'login',
