@@ -93,6 +93,7 @@ import { productEditRoutes } from './modules/sale-app/product-edit-routes.js';
 import { dashboardV2Routes } from './modules/sale-app/dashboard-v2-routes.js';
 import { apiKeyRoutes } from './modules/auth/api-key-routes.js';
 import { extCustomerRoutes } from './modules/external/ext-customer-routes.js';
+import { warehousePortalRoutes } from './modules/warehouse-portal/routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -156,6 +157,7 @@ async function bootstrap() {
   // ── Routes ────────────────────────────────────────────────────────────────
 
   await app.register(authRoutes);
+  await app.register(warehousePortalRoutes);
   await app.register(zaloRoutes);
   await app.register(chatRoutes);
   await app.register(contactRoutes);

@@ -1,0 +1,23 @@
+{
+  "source": "https://docs.google.com/spreadsheets/d/1ipfySvZLQdSokOEfXT7YufoYq8eprmAIOqOZhLOf-XQ/edit#gid=2040792930",
+  "products": [
+    {
+      "sku": "HC_10",
+      "name": "Healthy Care Evening Primrose Oil 1000mg 200 viên",
+      "packageSize": "200  viên",
+      "image": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS_XkCwAJqqii9YMjJ6jDBCyAx8e3BKb8oo7XPCJu-png&s=10"
+    },
+    {
+      "sku": "BM_01",
+      "name": "Blackmores Evening Primrose Oil 190 viên",
+      "packageSize": "190 viên",
+      "image": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS5Hih9ALWtoAdxyFjTWTlYW3fbtWX4uuGNx5dEuICQTw&s=10"
+    },
+    {
+      "sku": "HC_002",
+      "name": "Healthy Care Ginkgo Biloba 6000mg 60 viên",
+      "packageSize": "60 viên",
+      "image": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTlgS-IqEgUVm5c5u4FwWjvGufs73Tg4PtSwPIQThBsQQ&s=10"
+    }
+  ]
+}

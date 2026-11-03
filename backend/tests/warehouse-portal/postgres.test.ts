@@ -1,0 +1,33 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import pg from 'pg';
+import {randomUUID} from 'node:crypto';
+import {fixture} from './fixture.js';
+import {postgresStore} from '../../src/modules/warehouse-portal/store.js';
+
+const url=process.env.WAREHOUSE_QA_DATABASE_URL;
+test('real PostgreSQL serializable transactions prevent concurrent overdraft',{skip:!url},async t=>{
+  const target=new URL(url!);
+  assert.equal(target.hostname,'127.0.0.1');assert.equal(target.port,'55488');assert.match(target.pathname,/^\/portal_qa/);
+  const pool=new pg.Pool({connectionString:url,max:5});t.after(()=>pool.end());
+  const store=postgresStore(pool);
+  const f=await fixture({store,db:{query:(sql:string,values:any[])=>pool.query(sql,values),exec:(sql:string)=>pool.query(sql)}});
+  const s=f.service,a=(await s.login('singapore',{email:'admin@warehouse.test',password:f.password})).profile;
+  const p=(await s.createProduct(a,{sku:'RACE',name:'Concurrent stock',packageSize:'1 hộp',unit:'Hộp'})).id;
+  const draft=(type:string,lines:any[])=>s.create(a,{requestId:randomUUID(),type,documentDate:s.today(a),counterparty:'Concurrent QA',lines});
+  const confirm={confirmation:'SINGAPORE',checked:true,revision:1};
+  const opening=await draft('opening',[{productId:p,batchCode:'RACE',expiryDate:'2029-01-01',quantity:10,unitCostMinor:10000}]);await s.commit(a,opening.id,confirm);
+  const batch=(await s.batches(a))[0];assert.equal(batch.expiry_date,'2029-01-01');
+  const d1=await draft('export',[{productId:p,batchId:batch.id,quantity:8}]);
+  const d2=await draft('export',[{productId:p,batchId:batch.id,quantity:8}]);
+  const results=await Promise.allSettled([s.commit(a,d1.id,confirm),s.commit(a,d2.id,confirm)]);
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1,JSON.stringify(results.map(r=>r.status==='rejected'?{error:r.reason.message,code:r.reason.code,status:r.reason.statusCode}:r.status)));
+  const rejected=results.find(r=>r.status==='rejected') as PromiseRejectedResult;
+  assert.equal(rejected.reason.statusCode,409);
+  assert.equal((await s.batches(a))[0].current_quantity,2);
+  const total=(await pool.query('SELECT total_stock FROM products WHERE id=$1',[p])).rows[0].total_stock;
+  assert.equal(total,2);
+  const exports=(await pool.query("SELECT count(*)::int n FROM inventory_movements WHERE product_id=$1 AND type='export'",[p])).rows[0].n;
+  assert.equal(exports,1);
+  const report=(await s.report(a,s.today(a),s.today(a)))[0];assert.equal(report.closing,2);assert.equal(report.opening+report.incoming-report.outgoing+report.adjustment,2);
+});

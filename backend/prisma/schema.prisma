@@ -44,6 +44,8 @@ model Organization {
   apiKeys             ApiKey[]
   notificationLogs    NotificationLog[]
 
+  portalWarehouses PortalWarehouse[]
+
   @@map("organizations")
 }
 
@@ -104,6 +106,13 @@ model User {
   learningProgress LearningProgress[]
   careLogs         ContactCareLog[]       @relation("CareLogsCreated")
   apiKeys          ApiKey[]               @relation("ApiKeyOwner")
+
+  portalAccess PortalAccess[]
+  portalSessions PortalSession[]
+  portalCreated PortalDocument[] @relation("PortalCreator")
+  portalConfirmed PortalDocument[] @relation("PortalConfirmer")
+  portalReceipts PortalReceipt[]
+  portalAudits PortalAudit[]
 
   @@map("users")
 }
@@ -851,6 +860,8 @@ model Warehouse {
   importOrders      ImportOrder[]
   stocktakeSessions StocktakeSession[]
 
+  portalWarehouse PortalWarehouse?
+
   @@map("warehouses")
 }
 
@@ -891,6 +902,9 @@ model InventoryBatch {
   supplier       Supplier?           @relation(fields: [supplierId], references: [id])
   fifoUsages     OrderItemBatch[]
   stocktakeItems StocktakeItem[]
+
+  portalLines PortalLine[]
+  portalBaselines PortalBaseline[]
 
   @@unique([orgId, productId, batchCode])
   @@index([orgId, productId, status])
@@ -1415,6 +1429,9 @@ model Product {
   orderGifts       OrderGift[]
   importOrderItems ImportOrderItem[]
 
+  portalSourceLines PortalLine[] @relation("PortalSourceProduct")
+  portalDestinationLines PortalLine[] @relation("PortalDestinationProduct")
+
   @@unique([orgId, sku])
   @@index([orgId, status])
   @@index([orgId, brandId])
@@ -1575,4 +1592,152 @@ model ReceiptAssistantEvidence {
   @@unique([orgId, hash])
   @@index([orgId, transactionRef])
   @@map("receipt_assistant_evidence")
+}
+
+// Dedicated warehouse portal. Check constraints and RLS live in
+// src/modules/warehouse-portal/schema.sql and must be preserved.
+model PortalWarehouse {
+  code String @id
+  name String
+  orgId String @map("org_id")
+  warehouseId String @unique @map("warehouse_id")
+  timezone String
+  active Boolean @default(true)
+  openedAt DateTime @default(now()) @db.Timestamptz(6) @map("opened_at")
+  org Organization @relation(fields:[orgId], references:[id], onDelete:NoAction, onUpdate:NoAction)
+  warehouse Warehouse @relation(fields:[warehouseId], references:[id], onDelete:NoAction, onUpdate:NoAction)
+  access PortalAccess[]
+  sessions PortalSession[]
+  sent PortalDocument[] @relation("PortalSource")
+  incoming PortalDocument[] @relation("PortalDestination")
+  receipts PortalReceipt[]
+  audits PortalAudit[]
+  baselines PortalBaseline[]
+  @@map("wp_warehouses")
+}
+model PortalAccess {
+  warehouseCode String @map("warehouse_code")
+  userId String @map("user_id")
+  role String
+  seeCost Boolean @default(false) @map("see_cost")
+  warehouse PortalWarehouse @relation(fields:[warehouseCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
+  user User @relation(fields:[userId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  @@id([warehouseCode,userId])
+  @@map("wp_access")
+}
+model PortalBaseline {
+  warehouseCode String @map("warehouse_code")
+  batchId String @map("batch_id")
+  quantity Int
+  warehouse PortalWarehouse @relation(fields:[warehouseCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
+  batch InventoryBatch @relation(fields:[batchId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  @@id([warehouseCode,batchId])
+  @@map("wp_baselines")
+}
+model PortalSession {
+  tokenHash String @id @map("token_hash")
+  warehouseCode String @map("warehouse_code")
+  userId String @map("user_id")
+  expiresAt DateTime @db.Timestamptz(6) @map("expires_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  warehouse PortalWarehouse @relation(fields:[warehouseCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
+  user User @relation(fields:[userId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  @@index([expiresAt])
+  @@map("wp_sessions")
+}
+model PortalDocument {
+  id String @id
+  code String @unique
+  warehouseCode String @map("warehouse_code")
+  destinationCode String? @map("destination_code")
+  type String
+  status String @default("draft")
+  revision Int @default(1)
+  requestId String @map("request_id")
+  requestHash String @map("request_hash")
+  currency String
+  exchangeRate Decimal @db.Decimal(20,6) @map("exchange_rate")
+  counterparty String
+  note String @default("")
+  documentDate DateTime @db.Date @map("document_date")
+  attachmentUrl String? @map("attachment_url")
+  createdById String @map("created_by")
+  confirmedById String? @map("confirmed_by")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  confirmedAt DateTime? @db.Timestamptz(6) @map("confirmed_at")
+  warehouse PortalWarehouse @relation("PortalSource",fields:[warehouseCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
+  destination PortalWarehouse? @relation("PortalDestination",fields:[destinationCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
+  createdBy User @relation("PortalCreator",fields:[createdById],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  confirmedBy User? @relation("PortalConfirmer",fields:[confirmedById],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  lines PortalLine[]
+  receipts PortalReceipt[]
+  audits PortalAudit[]
+  @@unique([warehouseCode,requestId])
+  @@map("wp_documents")
+}
+model PortalLine {
+  id String @id
+  documentId String @map("document_id")
+  productId String @map("product_id")
+  destinationProductId String? @map("destination_product_id")
+  sku String
+  name String
+  packageSize String? @map("package_size")
+  batchId String? @map("batch_id")
+  batchCode String @map("batch_code")
+  expiryDate DateTime? @db.Date @map("expiry_date")
+  manufactureDate DateTime? @db.Date @map("manufacture_date")
+  quantity Int
+  expectedQuantity Int? @map("expected_quantity")
+  unitCostMinor BigInt? @map("unit_cost_minor")
+  costVnd Decimal? @db.Decimal(15,2) @map("cost_vnd")
+  received Int @default(0)
+  reconciled Int @default(0)
+  document PortalDocument @relation(fields:[documentId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  product Product @relation("PortalSourceProduct",fields:[productId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  destinationProduct Product? @relation("PortalDestinationProduct",fields:[destinationProductId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  batch InventoryBatch? @relation(fields:[batchId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  receipts PortalReceiptLine[]
+  @@index([documentId])
+  @@map("wp_lines")
+}
+model PortalReceipt {
+  id String @id
+  documentId String @map("document_id")
+  warehouseCode String @map("warehouse_code")
+  requestId String @map("request_id")
+  requestHash String @map("request_hash")
+  type String
+  createdById String @map("created_by")
+  note String
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  document PortalDocument @relation(fields:[documentId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  warehouse PortalWarehouse @relation(fields:[warehouseCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
+  createdBy User @relation(fields:[createdById],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  lines PortalReceiptLine[]
+  @@unique([documentId,requestId])
+  @@map("wp_receipts")
+}
+model PortalReceiptLine {
+  id String @id
+  receiptId String @map("receipt_id")
+  lineId String @map("line_id")
+  quantity Int
+  receipt PortalReceipt @relation(fields:[receiptId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  line PortalLine @relation(fields:[lineId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  @@map("wp_receipt_lines")
+}
+model PortalAudit {
+  id String @id
+  warehouseCode String @map("warehouse_code")
+  userId String @map("user_id")
+  action String
+  documentId String? @map("document_id")
+  details Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  warehouse PortalWarehouse @relation(fields:[warehouseCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
+  user User @relation(fields:[userId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  document PortalDocument? @relation(fields:[documentId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  @@index([warehouseCode,createdAt])
+  @@map("wp_audit")
 }
