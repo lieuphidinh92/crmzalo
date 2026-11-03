@@ -45,6 +45,8 @@ export async function warehousePortalRoutes(app: FastifyInstance, options: Optio
     protectedApp.post(prefix+'/logout',async r=>{await service.logout(token(r));return {loggedOut:true};});
     protectedApp.get(prefix+'/products',async r=>({products:await service.catalog(actor(r))}));
     protectedApp.post(prefix+'/products',async r=>service.createProduct(actor(r),r.body));
+    protectedApp.get(prefix+'/suppliers',async r=>({suppliers:await service.suppliers(actor(r))}));
+    protectedApp.post(prefix+'/suppliers',async r=>service.createSupplier(actor(r),r.body));
     protectedApp.get(prefix+'/batches',async r=>({batches:await service.batches(actor(r))}));
     protectedApp.get(prefix+'/documents',async r=>({documents:await service.list(actor(r))}));
     protectedApp.post(prefix+'/documents',async r=>service.create(actor(r),r.body));

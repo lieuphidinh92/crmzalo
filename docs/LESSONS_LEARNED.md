@@ -255,3 +255,5 @@ bước) thì mở đúng mục trong
 - **03/11/2026 — Kho tách phiên và dữ liệu.** Singapore tách org tránh FIFO cũ lấy nhầm lô. Đọc DATE thành chuỗi theo từng query pg, không thay parser toàn cục; kiểm chứng bằng PostgreSQL thật ở múi giờ VN.
 
 - 03/11/2026 — Cross-subdomain warehouse exclusivity needs server revocation plus shared parent-domain cookies; BroadcastChannel/localStorage alone cannot synchronize sing and sale origins. Bind sessions to HttpOnly device cookies, serialize successful logins, and keep the active-warehouse signal non-authoritative. Remember sessions, never plaintext passwords. Reapply only the targeted Prisma field/index to the newer deployment schema instead of copying the older Desktop schema.
+
+- 03/11/2026 — When reproducing an import form, persist invoice and charge fields and recompute totals on the server rather than adding decorative inputs. Keep foreign-currency amounts in minor units, hide all summary totals as well as unit costs from restricted users, and validate supplier organization. Import drafts must remain stock-neutral until the existing warehouse confirmation gate.

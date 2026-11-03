@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import type { Queryable, Store } from './store.js';
+import {importTotals} from './import-totals.js';
 
 export type Actor = { userId: string; warehouse: string; role: string; seeCost: boolean; warehouseId: string; orgId: string; timezone: string; fullName: string };
 const fail = (message: string, statusCode = 400): never => { throw Object.assign(new Error(message), { statusCode }); };
@@ -106,10 +107,12 @@ export class WarehouseService {
   }
   async list(a: Actor) {
     return (await this.db.query(`SELECT d.id,d.code,d.type,d.status,d.warehouse_code,d.destination_code,d.counterparty,d.document_date,d.created_at,
+      d.currency,CASE WHEN $2::boolean THEN d.import_details END import_details,
+      CASE WHEN $2::boolean AND d.type='import' THEN sum(l.quantity::numeric*l.unit_cost_minor) END goods_total_minor,
       COALESCE(sum(l.quantity),0)::int quantity,COALESCE(sum(l.received),0)::int received,COALESCE(sum(l.reconciled),0)::int reconciled
       FROM wp_documents d LEFT JOIN wp_lines l ON l.document_id=d.id
       WHERE d.warehouse_code=$1 OR (d.destination_code=$1 AND d.status NOT IN ('draft','cancelled'))
-      GROUP BY d.id ORDER BY d.created_at DESC LIMIT 500`,[a.warehouse])).rows;
+      GROUP BY d.id ORDER BY d.created_at DESC LIMIT 500`,[a.warehouse,a.seeCost])).rows;
   }
   async detail(a: Actor, id: string, q: Queryable = this.db, lock = false) {
     const d = (await q.query(`SELECT * FROM wp_documents WHERE id=$1 AND (warehouse_code=$2 OR (destination_code=$2 AND status NOT IN ('draft','cancelled'))) ${lock?'FOR UPDATE':''}`,[id,a.warehouse])).rows[0];
@@ -118,6 +121,7 @@ export class WarehouseService {
     d.receipts=(await q.query(`SELECT r.id,r.type,r.note,r.created_at,u.full_name FROM wp_receipts r JOIN users u ON u.id=r.created_by WHERE r.document_id=$1 ORDER BY r.created_at`,[id])).rows;
     if(!a.seeCost) {
       delete d.exchange_rate;
+      delete d.import_details;
       for(const l of d.lines) { delete l.cost_vnd; delete l.unit_cost_minor; }
     }
     return d;
@@ -129,7 +133,7 @@ export class WarehouseService {
     if(['opening','stocktake'].includes(type)&&a.role!=='admin') fail('Chỉ quản trị được mở sổ hoặc chốt kiểm kê.',403);
     if(['import','opening'].includes(type)&&!a.seeCost) fail('Phiếu nhập cần người có quyền nhập giá vốn.',403);
     const req=text(body.requestId,'Mã yêu cầu',100), fingerprint=hash(JSON.stringify(body));
-    const counterparty=text(body.counterparty,'Nhà cung cấp / người nhận / lý do');
+    let counterparty=text(body.counterparty,'Nhà cung cấp / người nhận / lý do');
     const note=body.note ? text(body.note,'Ghi chú',2000) : '';
     const docDate=date(body.documentDate,'Ngày phiếu');
     if(docDate>this.today(a)) fail('Ngày phiếu không được ở tương lai.');
@@ -143,12 +147,17 @@ export class WarehouseService {
       const existing=(await q.query('SELECT id,request_hash FROM wp_documents WHERE warehouse_code=$1 AND request_id=$2',[a.warehouse,req])).rows[0];
       if(existing) { if(existing.request_hash!==fingerprint) fail('Mã yêu cầu đã dùng cho nội dung khác.',409); return {id:existing.id}; }
       if(destination&&!(await q.query('SELECT code FROM wp_warehouses WHERE code=$1 AND active=true',[destination])).rows.length) fail('Kho nhận chưa được cấu hình.');
+      if(type==='import'&&body.importDetails?.supplierId){
+        const supplier=(await q.query('SELECT name FROM suppliers WHERE id=$1 AND org_id=$2 AND active=true',[body.importDetails.supplierId,a.orgId])).rows[0];
+        if(!supplier)fail('Nhà cung cấp không thuộc kho đang đăng nhập.');
+        counterparty=supplier.name;
+      }
       const id=randomUUID();
       const prefix={import:'NK',export:'XK',opening:'DK',stocktake:'KK',transfer:'CK'}[type as string];
       const code=`${a.warehouse==='singapore'?'SG':'NV1'}-${prefix}-${docDate.replace(/-/g,'')}-${id.slice(0,8).toUpperCase()}`;
       await q.query(`INSERT INTO wp_documents(id,code,warehouse_code,destination_code,type,request_id,request_hash,currency,exchange_rate,counterparty,note,document_date,created_by,attachment_url)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,[id,code,a.warehouse,destination,type,req,fingerprint,currency,fx,counterparty,note,docDate,a.userId,body.attachmentUrl?this.attachment(body.attachmentUrl):null]);
-      const seen=new Set();
+      const seen=new Set();let goodsMinor=0;
       for(const input of body.lines) {
         const product=(await q.query('SELECT * FROM products WHERE id=$1 AND org_id=$2',[input.productId,a.orgId])).rows[0];
         if(!product) fail('Sản phẩm không thuộc kho đang đăng nhập.');
@@ -168,15 +177,32 @@ export class WarehouseService {
         const key=product.id+':'+batchCode;
         if(seen.has(key)) fail('Lô sản phẩm bị lặp. Hãy gộp thành một dòng.'); seen.add(key);
         const minor=['import','opening'].includes(type)?integer(input.unitCostMinor,'Giá nhập',1):null;
+        if(type==='import')goodsMinor+=quantity*minor!;
         const cost=minor!==null?Math.round(minor*(currency==='SGD'?fx/100:1)):batch?.import_cost??null;
         if(type==='transfer'&&cost===null) fail('Lô chuyển cần được bổ sung giá vốn trước.');
         await q.query(`INSERT INTO wp_lines(id,document_id,product_id,sku,name,package_size,batch_id,batch_code,expiry_date,manufacture_date,quantity,expected_quantity,unit_cost_minor,cost_vnd)
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,[randomUUID(),id,product.id,product.sku,product.name,product.package_size,batch?.id??null,batchCode,exp,mfg,quantity,type==='stocktake'?input.expectedQuantity:null,minor,cost]);
       }
+      if(type==='import')await q.query('UPDATE wp_documents SET import_details=$2::jsonb WHERE id=$1',[id,JSON.stringify(importTotals(goodsMinor,body.importDetails))]);
       await audit(q,a,'document.drafted',id,{type,code}); return {id};
     });
   }
   attachment(value: unknown) { const s=text(value,'Link chứng từ',2000); if(!s.startsWith('https://')) fail('Link chứng từ phải dùng HTTPS.'); return s; }
+  async suppliers(a:Actor){
+    if(!a.seeCost)fail('Chỉ người được cấp quyền nhập giá vốn được xem danh sách nhà cung cấp.',403);
+    return (await this.db.query('SELECT id,name,country,phone FROM suppliers WHERE org_id=$1 AND active=true ORDER BY name',[a.orgId])).rows;
+  }
+  async createSupplier(a:Actor,body:any){
+    if(a.role!=='admin'||!a.seeCost)fail('Chỉ quản trị kho có quyền tạo nhà cung cấp.',403);
+    const name=text(body?.name,'Tên nhà cung cấp',200),phone=body.phone?text(body.phone,'Điện thoại',40):null;
+    return this.db.transaction(async q=>{
+      await q.query('SELECT pg_advisory_xact_lock(hashtext($1))',[a.orgId+name.toLowerCase()]);
+      const old=(await q.query('SELECT id,name,country,phone FROM suppliers WHERE org_id=$1 AND lower(name)=lower($2) AND active=true',[a.orgId,name])).rows[0];
+      if(old)return old;
+      const id=randomUUID();await q.query("INSERT INTO suppliers(id,org_id,name,phone,active,created_at,updated_at) VALUES($1,$2,$3,$4,true,timezone('UTC',now()),timezone('UTC',now()))",[id,a.orgId,name,phone]);
+      await audit(q,a,'supplier.created',null,{id,name});return {id,name,phone,country:null};
+    });
+  }
   async movement(q: Queryable, a: Actor, productId: string, batchId: string, quantity: number, type: string, docId: string, note: string) {
     await q.query(`INSERT INTO inventory_movements(id,org_id,product_id,batch_id,type,quantity,reference_type,reference_id,note,created_by,created_at)
       VALUES($1,$2,$3,$4,$5,$6,'warehouse_portal',$7,$8,$9,timezone('UTC',now()))`,[randomUUID(),a.orgId,productId,batchId,type,quantity,docId,note,a.userId]);
