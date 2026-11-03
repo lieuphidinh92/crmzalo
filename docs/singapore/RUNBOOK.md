@@ -56,3 +56,13 @@ Official sing.halo.com.vn and sale.halo.com.vn share the device cookie and a non
 Remember login is checked by default: email and the existing 8-hour opaque session are kept in localStorage; no password is stored by the app. Unchecked stores only the session in sessionStorage and removes saved email/session for that warehouse. Explicit logout clears session storage. Remembering never bypasses the other-warehouse revocation.
 
 Verified: 26 passing default tests (2 optional PostgreSQL suites skipped); separately real PostgreSQL stock/concurrent login test passed. Browser QA confirmed both-direction automatic logout, checked remember persistence, unchecked tab-only session, no stored password, mobile 390px no horizontal overflow, and flag backdrop opacity 0.2. Singapore uses the user's existing MCH PNG; Vietnam uses a Vietnamese flag icon.
+
+## Singapore import workspace (2026-11-03)
+
+The Singapore portal has a dedicated Nhập kho list and full-page create form following sale-app's information/products/fees layout. Warehouse remains fixed to the authenticated Singapore actor; existing import drafts open in the guarded confirmation dialog. Supplier and date/status filters operate on the existing 500-document portal list limit.
+
+Apply upgrade-import-details.sql before deploying the backend. Invoice number, supplier identity and charge inputs/computed totals persist in wp_documents.import_details. Monetary values use integer currency minor units (VND dong / SGD cents). Server recomputes goods, discount, VAT/GST, shipping, total and deposit balance, rejecting unsafe values, excessive discount/deposit or a supplier outside the actor's organization. Fees/discounts affect the document total; inventory lot cost continues to use the entered unit cost converted to VND, consistent with the existing import workflow. Recorded deposits are document information, not automatic cash payments or postings into the legacy supplier debt ledger.
+
+Suppliers use the existing suppliers table, filtered to the actor's isolated organization; create requires portal admin plus cost access and writes an audit. Accounts without cost permission receive neither supplier catalog nor document charge details/totals.
+
+User explicitly granted Đức admin + see_cost in Singapore on 2026-11-03. Existing Singapore sessions revoked for re-login; 58NV1 remains operator without cost access. Other users and CRM roles unchanged.

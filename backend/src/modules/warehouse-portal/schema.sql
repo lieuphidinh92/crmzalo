@@ -39,7 +39,7 @@ CREATE TABLE wp_documents (
   currency text NOT NULL CHECK(currency IN ('VND','SGD')),
   exchange_rate numeric(20,6) NOT NULL CHECK(exchange_rate>0),
   counterparty text NOT NULL, note text NOT NULL DEFAULT '',
-  document_date date NOT NULL, attachment_url text,
+  document_date date NOT NULL, attachment_url text, import_details jsonb,
   created_by text NOT NULL REFERENCES users(id), confirmed_by text REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now(), confirmed_at timestamptz,
   UNIQUE(warehouse_code,request_id),

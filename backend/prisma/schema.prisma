@@ -1667,6 +1667,7 @@ model PortalDocument {
   note String @default("")
   documentDate DateTime @db.Date @map("document_date")
   attachmentUrl String? @map("attachment_url")
+  importDetails Json? @map("import_details")
   createdById String @map("created_by")
   confirmedById String? @map("confirmed_by")
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")

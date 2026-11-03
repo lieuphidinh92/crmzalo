@@ -28,6 +28,7 @@ try{
   else if(upgrade) await c.query(readFileSync(new URL('../src/modules/warehouse-portal/upgrade-product-links.sql',import.meta.url),'utf8'));
   let sg=(await c.query("SELECT * FROM wp_warehouses WHERE code='singapore'")).rows[0];
   await c.query(readFileSync(new URL('../src/modules/warehouse-portal/upgrade-device-sessions.sql',import.meta.url),'utf8'));
+  await c.query(readFileSync(new URL('../src/modules/warehouse-portal/upgrade-import-details.sql',import.meta.url),'utf8'));
   const vn=(await c.query("SELECT * FROM wp_warehouses WHERE code='58nv1'")).rows[0];
   if(vn) assert.equal(vn.warehouse_id,warehouse58,'Portal already bound to a different 58NV1 warehouse');
   else await c.query("INSERT INTO wp_warehouses(code,name,org_id,warehouse_id,timezone) VALUES('58nv1','58NV1',$1,$2,'Asia/Ho_Chi_Minh')",[warehouse.org_id,warehouse58]);
