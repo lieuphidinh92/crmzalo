@@ -21,11 +21,13 @@ CREATE TABLE wp_baselines (
 );
 CREATE TABLE wp_sessions (
   token_hash text PRIMARY KEY,
+  device_key text,
   warehouse_code text NOT NULL REFERENCES wp_warehouses(code),
   user_id text NOT NULL REFERENCES users(id),
   expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ON wp_sessions(expires_at);
+CREATE INDEX ON wp_sessions(device_key);
 CREATE TABLE wp_documents (
   id text PRIMARY KEY, code text NOT NULL UNIQUE,
   warehouse_code text NOT NULL REFERENCES wp_warehouses(code),

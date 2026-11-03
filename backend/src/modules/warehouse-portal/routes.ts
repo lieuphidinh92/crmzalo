@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import pg from 'pg';
+import {createHash,randomBytes} from 'node:crypto';
 import { WarehouseService, type Actor } from './service.js';
 import { postgresStore } from './store.js';
 
@@ -20,8 +21,24 @@ export async function warehousePortalRoutes(app: FastifyInstance, options: Optio
   const token=(r:FastifyRequest)=>r.headers.authorization?.startsWith('Bearer ')?r.headers.authorization.slice(7):'';
   const code=(r:FastifyRequest)=>(r.params as any).warehouse;
   const actor=(r:FastifyRequest)=>actors.get(r)!;
-  const guard=async(r:FastifyRequest)=>{actors.set(r,await service.authenticate(code(r),token(r)));};
-  app.post(prefix+'/login',{config:{rateLimit:{max:8,timeWindow:'1 minute'}}},async r=>service.login(code(r),r.body));
+  const device=(r:FastifyRequest)=>{
+    const value=r.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith('wp_device='))?.slice(10)||'';
+    return /^[a-f0-9]{64}$/.test(value)?value:'';
+  };
+  const deviceKey=(value:string)=>value?createHash('sha256').update(value).digest('hex'):'';
+  const guard=async(r:FastifyRequest)=>{actors.set(r,await service.authenticate(code(r),token(r),deviceKey(device(r))));};
+  app.post(prefix+'/login',{config:{rateLimit:{max:8,timeWindow:'1 minute'}}},async(r,reply)=>{
+    const id=device(r)||randomBytes(32).toString('hex');
+    const result=await service.login(code(r),r.body,deviceKey(id));
+    const production=process.env.NODE_ENV==='production';
+    const shared=/^https:\/\/(sing|sale)\.halo\.com\.vn$/.test(r.headers.origin||'');
+    const scope=(shared?'; Domain=halo.com.vn':'')+(production?'; Secure':'');
+    reply.header('Set-Cookie',[
+      `wp_device=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${scope}`,
+      `wp_active=${code(r)}; Path=/; SameSite=Lax; Max-Age=28800${scope}`,
+    ]);
+    return result;
+  });
   await app.register(async protectedApp=>{
     protectedApp.addHook('preHandler',guard);
     protectedApp.get(prefix+'/profile',async r=>actor(r));

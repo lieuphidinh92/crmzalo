@@ -9,7 +9,9 @@ import {warehousePortalRoutes} from '../../src/modules/warehouse-portal/routes.j
 test('warehouse isolation and physical two-way transfer lifecycle',async t=>{
   const f=await fixture();t.after(()=>f.close());const {service:s,db}=f;
   const app=Fastify();await app.register(rateLimit);await app.register(warehousePortalRoutes,{service:s,enabled:true});t.after(()=>app.close());
-  const sgLogin=await s.login('singapore',{email:'admin@warehouse.test',password:f.password});
+  const apiLogin=await app.inject({method:'POST',url:'/api/warehouse/v1/singapore/login',payload:{email:'admin@warehouse.test',password:f.password}});
+  const sgCookie=[apiLogin.headers['set-cookie']].flat().map((s:any)=>s.split(';')[0]).join('; ');
+  const sgLogin=apiLogin.json();
   const vnLogin=await s.login('58nv1',{email:'admin@warehouse.test',password:f.password});
   const sg=sgLogin.profile,vn=vnLogin.profile;
   const duc=(await s.login('singapore',{email:'duc@warehouse.test',password:f.password})).profile;
@@ -25,7 +27,7 @@ test('warehouse isolation and physical two-way transfer lifecycle',async t=>{
     for(const token of ['fake.crm.jwt',sgLogin.token]) {
       const r=await app.inject({method:'GET',url:'/api/warehouse/v1/58nv1/products',headers:{authorization:`Bearer ${token}`}});assert.equal(r.statusCode,401);
     }
-    assert.equal((await app.inject({method:'GET',url:'/api/warehouse/v1/singapore/products',headers:{authorization:`Bearer ${sgLogin.token}`}})).statusCode,200);
+    assert.equal((await app.inject({method:'GET',url:'/api/warehouse/v1/singapore/products',headers:{authorization:`Bearer ${sgLogin.token}`,cookie:sgCookie}})).statusCode,200);
   });
   await t.test('viewer cannot write, wrong-org product cannot be imported',async()=>{
     await assert.rejects(s.createProduct(viewer,{sku:'XX',name:'Test',packageSize:'1',unit:'Hộp'}),{statusCode:403});

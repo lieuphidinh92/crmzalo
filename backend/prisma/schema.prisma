@@ -1640,6 +1640,7 @@ model PortalBaseline {
 }
 model PortalSession {
   tokenHash String @id @map("token_hash")
+  deviceKey String? @map("device_key")
   warehouseCode String @map("warehouse_code")
   userId String @map("user_id")
   expiresAt DateTime @db.Timestamptz(6) @map("expires_at")
@@ -1647,6 +1648,7 @@ model PortalSession {
   warehouse PortalWarehouse @relation(fields:[warehouseCode],references:[code],onDelete:NoAction,onUpdate:NoAction)
   user User @relation(fields:[userId],references:[id],onDelete:NoAction,onUpdate:NoAction)
   @@index([expiresAt])
+  @@index([deviceKey])
   @@map("wp_sessions")
 }
 model PortalDocument {

@@ -46,3 +46,13 @@ Deploy backend from `feature/sale-app-nhom1`; deploy sale-app and Singapore fron
 Verify `/health`, unauthenticated portal endpoints returning 401 (not 404), both frontend bundles and domain HTTPS. Never create fictitious production stock to test a deployment.
 
 If a deployment fails, restore the previous frontend/backend version. To disable the feature, set `WAREHOUSE_PORTAL_ENABLED=false` and revoke portal sessions. Preserve portal documents, receipts, audits and snapshots for investigation; never delete business history as rollback.
+
+## One active warehouse per browser (2026-11-03)
+
+Apply `upgrade-device-sessions.sql` before this backend release. Sessions are bound to a hashed browser device cookie. Successful login transactionally revokes sessions for the other warehouse on that device; failed login preserves the current session. The guard requires the matching HttpOnly device cookie. Concurrent logins are serialized with an advisory lock; a serialization conflict asks the user to retry. Browser profile/other browser isolation is intentional; this is not an OS-level device lock.
+
+Official sing.halo.com.vn and sale.halo.com.vn share the device cookie and a non-secret active-warehouse signal. UI checks that signal each second, verifies profile on focus/every 15 seconds, and clears warehouse UI/cache when expired. Every server request still verifies session and live ACL. Existing pre-device portal sessions require login once after this release. CRM authentication is unchanged.
+
+Remember login is checked by default: email and the existing 8-hour opaque session are kept in localStorage; no password is stored by the app. Unchecked stores only the session in sessionStorage and removes saved email/session for that warehouse. Explicit logout clears session storage. Remembering never bypasses the other-warehouse revocation.
+
+Verified: 26 passing default tests (2 optional PostgreSQL suites skipped); separately real PostgreSQL stock/concurrent login test passed. Browser QA confirmed both-direction automatic logout, checked remember persistence, unchecked tab-only session, no stored password, mobile 390px no horizontal overflow, and flag backdrop opacity 0.2. Singapore uses the user's existing MCH PNG; Vietnam uses a Vietnamese flag icon.

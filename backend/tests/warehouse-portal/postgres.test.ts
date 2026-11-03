@@ -30,4 +30,11 @@ test('real PostgreSQL serializable transactions prevent concurrent overdraft',{s
   const exports=(await pool.query("SELECT count(*)::int n FROM inventory_movements WHERE product_id=$1 AND type='export'",[p])).rows[0].n;
   assert.equal(exports,1);
   const report=(await s.report(a,s.today(a),s.today(a)))[0];assert.equal(report.closing,2);assert.equal(report.opening+report.incoming-report.outgoing+report.adjustment,2);
+  const logins=await Promise.allSettled(['singapore','58nv1'].map(w=>s.login(w,{email:'admin@warehouse.test',password:f.password},'same-browser-device')));
+  assert(logins.some(r=>r.status==='fulfilled'));
+  const active=(await pool.query("SELECT DISTINCT warehouse_code FROM wp_sessions WHERE device_key='same-browser-device' AND expires_at>now()")).rows;
+  assert.equal(active.length,1,'simultaneous logins must leave only one warehouse authorized');
+  const next=await s.login('58nv1',{email:'admin@warehouse.test',password:f.password},'same-browser-device');
+  assert.equal((await s.authenticate('58nv1',next.token,'same-browser-device')).warehouse,'58nv1');
+  assert.equal((await pool.query("SELECT count(*)::int n FROM wp_sessions WHERE device_key='same-browser-device' AND warehouse_code='singapore'")).rows[0].n,0);
 });
