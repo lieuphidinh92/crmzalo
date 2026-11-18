@@ -224,7 +224,7 @@ async function bootstrap() {
   app.get('/health', async () => {
     try {
       await prisma.$queryRaw`SELECT 1`;
-      return { status: 'ok', db: 'connected', timestamp: new Date().toISOString() };
+      return { status: 'ok', db: 'connected', timestamp: new Date().toISOString(), commit: process.env.RENDER_GIT_COMMIT ?? null };
     } catch {
       return { status: 'error', db: 'disconnected', timestamp: new Date().toISOString() };
     }
