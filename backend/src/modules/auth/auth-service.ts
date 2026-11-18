@@ -5,6 +5,7 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
+import { loadOversellAccount } from './oversell-permission.js';
 
 export interface JwtPayload {
   id: string;
@@ -117,5 +118,6 @@ export async function getProfile(userId: string) {
     throw err;
   }
 
-  return user;
+  const permission = await loadOversellAccount({ id: user.id, orgId: user.orgId });
+  return { ...user, oversellUntil: permission?.oversell_until ?? null };
 }

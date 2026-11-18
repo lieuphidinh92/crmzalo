@@ -1,5 +1,7 @@
 # LESSONS_LEARNED.md — luật đang hiệu lực
 
+- **18/11/2026 — Kiểm kê 05/11:** mốc cuối ngày VN = `2026-11-05 17:00:00` UTC; chỉ sửa 87 mã có trong file, cộng/trừ giao dịch sau mốc và giữ nguyên mã ngoài file. OTB01 −42 đã được CEO xác nhận. Quyền xác nhận vượt tồn dùng thời hạn tuyệt đối và đọc DB khi thao tác, không nâng role.
+
 Đọc file này trước khi code (RULE 3). **Cố tình ngắn**: mỗi bài học 1–3 dòng,
 đủ để không lặp lỗi. Cần diễn giải đầy đủ (bối cảnh, số liệu, cách fix từng
 bước) thì mở đúng mục trong

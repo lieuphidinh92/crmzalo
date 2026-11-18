@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { canConfirmOversell } from '../utils/stock-permission';
 import { ref, computed } from 'vue';
 import { api } from '../api/client';
 import { useAuthStore } from './auth';
@@ -331,12 +332,11 @@ export const usePOSStore = defineStore('pos', () => {
     )
       throw new Error('Hộ kinh doanh / Công ty cần nhập Mã số thuế để xuất hóa đơn');
 
-    // Bán âm kho: chỉ quản lý (owner/admin) được chốt đơn vượt tồn. Member phải bán
-    // trong tồn. Đơn nháp không chặn (member lưu tạm, quản lý duyệt sau). Backend
-    // vẫn chặn lại lần nữa — đây chỉ là chặn sớm cho UX.
+    // Refresh expiring grants before confirmation. Server independently checks live DB access.
     if (!isDraft) {
-      const role = useAuthStore().user?.role;
-      const canOversell = role === 'owner' || role === 'admin';
+      const auth = useAuthStore();
+      await auth.fetchProfile();
+      const canOversell = canConfirmOversell(auth.user);
       if (!canOversell) {
         const over = items.value.find(
           (it) => it.stock !== undefined && it.stock !== null && it.quantity > it.stock,

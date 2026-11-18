@@ -31,6 +31,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { markProductsHasSales } from '../products/product-sales-flag.js';
 import { searchProductIds } from '../products/product-search.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
+import { canConfirmOversell } from '../auth/oversell-permission.js';
 import { requireRole } from '../auth/role-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import {
@@ -2559,10 +2560,9 @@ export async function saleAppRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true, sku: true, name: true, unit: true, costPrice: true, totalStock: true, allowOversell: true, sellable: true },
       });
       const productMap = new Map<string, any>(products.map((p: any) => [p.id, p]));
-      // Bán âm kho (chốt đơn vượt tồn) CHỈ dành cho quản lý. Member phải bán trong
-      // tồn; muốn đặt trước hàng chưa về thì nhờ owner/admin chốt. Không áp cho đơn
-      // nháp (draft) — member vẫn lưu tạm được để quản lý duyệt sau.
-      const canOversell = user.role === 'owner' || user.role === 'admin';
+      // Managers and members with a live, unexpired grant can confirm above stock.
+      // Drafts remain available to all members; load grants from DB, never JWT claims.
+      const canOversell = orderStatus === 'draft' || await canConfirmOversell(user);
       for (const it of body.items) {
         if (!productMap.has(it.productId)) {
           return reply.status(400).send({ error: `Sản phẩm không hợp lệ: ${it.productId}` });
