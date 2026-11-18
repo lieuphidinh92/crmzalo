@@ -319,6 +319,7 @@ export const usePOSStore = defineStore('pos', () => {
   }
 
   async function submitOrder(status = 'confirmed') {
+    if (submitting.value) throw new Error('Đơn đang được xử lý, vui lòng chờ.');
     const isDraft = status === 'draft';
     if (!selectedCustomer.value) throw new Error('Vui lòng chọn khách hàng');
     if (items.value.length === 0) throw new Error('Vui lòng chọn ít nhất 1 sản phẩm');
@@ -332,24 +333,23 @@ export const usePOSStore = defineStore('pos', () => {
     )
       throw new Error('Hộ kinh doanh / Công ty cần nhập Mã số thuế để xuất hóa đơn');
 
-    // Refresh expiring grants before confirmation. Server independently checks live DB access.
-    if (!isDraft) {
-      const auth = useAuthStore();
-      await auth.fetchProfile();
-      const canOversell = canConfirmOversell(auth.user);
-      if (!canOversell) {
-        const over = items.value.find(
-          (it) => it.stock !== undefined && it.stock !== null && it.quantity > it.stock,
-        );
-        if (over)
-          throw new Error(
-            `"${over.name}" chỉ còn ${over.stock}${over.unit ? ' ' + over.unit : ''} trong kho — chỉ quản lý được bán vượt tồn. Giảm số lượng hoặc nhờ quản lý chốt đơn.`,
-          );
-      }
-    }
-
     submitting.value = true;
     try {
+      // Keep submit disabled while refreshing grants; failures release it in finally.
+      if (!isDraft) {
+        const auth = useAuthStore();
+        await auth.fetchProfile();
+        const canOversell = canConfirmOversell(auth.user);
+        if (!canOversell) {
+          const over = items.value.find(
+            (it) => it.stock !== undefined && it.stock !== null && it.quantity > it.stock,
+          );
+          if (over)
+            throw new Error(
+              `"${over.name}" chỉ còn ${over.stock}${over.unit ? ' ' + over.unit : ''} trong kho — chỉ quản lý được bán vượt tồn. Giảm số lượng hoặc nhờ quản lý chốt đơn.`,
+            );
+        }
+      }
       const payload = {
         contactId: selectedCustomer.value.id,
         items: items.value.map((it) => ({
